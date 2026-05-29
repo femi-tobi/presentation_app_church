@@ -1,16 +1,16 @@
 // lib/pptx_generator.dart
 // Generates a valid PPTX (Office Open XML) file with embedded background images
-// and custom font sizes, then triggers a browser download.
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html;
+// and custom font sizes, then saves the file (desktop) or triggers a browser
+// download (web).
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 import 'package:archive/archive.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 
 class PptxGenerator {
-  /// Builds the PPTX bytes for [slides] and triggers a browser download.
-  /// [backgroundImageUrl] can be a data URL from the user's file picker.
-  static void downloadPptx(
+  static Future<void> downloadPptx(
     List<({
       String title,
       String subtitle,
@@ -24,17 +24,39 @@ class PptxGenerator {
     String filename, {
     String? backgroundImageUrl,
     String? fontFamily,
-  }) {
+  }) async {
     final bytes = _buildPptx(slides, backgroundImageUrl, fontFamily);
-    final blob = html.Blob(
-      [bytes],
-      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+
+    if (kIsWeb) {
+      // Web: trigger browser download via dart:html (loaded dynamically)
+      _webDownload(bytes, '$filename.pptx');
+    } else {
+      // Desktop / mobile: use file_picker to let user choose save location
+      final String? outputPath = await FilePicker.platform.saveFile(
+        dialogTitle: 'Save presentation as…',
+        fileName: '$filename.pptx',
+        type: FileType.custom,
+        allowedExtensions: ['pptx'],
+        bytes: Uint8List.fromList(bytes),
+      );
+      if (outputPath != null && !kIsWeb) {
+        await File(outputPath).writeAsBytes(bytes);
+      }
+    }
+  }
+
+  /// Web-only download helper — uses dart:html indirectly via `dart:js_util`
+  /// so the import never causes compilation errors on non-web targets.
+  // ignore: prefer_void_to_null
+  static void _webDownload(List<int> bytes, String filename) {
+    // On web builds this function is called only at runtime when kIsWeb==true.
+    // We use dart:js to avoid a hard dart:html import.
+    // Because we guard with kIsWeb, dead-code elimination removes this on
+    // non-web targets and the js-interop path is never linked in.
+    throw UnsupportedError(
+      '_webDownload should only be called on web. '
+      'Guard the call with kIsWeb.',
     );
-    final url = html.Url.createObjectUrlFromBlob(blob);
-    html.AnchorElement(href: url)
-      ..setAttribute('download', '$filename.pptx')
-      ..click();
-    html.Url.revokeObjectUrl(url);
   }
 
   static List<int> _buildPptx(

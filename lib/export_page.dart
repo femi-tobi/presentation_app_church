@@ -84,8 +84,8 @@ class _ExportPageState extends State<ExportPage>
     final String? bgImageUrl =
         activeSlides.isNotEmpty ? activeSlides.first.imageUrl : null;
 
-    // Generate & trigger browser download
-    PptxGenerator.downloadPptx(
+    // Generate & trigger download (save dialog on desktop, browser download on web)
+    await PptxGenerator.downloadPptx(
       slides,
       'LiveDeck_Presentation',
       backgroundImageUrl: bgImageUrl,

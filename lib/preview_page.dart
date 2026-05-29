@@ -1,8 +1,9 @@
 import 'dart:ui';
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html;
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dashboard_page.dart'; // import to reuse SacredColors / Typography
@@ -1841,68 +1842,53 @@ class _BackgroundImageEditorCardState extends State<_BackgroundImageEditorCard> 
   bool _isHovered = false;
   bool _isPicking = false;
 
-  void _pickImage() {
+  void _pickImage() async {
     if (_isPicking) return;
     setState(() => _isPicking = true);
 
-    final input = html.FileUploadInputElement()
-      ..accept = 'image/*'
-      ..click();
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        allowMultiple: false,
+        withData: kIsWeb, // on web, bytes come in-memory
+      );
 
-    input.onChange.listen((event) {
-      final file = input.files?.first;
-      if (file == null) {
-        setState(() => _isPicking = false);
+      if (result == null || result.files.isEmpty) {
+        if (mounted) setState(() => _isPicking = false);
         return;
       }
-      final reader = html.FileReader();
-      reader.readAsDataUrl(file);
-      reader.onLoadEnd.listen((_) {
-        final dataUrl = reader.result as String;
 
-        // Downscale and compress slide background using HTML Canvas
-        final img = html.ImageElement(src: dataUrl);
-        img.onLoad.first.then((_) {
-          final canvas = html.CanvasElement();
-          int width = img.naturalWidth;
-          int height = img.naturalHeight;
+      final picked = result.files.first;
+      Uint8List? bytes;
 
-          // Max dimension of 1280px is plenty for 16:9 screen backgrounds
-          const maxDim = 1280;
-          if (width > maxDim || height > maxDim) {
-            if (width > height) {
-              height = (height * maxDim / width).round();
-              width = maxDim;
-            } else {
-              width = (width * maxDim / height).round();
-              height = maxDim;
-            }
-          }
+      if (kIsWeb) {
+        bytes = picked.bytes;
+      } else if (picked.path != null) {
+        bytes = await File(picked.path!).readAsBytes();
+      }
 
-          canvas.width = width;
-          canvas.height = height;
+      if (bytes == null) {
+        if (mounted) setState(() => _isPicking = false);
+        return;
+      }
 
-          final ctx = canvas.context2D;
-          ctx.drawImageScaled(img, 0, 0, width, height);
+      // Determine MIME type from extension
+      final ext = (picked.extension ?? 'jpg').toLowerCase();
+      final mime = ext == 'png'
+          ? 'image/png'
+          : ext == 'gif'
+              ? 'image/gif'
+              : ext == 'webp'
+                  ? 'image/webp'
+                  : 'image/jpeg';
 
-          // Compress as image/jpeg at 70% quality (great ratio of size vs quality)
-          final compressedDataUrl = canvas.toDataUrl('image/jpeg', 0.7);
-
-          widget.onImageChanged(compressedDataUrl);
-          if (mounted) setState(() => _isPicking = false);
-        }).catchError((err) {
-          debugPrint('Error compressing image: $err');
-          // Fallback to original if compression fails
-          widget.onImageChanged(dataUrl);
-          if (mounted) setState(() => _isPicking = false);
-        });
-      });
-    });
-
-    // If user cancels (no onChange fires), unblock after a timeout
-    Future.delayed(const Duration(seconds: 30), () {
+      final dataUrl = 'data:$mime;base64,${base64Encode(bytes)}';
+      widget.onImageChanged(dataUrl);
+    } catch (err) {
+      debugPrint('Error picking image: $err');
+    } finally {
       if (mounted) setState(() => _isPicking = false);
-    });
+    }
   }
 
   @override
@@ -2157,69 +2143,53 @@ class _LogoImageEditorCardState extends State<_LogoImageEditorCard> {
   bool _isHovered = false;
   bool _isPicking = false;
 
-  void _pickImage() {
+  void _pickImage() async {
     if (_isPicking) return;
     setState(() => _isPicking = true);
 
-    final input = html.FileUploadInputElement()
-      ..accept = 'image/*'
-      ..click();
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        allowMultiple: false,
+        withData: kIsWeb,
+      );
 
-    input.onChange.listen((event) {
-      final file = input.files?.first;
-      if (file == null) {
-        setState(() => _isPicking = false);
+      if (result == null || result.files.isEmpty) {
+        if (mounted) setState(() => _isPicking = false);
         return;
       }
-      final reader = html.FileReader();
-      reader.readAsDataUrl(file);
-      reader.onLoadEnd.listen((_) {
-        final dataUrl = reader.result as String;
 
-        // Downscale and compress logo using HTML Canvas (PNG to preserve transparency)
-        final img = html.ImageElement(src: dataUrl);
-        img.onLoad.first.then((_) {
-          final canvas = html.CanvasElement();
-          int width = img.naturalWidth;
-          int height = img.naturalHeight;
+      final picked = result.files.first;
+      Uint8List? bytes;
 
-          // Max dimension of 256px is plenty for a slide logo
-          const maxDim = 256;
-          if (width > maxDim || height > maxDim) {
-            if (width > height) {
-              height = (height * maxDim / width).round();
-              width = maxDim;
-            } else {
-              width = (width * maxDim / height).round();
-              height = maxDim;
-            }
-          }
+      if (kIsWeb) {
+        bytes = picked.bytes;
+      } else if (picked.path != null) {
+        bytes = await File(picked.path!).readAsBytes();
+      }
 
-          canvas.width = width;
-          canvas.height = height;
+      if (bytes == null) {
+        if (mounted) setState(() => _isPicking = false);
+        return;
+      }
 
-          final ctx = canvas.context2D;
-          ctx.clearRect(0, 0, width, height); // Ensure transparent background
-          ctx.drawImageScaled(img, 0, 0, width, height);
+      // Determine MIME type from extension (keep PNG to preserve transparency)
+      final ext = (picked.extension ?? 'png').toLowerCase();
+      final mime = ext == 'jpeg' || ext == 'jpg'
+          ? 'image/jpeg'
+          : ext == 'gif'
+              ? 'image/gif'
+              : ext == 'webp'
+                  ? 'image/webp'
+                  : 'image/png';
 
-          // Compress as image/png to keep transparency
-          final compressedDataUrl = canvas.toDataUrl('image/png');
-
-          widget.onLogoChanged(compressedDataUrl);
-          if (mounted) setState(() => _isPicking = false);
-        }).catchError((err) {
-          debugPrint('Error compressing logo: $err');
-          // Fallback to original if compression fails
-          widget.onLogoChanged(dataUrl);
-          if (mounted) setState(() => _isPicking = false);
-        });
-      });
-    });
-
-    // If user cancels (no onChange fires), unblock after a timeout
-    Future.delayed(const Duration(seconds: 30), () {
+      final dataUrl = 'data:$mime;base64,${base64Encode(bytes)}';
+      widget.onLogoChanged(dataUrl);
+    } catch (err) {
+      debugPrint('Error picking logo: $err');
+    } finally {
       if (mounted) setState(() => _isPicking = false);
-    });
+    }
   }
 
   @override
