@@ -1,5 +1,5 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'dashboard_page.dart'; // Reuse SacredColors, SacredTypography, SacredShadows
 import 'settings_state.dart';
 import 'preview_page.dart';
@@ -31,9 +31,8 @@ class _LibraryPageState extends State<LibraryPage> {
     setState(() => _isLoadingHymns = true);
 
     try {
-      final manifestContent = await DefaultAssetBundle.of(context).loadString('AssetManifest.json');
-      final Map<String, dynamic> manifestMap = json.decode(manifestContent);
-      final List<String> paths = manifestMap.keys
+      final AssetManifest manifest = await AssetManifest.loadFromAssetBundle(DefaultAssetBundle.of(context));
+      final List<String> paths = manifest.listAssets()
           .where((key) => key.toLowerCase().startsWith('assets/hymns/') && key.toLowerCase().endsWith('.txt'))
           .toList();
 
