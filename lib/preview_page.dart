@@ -1,12 +1,30 @@
 import 'dart:ui';
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dashboard_page.dart'; // import to reuse SacredColors / Typography
 import 'export_page.dart';
 import 'settings_state.dart';
 import 'fullscreen_presenter_page.dart';
+
+
+/// Safely decode a base64 data-URL (e.g. "data:image/png;base64,....") to bytes.
+/// Falls back to manual base64 splitting if [Uri] fails to parse the data.
+Uint8List _decodeDataUrl(String dataUrl) {
+  try {
+    final uriData = Uri.parse(dataUrl).data;
+    if (uriData != null) return uriData.contentAsBytes();
+  } catch (_) {}
+  // Fallback: manually strip the prefix
+  final commaIndex = dataUrl.indexOf(',');
+  if (commaIndex != -1) {
+    return base64Decode(dataUrl.substring(commaIndex + 1));
+  }
+  return Uint8List(0);
+}
 
 
 class PreviewPage extends StatefulWidget {
@@ -53,6 +71,10 @@ class _PreviewPageState extends State<PreviewPage> {
         transition: s.transition,
         titleFontSize: s.titleFontSize,
         subtitleFontSize: s.subtitleFontSize,
+        logoUrl: s.logoUrl,
+        logoX: s.logoX,
+        logoY: s.logoY,
+        logoSize: s.logoSize,
       )));
     } else if (widget.outlineText.isNotEmpty) {
       _slides = _parseSlidesFromOutline(widget.outlineText);
@@ -218,6 +240,26 @@ class _PreviewPageState extends State<PreviewPage> {
     _saveToRecentList();
   }
 
+  void _onLogoChanged(String? newLogo) {
+    setState(() {
+      for (final slide in _slides) {
+        slide.logoUrl = newLogo;
+      }
+    });
+    AppSettings.instance.updateActiveSlides(_slides);
+    _saveToRecentList();
+  }
+
+  void _onLogoSizeChanged(double val) {
+    setState(() {
+      for (final slide in _slides) {
+        slide.logoSize = val;
+      }
+    });
+    AppSettings.instance.updateActiveSlides(_slides);
+    _saveToRecentList();
+  }
+
   void _setActiveSlide(int index) {
     setState(() {
       _activeSlideIndex = index;
@@ -239,6 +281,10 @@ class _PreviewPageState extends State<PreviewPage> {
         imageUrl: inheritedBg,
         opacity: _slides[_activeSlideIndex].opacity,
         blur: _slides[_activeSlideIndex].blur,
+        logoUrl: _slides[_activeSlideIndex].logoUrl,
+        logoX: _slides[_activeSlideIndex].logoX,
+        logoY: _slides[_activeSlideIndex].logoY,
+        logoSize: _slides[_activeSlideIndex].logoSize,
       );
       _slides.add(newSlide);
       _setActiveSlide(_slides.length - 1);
@@ -270,6 +316,10 @@ class _PreviewPageState extends State<PreviewPage> {
         transition: active.transition,
         titleFontSize: active.titleFontSize,
         subtitleFontSize: active.subtitleFontSize,
+        logoUrl: active.logoUrl,
+        logoX: active.logoX,
+        logoY: active.logoY,
+        logoSize: active.logoSize,
       );
       _slides.insert(_activeSlideIndex + 1, duplicate);
       _setActiveSlide(_activeSlideIndex + 1);
@@ -391,6 +441,8 @@ class _PreviewPageState extends State<PreviewPage> {
                           onDuplicate: _duplicateSlide,
                           onDelete: _removeSlide,
                           onAllSlidesImageChanged: _onAllSlidesImageChanged,
+                          onLogoChanged: _onLogoChanged,
+                          onLogoSizeChanged: _onLogoSizeChanged,
                         ))
                   : _LiveWorkspaceCanvas(
                       activeSlide: activeSlide,
@@ -400,6 +452,16 @@ class _PreviewPageState extends State<PreviewPage> {
                         if (index >= 0 && index < _slides.length) {
                           _setActiveSlide(index);
                         }
+                      },
+                      onLogoPositionChanged: (x, y) {
+                        setState(() {
+                          for (final slide in _slides) {
+                            slide.logoX = x;
+                            slide.logoY = y;
+                          }
+                        });
+                        AppSettings.instance.updateActiveSlides(_slides);
+                        _saveToRecentList();
                       },
                     ),
             ),
@@ -414,6 +476,8 @@ class _PreviewPageState extends State<PreviewPage> {
                 onDuplicate: _duplicateSlide,
                 onDelete: _removeSlide,
                 onAllSlidesImageChanged: _onAllSlidesImageChanged,
+                onLogoChanged: _onLogoChanged,
+                onLogoSizeChanged: _onLogoSizeChanged,
               ),
           ],
         ),
@@ -766,14 +830,23 @@ class _SlideThumbnailCardState extends State<_SlideThumbnailCard> {
                                 : const ColorFilter.matrix(grayscaleMatrix),
                             child: widget.slide.imageUrl.isEmpty
                                 ? Container(color: Colors.black)
-                                : Image.network(
-                                    widget.slide.imageUrl,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (context, e, s) => Container(
-                                      color: SacredColors.surfaceContainerHigh,
-                                      child: Icon(Icons.image, color: SacredColors.primary),
-                                    ),
-                                  ),
+                                : widget.slide.imageUrl.startsWith('data:')
+                                    ? Image.memory(
+                                        _decodeDataUrl(widget.slide.imageUrl),
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (context, e, s) => Container(
+                                          color: SacredColors.surfaceContainerHigh,
+                                          child: Icon(Icons.image, color: SacredColors.primary),
+                                        ),
+                                      )
+                                    : Image.network(
+                                        widget.slide.imageUrl,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (context, e, s) => Container(
+                                          color: SacredColors.surfaceContainerHigh,
+                                          child: Icon(Icons.image, color: SacredColors.primary),
+                                        ),
+                                      ),
                           ),
                         ),
                       ),
@@ -829,12 +902,14 @@ class _LiveWorkspaceCanvas extends StatelessWidget {
   final int slideCount;
   final int activeIndex;
   final ValueChanged<int> onNavigate;
+  final Function(double, double)? onLogoPositionChanged;
 
   const _LiveWorkspaceCanvas({
     required this.activeSlide,
     required this.slideCount,
     required this.activeIndex,
     required this.onNavigate,
+    this.onLogoPositionChanged,
   });
 
   @override
@@ -883,11 +958,17 @@ class _LiveWorkspaceCanvas extends StatelessWidget {
                                       sigmaX: activeSlide.blur,
                                       sigmaY: activeSlide.blur,
                                     ),
-                                    child: Image.network(
-                                      activeSlide.imageUrl,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (c, e, s) => Container(color: SacredColors.surfaceContainerHighest),
-                                    ),
+                                    child: activeSlide.imageUrl.startsWith('data:')
+                                        ? Image.memory(
+                                            _decodeDataUrl(activeSlide.imageUrl),
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (c, e, s) => Container(color: SacredColors.surfaceContainerHighest),
+                                          )
+                                        : Image.network(
+                                            activeSlide.imageUrl,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (c, e, s) => Container(color: SacredColors.surfaceContainerHighest),
+                                          ),
                                   ),
                           ),
 
@@ -969,6 +1050,20 @@ class _LiveWorkspaceCanvas extends StatelessWidget {
                               ),
                             ),
                           ),
+
+                          // Draggable Logo layer — handled by a dedicated StatefulWidget
+                          // so the drag position is tracked locally without parent rebuilds.
+                          if (activeSlide.logoUrl != null && activeSlide.logoUrl!.isNotEmpty)
+                            Positioned.fill(
+                              child: _DraggableLogoLayer(
+                                logoUrl: activeSlide.logoUrl!,
+                                logoX: activeSlide.logoX,
+                                logoY: activeSlide.logoY,
+                                logoSize: activeSlide.logoSize,
+                                onPositionChanged: onLogoPositionChanged,
+                              ),
+                            ),
+
 
                           // Floating Canvas Preview Controls
                           Positioned(
@@ -1113,7 +1208,141 @@ class _CanvasPreviewBar extends StatelessWidget {
   }
 }
 
-/// Right Properties Controller Sidebar
+// ─────────────────────────────────────────────────────────────────────────────
+// Draggable Logo Layer
+//
+// Uses local StatefulWidget state so that ongoing pan gestures do NOT trigger
+// parent rebuilds. The GestureDetector stays stable under the pointer during
+// the entire drag, and the parent is updated on pan-end (and throttled during).
+// ─────────────────────────────────────────────────────────────────────────────
+class _DraggableLogoLayer extends StatefulWidget {
+  final String logoUrl;
+  final double logoX;   // relative 0.0–1.0
+  final double logoY;   // relative 0.0–1.0
+  final double logoSize; // base pixel size at 960px canvas width
+  final Function(double, double)? onPositionChanged;
+
+  const _DraggableLogoLayer({
+    required this.logoUrl,
+    required this.logoX,
+    required this.logoY,
+    required this.logoSize,
+    this.onPositionChanged,
+  });
+
+  @override
+  State<_DraggableLogoLayer> createState() => _DraggableLogoLayerState();
+}
+
+class _DraggableLogoLayerState extends State<_DraggableLogoLayer> {
+  /// Pixel position tracked locally during an active drag.
+  /// null means we use the externally stored relative position.
+  double? _dragPixelX;
+  double? _dragPixelY;
+
+  @override
+  void didUpdateWidget(_DraggableLogoLayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // When the slide changes (different logoUrl or position committed by parent)
+    // reset local drag state so we pick up the new stored position.
+    if (oldWidget.logoUrl != widget.logoUrl) {
+      _dragPixelX = null;
+      _dragPixelY = null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(builder: (context, constraints) {
+      final double w = constraints.maxWidth;
+      final double h = constraints.maxHeight;
+      if (w == 0 || h == 0) return const SizedBox.expand();
+
+      final double scale = w / 960.0;
+      final double scaledLogoSize = (widget.logoSize * scale).clamp(10.0, w);
+      final double maxLeft = w - scaledLogoSize;
+      final double maxTop  = h - scaledLogoSize;
+
+      // During a drag, use local pixel coords; otherwise derive from stored relative.
+      final double left = (_dragPixelX ?? (widget.logoX * w)).clamp(0.0, maxLeft);
+      final double top  = (_dragPixelY ?? (widget.logoY * h)).clamp(0.0, maxTop);
+
+      return Stack(
+        clipBehavior: Clip.hardEdge,
+        children: [
+          Positioned(
+            left: left,
+            top: top,
+            width: scaledLogoSize,
+            height: scaledLogoSize,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onPanStart: (_) {
+                // Capture pixel start position so cumulative delta is always correct.
+                setState(() {
+                  _dragPixelX = left;
+                  _dragPixelY = top;
+                });
+              },
+              onPanUpdate: (details) {
+                setState(() {
+                  _dragPixelX = ((_dragPixelX ?? left) + details.delta.dx)
+                      .clamp(0.0, maxLeft);
+                  _dragPixelY = ((_dragPixelY ?? top) + details.delta.dy)
+                      .clamp(0.0, maxTop);
+                });
+                // Sync to parent during drag (throttled by Flutter's frame rate).
+                widget.onPositionChanged?.call(
+                  _dragPixelX! / w,
+                  _dragPixelY! / h,
+                );
+              },
+              onPanEnd: (_) {
+                if (_dragPixelX != null) {
+                  widget.onPositionChanged?.call(
+                    _dragPixelX! / w,
+                    _dragPixelY! / h,
+                  );
+                }
+                // Keep local position so the logo stays where released.
+              },
+              child: Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.white54, width: 1.5),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(3),
+                  child: widget.logoUrl.startsWith('data:')
+                      ? Image.memory(
+                          _decodeDataUrl(widget.logoUrl),
+                          fit: BoxFit.contain,
+                          errorBuilder: (c, e, s) => Container(
+                            color: Colors.black45,
+                            child: const Icon(Icons.broken_image,
+                                color: Colors.white, size: 24),
+                          ),
+                        )
+                      : Image.network(
+                          widget.logoUrl,
+                          fit: BoxFit.contain,
+                          errorBuilder: (c, e, s) => Container(
+                            color: Colors.black45,
+                            child: const Icon(Icons.broken_image,
+                                color: Colors.white, size: 24),
+                          ),
+                        ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    });
+  }
+}
+
+
 class _PropertiesSidebar extends StatelessWidget {
   final SlideData activeSlide;
   final TextEditingController titleController;
@@ -1122,6 +1351,8 @@ class _PropertiesSidebar extends StatelessWidget {
   final VoidCallback onDuplicate;
   final VoidCallback onDelete;
   final ValueChanged<String> onAllSlidesImageChanged;
+  final ValueChanged<String?> onLogoChanged;
+  final ValueChanged<double> onLogoSizeChanged;
 
   const _PropertiesSidebar({
     required this.activeSlide,
@@ -1131,6 +1362,8 @@ class _PropertiesSidebar extends StatelessWidget {
     required this.onDuplicate,
     required this.onDelete,
     required this.onAllSlidesImageChanged,
+    required this.onLogoChanged,
+    required this.onLogoSizeChanged,
   });
 
   @override
@@ -1384,7 +1617,6 @@ class _PropertiesSidebar extends StatelessWidget {
             ),
             SizedBox(height: 32),
 
-            // Background controls
             Text(
               'BACKGROUND IMAGE',
               style: SacredTypography.labelLg(context).copyWith(
@@ -1397,6 +1629,42 @@ class _PropertiesSidebar extends StatelessWidget {
               imageUrl: activeSlide.imageUrl,
               onImageChanged: onAllSlidesImageChanged,
             ),
+            SizedBox(height: 24),
+
+            // Logo controls
+            Text(
+              'SLIDE LOGO',
+              style: SacredTypography.labelLg(context).copyWith(
+                color: SacredColors.onSurfaceVariant,
+                letterSpacing: 1.0,
+              ),
+            ),
+            SizedBox(height: 12),
+            _LogoImageEditorCard(
+              logoUrl: activeSlide.logoUrl,
+              onLogoChanged: onLogoChanged,
+            ),
+            if (activeSlide.logoUrl != null && activeSlide.logoUrl!.isNotEmpty) ...[
+              SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Logo Size', style: SacredTypography.labelSm(context)),
+                  Text(
+                    '${activeSlide.logoSize.toInt()}px',
+                    style: SacredTypography.labelSm(context).copyWith(fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              Slider(
+                value: activeSlide.logoSize,
+                min: 40.0,
+                max: 200.0,
+                activeColor: SacredColors.primary,
+                inactiveColor: SacredColors.surfaceContainerHighest,
+                onChanged: onLogoSizeChanged,
+              ),
+            ],
             SizedBox(height: 24),
 
             // Opacity slider
@@ -1656,7 +1924,7 @@ class _BackgroundImageEditorCardState extends State<_BackgroundImageEditorCard> 
                 Positioned.fill(
                   child: isDataUrl
                       ? Image.memory(
-                          Uri.parse(widget.imageUrl).data!.contentAsBytes(),
+                          _decodeDataUrl(widget.imageUrl),
                           fit: BoxFit.cover,
                           errorBuilder: (c, e, s) => Container(
                             color: SacredColors.surfaceContainerHigh,
@@ -1869,4 +2137,234 @@ class DashedBorderPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+/// Logo card selector inside properties — opens system file picker on tap and handles transparency preserving compression.
+class _LogoImageEditorCard extends StatefulWidget {
+  final String? logoUrl;
+  final ValueChanged<String?> onLogoChanged;
+
+  const _LogoImageEditorCard({
+    required this.logoUrl,
+    required this.onLogoChanged,
+  });
+
+  @override
+  State<_LogoImageEditorCard> createState() => _LogoImageEditorCardState();
+}
+
+class _LogoImageEditorCardState extends State<_LogoImageEditorCard> {
+  bool _isHovered = false;
+  bool _isPicking = false;
+
+  void _pickImage() {
+    if (_isPicking) return;
+    setState(() => _isPicking = true);
+
+    final input = html.FileUploadInputElement()
+      ..accept = 'image/*'
+      ..click();
+
+    input.onChange.listen((event) {
+      final file = input.files?.first;
+      if (file == null) {
+        setState(() => _isPicking = false);
+        return;
+      }
+      final reader = html.FileReader();
+      reader.readAsDataUrl(file);
+      reader.onLoadEnd.listen((_) {
+        final dataUrl = reader.result as String;
+
+        // Downscale and compress logo using HTML Canvas (PNG to preserve transparency)
+        final img = html.ImageElement(src: dataUrl);
+        img.onLoad.first.then((_) {
+          final canvas = html.CanvasElement();
+          int width = img.naturalWidth;
+          int height = img.naturalHeight;
+
+          // Max dimension of 256px is plenty for a slide logo
+          const maxDim = 256;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = (height * maxDim / width).round();
+              width = maxDim;
+            } else {
+              width = (width * maxDim / height).round();
+              height = maxDim;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+
+          final ctx = canvas.context2D;
+          ctx.clearRect(0, 0, width, height); // Ensure transparent background
+          ctx.drawImageScaled(img, 0, 0, width, height);
+
+          // Compress as image/png to keep transparency
+          final compressedDataUrl = canvas.toDataUrl('image/png');
+
+          widget.onLogoChanged(compressedDataUrl);
+          if (mounted) setState(() => _isPicking = false);
+        }).catchError((err) {
+          debugPrint('Error compressing logo: $err');
+          // Fallback to original if compression fails
+          widget.onLogoChanged(dataUrl);
+          if (mounted) setState(() => _isPicking = false);
+        });
+      });
+    });
+
+    // If user cancels (no onChange fires), unblock after a timeout
+    Future.delayed(const Duration(seconds: 30), () {
+      if (mounted) setState(() => _isPicking = false);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool hasLogo = widget.logoUrl != null && widget.logoUrl!.isNotEmpty;
+    final bool isDataUrl = hasLogo && widget.logoUrl!.startsWith('data:');
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      cursor: SystemMouseCursors.click,
+      child: Stack(
+        children: [
+          GestureDetector(
+            onTap: _pickImage,
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                color: SacredColors.surfaceContainerHigh,
+                border: Border.all(
+                  color: hasLogo ? SacredColors.outlineVariant : SacredColors.outline,
+                  style: hasLogo ? BorderStyle.solid : BorderStyle.none,
+                ),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: AspectRatio(
+                  aspectRatio: 16 / 9,
+                  child: Stack(
+                    children: [
+                      // If no logo, show a nice upload placeholder with CustomPaint dashed border
+                      if (!hasLogo)
+                        Positioned.fill(
+                          child: CustomPaint(
+                            painter: DashedBorderPainter(
+                              color: SacredColors.outline,
+                              radius: 12,
+                            ),
+                            child: Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.add_photo_alternate_outlined,
+                                      size: 32, color: SacredColors.onSurfaceVariant),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Upload Logo (PNG/JPEG)',
+                                    style: SacredTypography.labelSm(context).copyWith(
+                                      color: SacredColors.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        )
+                      else
+                        // Logo display with checkerboard-like neutral background to see transparency
+                        Positioned.fill(
+                          child: Container(
+                            color: Colors.black12, // subtle dark background to see light logos
+                            padding: const EdgeInsets.all(16),
+                            child: isDataUrl
+                                ? Image.memory(
+                                    _decodeDataUrl(widget.logoUrl!),
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (c, e, s) => Center(
+                                      child: Icon(Icons.broken_image, color: SacredColors.primary),
+                                    ),
+                                  )
+                                : Image.network(
+                                    widget.logoUrl!,
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (c, e, s) => Center(
+                                      child: Icon(Icons.broken_image, color: SacredColors.primary),
+                                    ),
+                                  ),
+                          ),
+                        ),
+
+                      // Hover/loading overlay
+                      Positioned.fill(
+                        child: AnimatedOpacity(
+                          opacity: (_isHovered || _isPicking) ? 1.0 : 0.0,
+                          duration: const Duration(milliseconds: 200),
+                          child: Container(
+                            color: SacredColors.primary.withValues(alpha: 0.65),
+                            alignment: Alignment.center,
+                            child: _isPicking
+                                ? const SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.upload_file, color: Colors.white, size: 18),
+                                      SizedBox(width: 8),
+                                      Text(
+                                        hasLogo ? 'Replace Logo' : 'Choose Logo',
+                                        style: SacredTypography.labelSm(context).copyWith(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // Delete / Remove logo button overlay when hasLogo
+          if (hasLogo && !_isPicking)
+            Positioned(
+              top: 8,
+              right: 8,
+              child: GestureDetector(
+                onTap: () {
+                  widget.onLogoChanged(null);
+                },
+                child: Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.black54,
+                    shape: BoxShape.circle,
+                  ),
+                  padding: const EdgeInsets.all(4),
+                  child: const Icon(
+                    Icons.close,
+                    color: Colors.white,
+                    size: 16,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }

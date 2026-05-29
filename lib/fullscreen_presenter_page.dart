@@ -1,9 +1,22 @@
 import 'dart:ui';
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'settings_state.dart';
 import 'dashboard_page.dart'; // For SacredColors / Shadows / Typography
+
+/// Safely decode a base64 data-URL to bytes.
+Uint8List _decodeDataUrl(String dataUrl) {
+  try {
+    final uriData = Uri.parse(dataUrl).data;
+    if (uriData != null) return uriData.contentAsBytes();
+  } catch (_) {}
+  final commaIndex = dataUrl.indexOf(',');
+  if (commaIndex != -1) return base64Decode(dataUrl.substring(commaIndex + 1));
+  return Uint8List(0);
+}
 
 class FullscreenPresenterPage extends StatefulWidget {
   const FullscreenPresenterPage({super.key});
@@ -133,11 +146,17 @@ class _FullscreenPresenterPageState extends State<FullscreenPresenterPage> with 
                                       sigmaX: slide.blur,
                                       sigmaY: slide.blur,
                                     ),
-                                    child: Image.network(
-                                      slide.imageUrl,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (c, e, s) => Container(color: const Color(0xFF0F172A)),
-                                    ),
+                                    child: slide.imageUrl.startsWith('data:')
+                                        ? Image.memory(
+                                            _decodeDataUrl(slide.imageUrl),
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (c, e, s) => Container(color: const Color(0xFF0F172A)),
+                                          )
+                                        : Image.network(
+                                            slide.imageUrl,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (c, e, s) => Container(color: const Color(0xFF0F172A)),
+                                          ),
                                   ),
                           ),
 
@@ -219,6 +238,48 @@ class _FullscreenPresenterPageState extends State<FullscreenPresenterPage> with 
                               ),
                             ),
                           ),
+
+                          // Logo Layer — Positioned.fill is required so LayoutBuilder
+                          // receives actual canvas dimensions (not zero from Stack).
+                          if (slide.logoUrl != null && slide.logoUrl!.isNotEmpty)
+                            Positioned.fill(
+                              child: LayoutBuilder(
+                                builder: (context, constraints) {
+                                  final double w = constraints.maxWidth;
+                                  final double h = constraints.maxHeight;
+                                  final double logoSize = slide.logoSize;
+                                  final double scale = w / 960.0;
+                                  final double scaledLogoSize = (logoSize * scale).clamp(10.0, w);
+                                  final double left = (slide.logoX * w).clamp(0.0, w - scaledLogoSize);
+                                  final double top = (slide.logoY * h).clamp(0.0, h - scaledLogoSize);
+
+                                  return Stack(
+                                    children: [
+                                      Positioned(
+                                        left: left,
+                                        top: top,
+                                        width: scaledLogoSize,
+                                        height: scaledLogoSize,
+                                        child: ClipRRect(
+                                          borderRadius: BorderRadius.circular(4),
+                                          child: slide.logoUrl!.startsWith('data:')
+                                              ? Image.memory(
+                                                  _decodeDataUrl(slide.logoUrl!),
+                                                  fit: BoxFit.contain,
+                                                  errorBuilder: (c, e, s) => const SizedBox(),
+                                                )
+                                              : Image.network(
+                                                  slide.logoUrl!,
+                                                  fit: BoxFit.contain,
+                                                  errorBuilder: (c, e, s) => const SizedBox(),
+                                                ),
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                },
+                              ),
+                            ),
                         ],
                       ),
                     ),

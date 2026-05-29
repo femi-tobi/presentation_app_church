@@ -77,6 +77,10 @@ class SlideData {
   String transition;
   double titleFontSize;   // pt size for main title text
   double subtitleFontSize; // pt size for subtitle / quote text
+  String? logoUrl;        // logo image url / data-url
+  double logoX;           // relative X position (0.0 to 1.0)
+  double logoY;           // relative Y position (0.0 to 1.0)
+  double logoSize;        // size of logo in pixels
 
   SlideData({
     required this.id,
@@ -91,6 +95,10 @@ class SlideData {
     this.transition = 'Cross Dissolve',
     this.titleFontSize = 48.0,
     this.subtitleFontSize = 20.0,
+    this.logoUrl,
+    this.logoX = 0.85,
+    this.logoY = 0.05,
+    this.logoSize = 80.0,
   });
 
   Map<String, dynamic> toJson() {
@@ -107,6 +115,10 @@ class SlideData {
       'transition': transition,
       'titleFontSize': titleFontSize,
       'subtitleFontSize': subtitleFontSize,
+      'logoUrl': logoUrl,
+      'logoX': logoX,
+      'logoY': logoY,
+      'logoSize': logoSize,
     };
   }
 
@@ -127,6 +139,10 @@ class SlideData {
       transition: json['transition'] as String? ?? 'Cross Dissolve',
       titleFontSize: (json['titleFontSize'] as num?)?.toDouble() ?? 48.0,
       subtitleFontSize: (json['subtitleFontSize'] as num?)?.toDouble() ?? 20.0,
+      logoUrl: json['logoUrl'] as String?,
+      logoX: (json['logoX'] as num?)?.toDouble() ?? 0.85,
+      logoY: (json['logoY'] as num?)?.toDouble() ?? 0.05,
+      logoSize: (json['logoSize'] as num?)?.toDouble() ?? 80.0,
     );
   }
 }

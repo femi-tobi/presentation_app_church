@@ -73,6 +73,10 @@ class _ExportPageState extends State<ExportPage>
               subtitle: s.subtitle,
               titleFontSize: s.titleFontSize,
               subtitleFontSize: s.subtitleFontSize,
+              logoUrl: s.logoUrl,
+              logoX: s.logoX,
+              logoY: s.logoY,
+              logoSize: s.logoSize,
             ))
         .toList();
 

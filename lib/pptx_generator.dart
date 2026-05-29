@@ -11,7 +11,16 @@ class PptxGenerator {
   /// Builds the PPTX bytes for [slides] and triggers a browser download.
   /// [backgroundImageUrl] can be a data URL from the user's file picker.
   static void downloadPptx(
-    List<({String title, String subtitle, double titleFontSize, double subtitleFontSize})> slides,
+    List<({
+      String title,
+      String subtitle,
+      double titleFontSize,
+      double subtitleFontSize,
+      String? logoUrl,
+      double logoX,
+      double logoY,
+      double logoSize,
+    })> slides,
     String filename, {
     String? backgroundImageUrl,
     String? fontFamily,
@@ -29,7 +38,16 @@ class PptxGenerator {
   }
 
   static List<int> _buildPptx(
-    List<({String title, String subtitle, double titleFontSize, double subtitleFontSize})> slides,
+    List<({
+      String title,
+      String subtitle,
+      double titleFontSize,
+      double subtitleFontSize,
+      String? logoUrl,
+      double logoX,
+      double logoY,
+      double logoSize,
+    })> slides,
     String? backgroundImageUrl,
     String? fontFamily,
   ) {
@@ -70,6 +88,47 @@ class PptxGenerator {
       ));
     }
 
+    // ── Try to extract logo image bytes from a data: URL ──────────────────
+    Uint8List? logoBytes;
+    String logoExt = 'png';
+    String logoMimeType = 'image/png';
+    bool hasLogo = false;
+
+    // Find the first slide that has a valid logo data URL
+    final slideWithLogo = slides.firstWhere(
+      (s) => s.logoUrl != null && s.logoUrl!.startsWith('data:'),
+      orElse: () => slides.first,
+    );
+
+    if (slideWithLogo.logoUrl != null && slideWithLogo.logoUrl!.startsWith('data:')) {
+      try {
+        final data = UriData.parse(slideWithLogo.logoUrl!);
+        logoBytes = Uint8List.fromList(data.contentAsBytes());
+        logoMimeType = data.mimeType;
+        if (logoMimeType.contains('jpeg') || logoMimeType.contains('jpg')) {
+          logoExt = 'jpeg';
+        } else if (logoMimeType.contains('png')) {
+          logoExt = 'png';
+        } else if (logoMimeType.contains('gif')) {
+          logoExt = 'gif';
+        } else if (logoMimeType.contains('webp')) {
+          logoExt = 'webp';
+        }
+        hasLogo = true;
+      } catch (_) {
+        hasLogo = false;
+      }
+    }
+
+    // ── Add the logo binary to the archive ────────────────────────────────
+    if (hasLogo && logoBytes != null) {
+      archive.addFile(ArchiveFile(
+        'ppt/media/logo.$logoExt',
+        logoBytes.length,
+        logoBytes,
+      ));
+    }
+
     // ── Standard PPTX skeleton ───────────────────────────────────────────
     final font = (fontFamily != null && fontFamily.isNotEmpty) ? fontFamily : 'Montserrat';
     _add(archive, '[Content_Types].xml', _contentTypes(slides.length, hasImage ? imageExt : null, hasImage ? imageMimeType : null));
@@ -90,8 +149,27 @@ class PptxGenerator {
       // Convert app font size (points) → OOXML hundredths-of-a-point
       final int titleSz = (s.titleFontSize * 100).round();
       final int subtitleSz = (s.subtitleFontSize * 100).round();
-      _add(archive, 'ppt/slides/slide$n.xml', _slideXml(s.title, s.subtitle, titleSz, subtitleSz, hasImage, font));
-      _add(archive, 'ppt/slides/_rels/slide$n.xml.rels', _slideRels(hasImage, hasImage ? imageExt : null));
+
+      final bool renderLogo = hasLogo && s.logoUrl != null && s.logoUrl!.isNotEmpty;
+
+      _add(archive, 'ppt/slides/slide$n.xml', _slideXml(
+        s.title,
+        s.subtitle,
+        titleSz,
+        subtitleSz,
+        hasImage,
+        font,
+        hasLogo: renderLogo,
+        logoX: s.logoX,
+        logoY: s.logoY,
+        logoSize: s.logoSize,
+      ));
+      _add(archive, 'ppt/slides/_rels/slide$n.xml.rels', _slideRels(
+        hasImage,
+        hasImage ? imageExt : null,
+        renderLogo,
+        logoExt,
+      ));
     }
 
     return ZipEncoder().encode(archive)!;
@@ -110,15 +188,15 @@ class PptxGenerator {
       (i) => '<Override PartName="/ppt/slides/slide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>',
     ).join('\n');
 
-    final imageDefault = (imageExt != null && imageMime != null)
-        ? '<Default Extension="$imageExt" ContentType="$imageMime"/>'
-        : '';
-
     return '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
   <Default Extension="xml" ContentType="application/xml"/>
-  $imageDefault
+  <Default Extension="png" ContentType="image/png"/>
+  <Default Extension="jpeg" ContentType="image/jpeg"/>
+  <Default Extension="jpg" ContentType="image/jpeg"/>
+  <Default Extension="gif" ContentType="image/gif"/>
+  <Default Extension="webp" ContentType="image/webp"/>
   <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
   <Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>
   <Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>
@@ -277,21 +355,36 @@ $slideEntries
 </Relationships>''';
 
   /// Slide relationships — includes image reference when a background is embedded.
-  static String _slideRels(bool hasImage, String? imageExt) {
+  static String _slideRels(bool hasImage, String? imageExt, bool hasLogo, String? logoExt) {
     final imageRel = hasImage
         ? '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.$imageExt"/>'
+        : '';
+    final logoRel = hasLogo
+        ? '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/logo.$logoExt"/>'
         : '';
     return '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
   $imageRel
+  $logoRel
 </Relationships>''';
   }
 
   /// Each slide: dark-purple gradient OR embedded image background,
   /// title centred in large white text, subtitle in smaller italic white text.
   /// [titleSz] and [subtitleSz] are in OOXML hundredths-of-a-point.
-  static String _slideXml(String title, String subtitle, int titleSz, int subtitleSz, bool hasImage, String font) {
+  static String _slideXml(
+    String title,
+    String subtitle,
+    int titleSz,
+    int subtitleSz,
+    bool hasImage,
+    String font, {
+    bool hasLogo = false,
+    double logoX = 0.85,
+    double logoY = 0.05,
+    double logoSize = 80.0,
+  }) {
     String esc(String s) => s
         .replaceAll('&', '&amp;')
         .replaceAll('<', '&lt;')
@@ -316,6 +409,41 @@ $slideEntries
         </a:solidFill>
       </p:bgPr>
     </p:bg>''';
+
+    // Compute logo coordinates and size in EMUs (based on 960px design canvas width)
+    final int cx = (logoSize * 9525).round();
+    final int cy = cx;
+    final int x = (logoX * 9144000).round().clamp(0, 9144000 - cx);
+    final int y = (logoY * 5143500).round().clamp(0, 5143500 - cy);
+
+    final String logoXml = hasLogo
+        ? '''
+      <!-- Slide logo picture -->
+      <p:pic>
+        <p:nvPicPr>
+          <p:cNvPr id="10" name="Slide Logo"/>
+          <p:cNvPicPr>
+            <a:picLocks noChangeAspect="1"/>
+          </p:cNvPicPr>
+          <p:nvPr/>
+        </p:nvPicPr>
+        <p:blipFill>
+          <a:blip r:embed="rId3"/>
+          <a:stretch>
+            <a:fillRect/>
+          </a:stretch>
+        </p:blipFill>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="$x" y="$y"/>
+            <a:ext cx="$cx" cy="$cy"/>
+          </a:xfrm>
+          <a:prstGeom prst="rect">
+            <a:avLst/>
+          </a:prstGeom>
+        </p:spPr>
+      </p:pic>'''
+        : '';
 
     return '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
@@ -402,6 +530,7 @@ $slideEntries
           </a:p>
         </p:txBody>
       </p:sp>
+      $logoXml
 
     </p:spTree>
   </p:cSld>
