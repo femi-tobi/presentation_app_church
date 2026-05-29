@@ -334,7 +334,7 @@ class SacredSidebar extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'SacredSlides',
+                        'Live Deck',
                         style: SacredTypography.headlineMd(context).copyWith(
                           color: SacredColors.primary,
                           fontWeight: FontWeight.bold,

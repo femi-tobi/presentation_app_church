@@ -6,8 +6,8 @@ import 'settings_state.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Disable runtime fetching of Google Fonts to prevent exceptions in offline or CORS-restricted web environments.
-  GoogleFonts.config.allowRuntimeFetching = false;
+  // Enable runtime fetching of Google Fonts to load fonts dynamically when online
+  GoogleFonts.config.allowRuntimeFetching = true;
   
   await AppSettings.instance.loadSettings();
   runApp(const MyApp());
@@ -23,7 +23,7 @@ class MyApp extends StatelessWidget {
       builder: (context, child) {
         final settings = AppSettings.instance;
         return MaterialApp(
-          title: 'SacredSlides',
+          title: 'LiveDeck',
           debugShowCheckedModeBanner: false,
           themeMode: settings.isDarkMode ? ThemeMode.dark : ThemeMode.light,
           theme: ThemeData(

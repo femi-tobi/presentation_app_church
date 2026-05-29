@@ -493,7 +493,7 @@ class _EditorNavBar extends StatelessWidget {
               ),
               SizedBox(width: 8),
               Text(
-                'SacredSlides',
+                'Live Deck',
                 style: SacredTypography.headlineMd(context).copyWith(
                   color: SacredColors.primary,
                   fontWeight: FontWeight.bold,
@@ -764,14 +764,16 @@ class _SlideThumbnailCardState extends State<_SlideThumbnailCard> {
                             colorFilter: renderFullColor
                                 ? const ColorFilter.mode(Colors.transparent, BlendMode.multiply)
                                 : const ColorFilter.matrix(grayscaleMatrix),
-                            child: Image.network(
-                              widget.slide.imageUrl,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, e, s) => Container(
-                                color: SacredColors.surfaceContainerHigh,
-                                child: Icon(Icons.image, color: SacredColors.primary),
-                              ),
-                            ),
+                            child: widget.slide.imageUrl.isEmpty
+                                ? Container(color: Colors.black)
+                                : Image.network(
+                                    widget.slide.imageUrl,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, e, s) => Container(
+                                      color: SacredColors.surfaceContainerHigh,
+                                      child: Icon(Icons.image, color: SacredColors.primary),
+                                    ),
+                                  ),
                           ),
                         ),
                       ),
@@ -874,39 +876,42 @@ class _LiveWorkspaceCanvas extends StatelessWidget {
                         children: [
                           // Background Image Layer with custom opacity and live blurs
                           Positioned.fill(
-                            child: ImageFiltered(
-                              imageFilter: ImageFilter.blur(
-                                sigmaX: activeSlide.blur,
-                                sigmaY: activeSlide.blur,
-                              ),
-                              child: Image.network(
-                                activeSlide.imageUrl,
-                                fit: BoxFit.cover,
-                                errorBuilder: (c, e, s) => Container(color: SacredColors.surfaceContainerHighest),
-                              ),
-                            ),
+                            child: activeSlide.imageUrl.isEmpty
+                                ? Container(color: Colors.black)
+                                : ImageFiltered(
+                                    imageFilter: ImageFilter.blur(
+                                      sigmaX: activeSlide.blur,
+                                      sigmaY: activeSlide.blur,
+                                    ),
+                                    child: Image.network(
+                                      activeSlide.imageUrl,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (c, e, s) => Container(color: SacredColors.surfaceContainerHighest),
+                                    ),
+                                  ),
                           ),
 
                           // Translucent overlay blending
-                          Positioned.fill(
-                            child: Container(
-                              color: Colors.black.withValues(alpha: 1.0 - activeSlide.opacity),
+                          if (activeSlide.imageUrl.isNotEmpty)
+                            Positioned.fill(
+                              child: Container(
+                                color: Colors.black.withValues(alpha: 1.0 - activeSlide.opacity),
+                              ),
                             ),
-                          ),
 
                           // Purple spiritual overlay blending
-                          Positioned.fill(
-                            child: Container(
-                              color: SacredColors.primary.withValues(alpha: 0.20),
+                          if (activeSlide.imageUrl.isNotEmpty)
+                            Positioned.fill(
+                              child: Container(
+                                color: SacredColors.primary.withValues(alpha: 0.20),
+                              ),
                             ),
-                          ),
 
                           // Typography Text Elements
                           Positioned.fill(
                             child: Padding(
                               padding: EdgeInsets.symmetric(horizontal: 48.0, vertical: 32.0),
                               child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
                                 crossAxisAlignment: CrossAxisAlignment.center,
                                 children: [
                                   Text(
@@ -938,22 +943,25 @@ class _LiveWorkspaceCanvas extends StatelessWidget {
                                       borderRadius: BorderRadius.circular(999),
                                     ),
                                   ),
-                                  SizedBox(height: 20),
-                                  Text(
-                                    activeSlide.subtitle,
-                                    textAlign: activeSlide.alignment,
-                                    style: GoogleFonts.inter(
-                                      textStyle: TextStyle(
-                                        fontSize: activeSlide.subtitleFontSize,
-                                        color: Colors.white.withValues(alpha: 0.9),
-                                        fontStyle: FontStyle.italic,
-                                        shadows: const [
-                                          Shadow(
-                                            color: Colors.black45,
-                                            offset: Offset(0, 2),
-                                            blurRadius: 6,
+                                  Expanded(
+                                    child: Center(
+                                      child: Text(
+                                        activeSlide.subtitle,
+                                        textAlign: activeSlide.alignment,
+                                        style: GoogleFonts.inter(
+                                          textStyle: TextStyle(
+                                            fontSize: activeSlide.subtitleFontSize,
+                                            color: Colors.white.withValues(alpha: 0.9),
+                                            fontStyle: FontStyle.italic,
+                                            shadows: const [
+                                              Shadow(
+                                                color: Colors.black45,
+                                                offset: Offset(0, 2),
+                                                blurRadius: 6,
+                                              ),
+                                            ],
                                           ),
-                                        ],
+                                        ),
                                       ),
                                     ),
                                   ),

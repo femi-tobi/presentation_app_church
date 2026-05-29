@@ -126,39 +126,42 @@ class _FullscreenPresenterPageState extends State<FullscreenPresenterPage> with 
                         children: [
                           // Background Image Layer with Blur
                           Positioned.fill(
-                            child: ImageFiltered(
-                              imageFilter: ImageFilter.blur(
-                                sigmaX: slide.blur,
-                                sigmaY: slide.blur,
-                              ),
-                              child: Image.network(
-                                slide.imageUrl,
-                                fit: BoxFit.cover,
-                                errorBuilder: (c, e, s) => Container(color: const Color(0xFF0F172A)),
-                              ),
-                            ),
+                            child: slide.imageUrl.isEmpty
+                                ? Container(color: Colors.black)
+                                : ImageFiltered(
+                                    imageFilter: ImageFilter.blur(
+                                      sigmaX: slide.blur,
+                                      sigmaY: slide.blur,
+                                    ),
+                                    child: Image.network(
+                                      slide.imageUrl,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (c, e, s) => Container(color: const Color(0xFF0F172A)),
+                                    ),
+                                  ),
                           ),
 
                           // Translucent overlay blending
-                          Positioned.fill(
-                            child: Container(
-                              color: Colors.black.withValues(alpha: 1.0 - slide.opacity),
+                          if (slide.imageUrl.isNotEmpty)
+                            Positioned.fill(
+                              child: Container(
+                                color: Colors.black.withValues(alpha: 1.0 - slide.opacity),
+                              ),
                             ),
-                          ),
 
                           // Spiritual purple overlay blending
-                          Positioned.fill(
-                            child: Container(
-                              color: SacredColors.primary.withValues(alpha: 0.20),
+                          if (slide.imageUrl.isNotEmpty)
+                            Positioned.fill(
+                              child: Container(
+                                color: SacredColors.primary.withValues(alpha: 0.20),
+                              ),
                             ),
-                          ),
 
                           // Content Layer
                           Positioned.fill(
                             child: Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 80.0, vertical: 48.0),
                               child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
                                 crossAxisAlignment: CrossAxisAlignment.center,
                                 children: [
                                   Text(
@@ -190,22 +193,25 @@ class _FullscreenPresenterPageState extends State<FullscreenPresenterPage> with 
                                       borderRadius: BorderRadius.circular(999),
                                     ),
                                   ),
-                                  const SizedBox(height: 28),
-                                  Text(
-                                    slide.subtitle,
-                                    textAlign: slide.alignment,
-                                    style: GoogleFonts.inter(
-                                      textStyle: TextStyle(
-                                        fontSize: 28,
-                                        color: Colors.white.withValues(alpha: 0.9),
-                                        fontStyle: FontStyle.italic,
-                                        shadows: const [
-                                          Shadow(
-                                            color: Colors.black54,
-                                            offset: Offset(0, 4),
-                                            blurRadius: 8,
+                                  Expanded(
+                                    child: Center(
+                                      child: Text(
+                                        slide.subtitle,
+                                        textAlign: slide.alignment,
+                                        style: GoogleFonts.inter(
+                                          textStyle: TextStyle(
+                                            fontSize: 28,
+                                            color: Colors.white.withValues(alpha: 0.9),
+                                            fontStyle: FontStyle.italic,
+                                            shadows: const [
+                                              Shadow(
+                                                color: Colors.black54,
+                                                offset: Offset(0, 4),
+                                                blurRadius: 8,
+                                              ),
+                                            ],
                                           ),
-                                        ],
+                                        ),
                                       ),
                                     ),
                                   ),

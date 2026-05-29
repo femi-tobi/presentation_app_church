@@ -566,11 +566,11 @@ class _LibraryCardState extends State<_LibraryCard> {
     }
     
     final List<SlideData> slides = [];
-    const String sharedBg = 'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?w=1280&q=80';
+    const String sharedBg = '';
     
-    // Default font sizes for hymns (larger by default)
-    const double hymnTitleFontSize = 54.0;
-    const double hymnSubtitleFontSize = 36.0;
+    // Default font sizes for hymns (titles like 'Verse 1' smaller, lyrics larger)
+    const double hymnTitleFontSize = 24.0;
+    const double hymnSubtitleFontSize = 48.0;
     
     for (int i = 0; i < versesChunks.length; i++) {
       final verseNum = i + 1;
@@ -699,6 +699,7 @@ class _LibraryCardState extends State<_LibraryCard> {
   @override
   Widget build(BuildContext context) {
     final bool isTextItem = widget.item.imageUrl.isEmpty;
+    final bool isSong = widget.item.category == 'Songs';
 
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
@@ -707,12 +708,12 @@ class _LibraryCardState extends State<_LibraryCard> {
         duration: const Duration(milliseconds: 250),
         curve: Curves.easeInOut,
         decoration: BoxDecoration(
-          color: SacredColors.surface.withValues(alpha: 0.7),
+          color: isSong ? Colors.black : SacredColors.surface.withValues(alpha: 0.7),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: _isHovered
                 ? widget.primaryColor.withValues(alpha: 0.5)
-                : SacredColors.outlineVariant.withValues(alpha: 0.5),
+                : (isSong ? Colors.white24 : SacredColors.outlineVariant.withValues(alpha: 0.5)),
             width: 1.0,
           ),
           boxShadow: _isHovered ? SacredShadows.sacred : null,
@@ -729,17 +730,17 @@ class _LibraryCardState extends State<_LibraryCard> {
                     Positioned.fill(
                       child: isTextItem
                           ? Container(
-                              color: SacredColors.surfaceContainerLow,
+                              color: isSong ? const Color(0xFF0F0F14) : SacredColors.surfaceContainerLow,
                               padding: const EdgeInsets.all(16),
                               child: Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  Icon(Icons.description_outlined, size: 40, color: widget.primaryColor.withValues(alpha: 0.7)),
+                                  Icon(Icons.description_outlined, size: 40, color: isSong ? Colors.white60 : widget.primaryColor.withValues(alpha: 0.7)),
                                   const SizedBox(height: 8),
                                   Text(
                                     'SCRIPTURE/SONG',
                                     style: SacredTypography.labelSm(context).copyWith(
-                                      color: SacredColors.outline,
+                                      color: isSong ? Colors.white54 : SacredColors.outline,
                                       fontWeight: FontWeight.bold,
                                       letterSpacing: 1.0,
                                     ),
@@ -881,7 +882,7 @@ class _LibraryCardState extends State<_LibraryCard> {
                     Text(
                       widget.item.title,
                       style: SacredTypography.bodyMd(context).copyWith(
-                        color: SacredColors.onSurface,
+                        color: isSong ? Colors.white : SacredColors.onSurface,
                         fontWeight: FontWeight.bold,
                       ),
                       maxLines: 1,
@@ -891,7 +892,7 @@ class _LibraryCardState extends State<_LibraryCard> {
                     Text(
                       widget.item.metadata,
                       style: SacredTypography.labelSm(context).copyWith(
-                        color: SacredColors.onSurfaceVariant,
+                        color: isSong ? Colors.white70 : SacredColors.onSurfaceVariant,
                       ),
                     ),
                   ],

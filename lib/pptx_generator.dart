@@ -71,7 +71,7 @@ class PptxGenerator {
     }
 
     // ── Standard PPTX skeleton ───────────────────────────────────────────
-    final font = (fontFamily != null && fontFamily.isNotEmpty) ? fontFamily : 'Libre Caslon Text';
+    final font = (fontFamily != null && fontFamily.isNotEmpty) ? fontFamily : 'Montserrat';
     _add(archive, '[Content_Types].xml', _contentTypes(slides.length, hasImage ? imageExt : null, hasImage ? imageMimeType : null));
     _add(archive, '_rels/.rels', _rootRels());
     _add(archive, 'docProps/app.xml', _appXml(slides.length));
@@ -138,7 +138,7 @@ $slideEntries
 
   static String _appXml(int slideCount) => '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties">
-  <Application>SacredSlides</Application>
+  <Application>LiveDeck</Application>
   <Slides>$slideCount</Slides>
 </Properties>''';
 
@@ -149,7 +149,7 @@ $slideEntries
   xmlns:dc="http://purl.org/dc/elements/1.1/"
   xmlns:dcterms="http://purl.org/dc/terms/"
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-  <dc:creator>SacredSlides</dc:creator>
+  <dc:creator>LiveDeck</dc:creator>
   <dcterms:created xsi:type="dcterms:W3CDTF">$now</dcterms:created>
   <dcterms:modified xsi:type="dcterms:W3CDTF">$now</dcterms:modified>
 </cp:coreProperties>''';
@@ -239,7 +239,7 @@ $slideEntries
   xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
   xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <p:cSld>
-    <p:bg><p:bgPr><a:solidFill><a:srgbClr val="1a0030"/></a:solidFill></p:bgPr></p:bg>
+    <p:bg><p:bgPr><a:solidFill><a:srgbClr val="000000"/></a:solidFill></p:bgPr></p:bg>
     <p:spTree>
       <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
       <p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>
@@ -299,7 +299,7 @@ $slideEntries
         .replaceAll('"', '&quot;')
         .replaceAll("'", '&apos;');
 
-    // Background: use embedded image if available, otherwise gradient
+    // Background: use embedded image if available, otherwise solid black
     final String bgXml = hasImage
         ? '''<p:bg>
       <p:bgPr>
@@ -311,13 +311,9 @@ $slideEntries
     </p:bg>'''
         : '''<p:bg>
       <p:bgPr>
-        <a:gradFill>
-          <a:gsLst>
-            <a:gs pos="0"><a:srgbClr val="1a0030"/></a:gs>
-            <a:gs pos="100000"><a:srgbClr val="2E0052"/></a:gs>
-          </a:gsLst>
-          <a:lin ang="5400000" scaled="0"/>
-        </a:gradFill>
+        <a:solidFill>
+          <a:srgbClr val="000000"/>
+        </a:solidFill>
       </p:bgPr>
     </p:bg>''';
 
@@ -339,7 +335,7 @@ $slideEntries
           <p:nvPr/>
         </p:nvSpPr>
         <p:spPr>
-          <a:xfrm><a:off x="457200" y="1600000"/><a:ext cx="8229600" cy="1143000"/></a:xfrm>
+          <a:xfrm><a:off x="457200" y="400000"/><a:ext cx="8229600" cy="600000"/></a:xfrm>
           <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
           <a:noFill/>
         </p:spPr>
@@ -372,7 +368,7 @@ $slideEntries
           <p:nvPr/>
         </p:nvSpPr>
         <p:spPr>
-          <a:xfrm><a:off x="4118400" y="2800000"/><a:ext cx="914400" cy="50800"/></a:xfrm>
+          <a:xfrm><a:off x="4118400" y="1100000"/><a:ext cx="914400" cy="50800"/></a:xfrm>
           <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
           <a:solidFill><a:srgbClr val="A78BFA"/></a:solidFill>
         </p:spPr>
@@ -387,19 +383,19 @@ $slideEntries
           <p:nvPr/>
         </p:nvSpPr>
         <p:spPr>
-          <a:xfrm><a:off x="457200" y="2900000"/><a:ext cx="8229600" cy="800000"/></a:xfrm>
+          <a:xfrm><a:off x="457200" y="1350000"/><a:ext cx="8229600" cy="3400000"/></a:xfrm>
           <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
           <a:noFill/>
         </p:spPr>
         <p:txBody>
-          <a:bodyPr vert="horz" anchor="t"/>
+          <a:bodyPr vert="horz" anchor="ctr"/>
           <a:lstStyle/>
           <a:p>
             <a:pPr algn="ctr"/>
             <a:r>
-              <a:rPr lang="en-US" sz="$subtitleSz" b="0" i="1" dirty="0">
-                <a:solidFill><a:srgbClr val="E0D4FF"/></a:solidFill>
-                <a:latin typeface="Inter"/>
+              <a:rPr lang="en-US" sz="$subtitleSz" b="1" i="0" dirty="0">
+                <a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>
+                <a:latin typeface="$font"/>
               </a:rPr>
               <a:t>${esc(subtitle)}</a:t>
             </a:r>

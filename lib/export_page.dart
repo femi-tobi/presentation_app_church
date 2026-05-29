@@ -83,7 +83,7 @@ class _ExportPageState extends State<ExportPage>
     // Generate & trigger browser download
     PptxGenerator.downloadPptx(
       slides,
-      'SacredSlides_Presentation',
+      'LiveDeck_Presentation',
       backgroundImageUrl: bgImageUrl,
       fontFamily: AppSettings.instance.fontFamily,
     );
@@ -207,7 +207,7 @@ class _ExportNavBar extends StatelessWidget {
             child: MouseRegion(
               cursor: SystemMouseCursors.click,
               child: Text(
-                'SacredSlides',
+                'Live Deck',
                 style: SacredTypography.headlineMd(context).copyWith(
                   color: SacredColors.primary,
                   fontWeight: FontWeight.bold,
