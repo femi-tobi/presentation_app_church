@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'dashboard_page.dart';
 import 'settings_state.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Disable runtime fetching of Google Fonts to prevent exceptions in offline or CORS-restricted web environments.
+  GoogleFonts.config.allowRuntimeFetching = false;
+  
   await AppSettings.instance.loadSettings();
   runApp(const MyApp());
 }

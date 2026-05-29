@@ -538,8 +538,8 @@ class _LibraryCardState extends State<_LibraryCard> {
   List<SlideData> parseHymnToSlides(String content, String title) {
     final rawStanzas = content.split(RegExp(r'(?:\r?\n){2,}'));
     
-    final List<String> verses = [];
-    String? chorus;
+    final List<List<String>> versesChunks = [];
+    List<String>? chorusChunks;
     
     for (final rawStanza in rawStanzas) {
       final lines = rawStanza.split('\n');
@@ -547,39 +547,60 @@ class _LibraryCardState extends State<_LibraryCard> {
       if (trimmedLines.every((l) => l.trim().isEmpty)) continue;
       
       final bool isIndented = lines.any((l) => l.startsWith(' ') || l.startsWith('\t'));
-      final cleanedStanzaText = trimmedLines.map((l) => l.trim()).where((l) => l.isNotEmpty).join('\n');
+      final cleanedLines = trimmedLines.map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
       
-      if (cleanedStanzaText.isEmpty) continue;
+      if (cleanedLines.isEmpty) continue;
+      
+      // Split this stanza's lines into 2-line chunks
+      final List<String> chunks = [];
+      for (int i = 0; i < cleanedLines.length; i += 2) {
+        final end = (i + 2 < cleanedLines.length) ? i + 2 : cleanedLines.length;
+        chunks.add(cleanedLines.sublist(i, end).join('\n'));
+      }
       
       if (isIndented) {
-        chorus = cleanedStanzaText;
+        chorusChunks = chunks;
       } else {
-        verses.add(cleanedStanzaText);
+        versesChunks.add(chunks);
       }
     }
     
     final List<SlideData> slides = [];
     const String sharedBg = 'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?w=1280&q=80';
     
-    for (int i = 0; i < verses.length; i++) {
-      slides.add(SlideData(
-        id: '${slides.length + 1}'.padLeft(2, '0'),
-        title: 'Verse ${i + 1}',
-        subtitle: verses[i],
-        imageUrl: sharedBg,
-        opacity: 0.80,
-        blur: 8.0,
-      ));
-      
-      if (chorus != null) {
+    // Default font sizes for hymns (larger by default)
+    const double hymnTitleFontSize = 54.0;
+    const double hymnSubtitleFontSize = 36.0;
+    
+    for (int i = 0; i < versesChunks.length; i++) {
+      final verseNum = i + 1;
+      final chunks = versesChunks[i];
+      for (final chunk in chunks) {
         slides.add(SlideData(
           id: '${slides.length + 1}'.padLeft(2, '0'),
-          title: 'Chorus',
-          subtitle: chorus,
+          title: 'Verse $verseNum',
+          subtitle: chunk,
           imageUrl: sharedBg,
           opacity: 0.80,
           blur: 8.0,
+          titleFontSize: hymnTitleFontSize,
+          subtitleFontSize: hymnSubtitleFontSize,
         ));
+      }
+      
+      if (chorusChunks != null) {
+        for (final chunk in chorusChunks) {
+          slides.add(SlideData(
+            id: '${slides.length + 1}'.padLeft(2, '0'),
+            title: 'Chorus',
+            subtitle: chunk,
+            imageUrl: sharedBg,
+            opacity: 0.80,
+            blur: 8.0,
+            titleFontSize: hymnTitleFontSize,
+            subtitleFontSize: hymnSubtitleFontSize,
+          ));
+        }
       }
     }
     
@@ -591,6 +612,8 @@ class _LibraryCardState extends State<_LibraryCard> {
         imageUrl: sharedBg,
         opacity: 0.80,
         blur: 8.0,
+        titleFontSize: hymnTitleFontSize,
+        subtitleFontSize: hymnSubtitleFontSize,
       ));
     }
     
