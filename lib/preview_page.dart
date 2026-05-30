@@ -43,6 +43,31 @@ class _PreviewPageState extends State<PreviewPage> {
   int _mobileSelectedTab = 1; // 0: Slides Outline, 1: Live Canvas, 2: Properties
   late TextEditingController _titleController;
   late TextEditingController _subtitleController;
+  bool _applyToAll = false;
+
+  void _applyActiveStylesToAll() {
+    if (_slides.isEmpty) return;
+    final active = _slides[_activeSlideIndex];
+    for (final slide in _slides) {
+      if (slide.id == active.id) continue;
+      slide.imageUrl = active.imageUrl;
+      slide.bgColorValue = active.bgColorValue;
+      slide.opacity = active.opacity;
+      slide.blur = active.blur;
+      slide.isBold = active.isBold;
+      slide.isItalic = active.isItalic;
+      slide.alignment = active.alignment;
+      slide.transition = active.transition;
+      slide.titleFontSize = active.titleFontSize;
+      slide.subtitleFontSize = active.subtitleFontSize;
+      slide.logoUrl = active.logoUrl;
+      slide.logoX = active.logoX;
+      slide.logoY = active.logoY;
+      slide.logoSize = active.logoSize;
+      slide.textX = active.textX;
+      slide.textY = active.textY;
+    }
+  }
 
   @override
   void initState() {
@@ -458,17 +483,22 @@ class _PreviewPageState extends State<PreviewPage> {
   }
 
   void _onSlideChanged() {
-    setState(() {});
+    setState(() {
+      if (_applyToAll) {
+        _applyActiveStylesToAll();
+      }
+    });
     AppSettings.instance.updateActiveSlides(_slides);
     _saveToRecentList();
   }
 
-  /// Called when the user picks a new image — applies it to ALL slides.
-  void _onAllSlidesImageChanged(String dataUrl) {
+  /// Called when the user picks a new image.
+  void _onSlideImageChanged(String dataUrl) {
     setState(() {
-      for (final slide in _slides) {
-        slide.imageUrl = dataUrl;
-        slide.bgColorValue = 0xFF000000;
+      _slides[_activeSlideIndex].imageUrl = dataUrl;
+      _slides[_activeSlideIndex].bgColorValue = 0xFF000000;
+      if (_applyToAll) {
+        _applyActiveStylesToAll();
       }
     });
     AppSettings.instance.updateActiveSlides(_slides);
@@ -477,8 +507,9 @@ class _PreviewPageState extends State<PreviewPage> {
 
   void _onLogoChanged(String? newLogo) {
     setState(() {
-      for (final slide in _slides) {
-        slide.logoUrl = newLogo;
+      _slides[_activeSlideIndex].logoUrl = newLogo;
+      if (_applyToAll) {
+        _applyActiveStylesToAll();
       }
     });
     AppSettings.instance.updateActiveSlides(_slides);
@@ -487,8 +518,9 @@ class _PreviewPageState extends State<PreviewPage> {
 
   void _onLogoSizeChanged(double val) {
     setState(() {
-      for (final slide in _slides) {
-        slide.logoSize = val;
+      _slides[_activeSlideIndex].logoSize = val;
+      if (_applyToAll) {
+        _applyActiveStylesToAll();
       }
     });
     AppSettings.instance.updateActiveSlides(_slides);
@@ -675,16 +707,38 @@ class _PreviewPageState extends State<PreviewPage> {
                           onSlideChanged: _onSlideChanged,
                           onDuplicate: _duplicateSlide,
                           onDelete: _removeSlide,
-                          onAllSlidesImageChanged: _onAllSlidesImageChanged,
+                          onAllSlidesImageChanged: _onSlideImageChanged,
                           onLogoChanged: _onLogoChanged,
                           onLogoSizeChanged: _onLogoSizeChanged,
                           onBgColorChanged: (color) {
                             setState(() {
                               activeSlide.bgColorValue = color.value;
                               activeSlide.imageUrl = "";
+                              if (_applyToAll) {
+                                _applyActiveStylesToAll();
+                              }
                             });
                             AppSettings.instance.updateActiveSlides(_slides);
                             _saveToRecentList();
+                          },
+                          applyToAll: _applyToAll,
+                          onApplyToAllChanged: (val) {
+                            setState(() {
+                              _applyToAll = val;
+                            });
+                          },
+                          onApplyStylesToAllPressed: () {
+                            setState(() {
+                              _applyActiveStylesToAll();
+                            });
+                            AppSettings.instance.updateActiveSlides(_slides);
+                            _saveToRecentList();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: const Text('Applied current style to all slides.'),
+                                backgroundColor: SacredColors.primary,
+                              ),
+                            );
                           },
                         ))
                   : _LiveWorkspaceCanvas(
@@ -698,9 +752,10 @@ class _PreviewPageState extends State<PreviewPage> {
                       },
                       onLogoPositionChanged: (x, y) {
                         setState(() {
-                          for (final slide in _slides) {
-                            slide.logoX = x;
-                            slide.logoY = y;
+                          activeSlide.logoX = x;
+                          activeSlide.logoY = y;
+                          if (_applyToAll) {
+                            _applyActiveStylesToAll();
                           }
                         });
                         AppSettings.instance.updateActiveSlides(_slides);
@@ -708,9 +763,11 @@ class _PreviewPageState extends State<PreviewPage> {
                       },
                       onTextPositionChanged: (x, y) {
                         setState(() {
-                          final slide = _slides[_activeSlideIndex];
-                          slide.textX = x;
-                          slide.textY = y;
+                          activeSlide.textX = x;
+                          activeSlide.textY = y;
+                          if (_applyToAll) {
+                            _applyActiveStylesToAll();
+                          }
                         });
                         AppSettings.instance.updateActiveSlides(_slides);
                         _saveToRecentList();
@@ -727,16 +784,38 @@ class _PreviewPageState extends State<PreviewPage> {
                 onSlideChanged: _onSlideChanged,
                 onDuplicate: _duplicateSlide,
                 onDelete: _removeSlide,
-                onAllSlidesImageChanged: _onAllSlidesImageChanged,
+                onAllSlidesImageChanged: _onSlideImageChanged,
                 onLogoChanged: _onLogoChanged,
                 onLogoSizeChanged: _onLogoSizeChanged,
                 onBgColorChanged: (color) {
                   setState(() {
                     activeSlide.bgColorValue = color.value;
                     activeSlide.imageUrl = "";
+                    if (_applyToAll) {
+                      _applyActiveStylesToAll();
+                    }
                   });
                   AppSettings.instance.updateActiveSlides(_slides);
                   _saveToRecentList();
+                },
+                applyToAll: _applyToAll,
+                onApplyToAllChanged: (val) {
+                  setState(() {
+                    _applyToAll = val;
+                  });
+                },
+                onApplyStylesToAllPressed: () {
+                  setState(() {
+                    _applyActiveStylesToAll();
+                  });
+                  AppSettings.instance.updateActiveSlides(_slides);
+                  _saveToRecentList();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: const Text('Applied current style to all slides.'),
+                      backgroundColor: SacredColors.primary,
+                    ),
+                  );
                 },
               ),
           ],
@@ -888,11 +967,18 @@ class _EditorNavBar extends StatelessWidget {
                 height: 32,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  image: DecorationImage(
-                    image: NetworkImage(
-                      'https://lh3.googleusercontent.com/aida-public/AB6AXuDY8LRvDsvImHRP9Eyjn2RGwg022ZHM4FoVMPdZnT2fyViMfbS8ohEhylRVfHmoHu1kyC_q_cBcLEx1NXiT-G3waNAarbu9q6pUPn_mowxq46gdELRL_s56PZetoJLTB4lHkX0N7uLdQUD72S2aNL_8wPQOr2OaNCVxquY0YoIQmH6OoY8xIjP48hbEJbHCa-qwHGOjeERQchb1gcWp_88oyubY1UaIpPceFAOfQ8vdglZkwGaa1FVK_2EMqQ1kpZ3yKGCVrqzAd5qA',
-                    ),
+                  border: Border.all(color: SacredColors.outlineVariant, width: 1),
+                ),
+                child: ClipOval(
+                  child: Image.network(
+                    'https://lh3.googleusercontent.com/aida-public/AB6AXuDY8LRvDsvImHRP9Eyjn2RGwg022ZHM4FoVMPdZnT2fyViMfbS8ohEhylRVfHmoHu1kyC_q_cBcLEx1NXiT-G3waNAarbu9q6pUPn_mowxq46gdELRL_s56PZetoJLTB4lHkX0N7uLdQUD72S2aNL_8wPQOr2OaNCVxquY0YoIQmH6OoY8xIjP48hbEJbHCa-qwHGOjeERQchb1gcWp_88oyubY1UaIpPceFAOfQ8vdglZkwGaa1FVK_2EMqQ1kpZ3yKGCVrqzAd5qA',
                     fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Container(
+                        color: SacredColors.outlineVariant,
+                        child: const Icon(Icons.person, size: 16),
+                      );
+                    },
                   ),
                 ),
               ),
@@ -1584,6 +1670,9 @@ class _PropertiesSidebar extends StatelessWidget {
   final ValueChanged<String?> onLogoChanged;
   final ValueChanged<double> onLogoSizeChanged;
   final ValueChanged<Color> onBgColorChanged;
+  final bool applyToAll;
+  final ValueChanged<bool> onApplyToAllChanged;
+  final VoidCallback onApplyStylesToAllPressed;
 
   const _PropertiesSidebar({
     required this.activeSlide,
@@ -1596,6 +1685,9 @@ class _PropertiesSidebar extends StatelessWidget {
     required this.onLogoChanged,
     required this.onLogoSizeChanged,
     required this.onBgColorChanged,
+    required this.applyToAll,
+    required this.onApplyToAllChanged,
+    required this.onApplyStylesToAllPressed,
   });
 
   @override
@@ -1624,7 +1716,46 @@ class _PropertiesSidebar extends StatelessWidget {
                 fontWeight: FontWeight.bold,
               ),
             ),
-            SizedBox(height: 32),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    'Apply to all slides',
+                    style: SacredTypography.bodyMd(context).copyWith(
+                      color: SacredColors.onSurface,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                Switch(
+                  value: applyToAll,
+                  activeColor: SacredColors.primary,
+                  onChanged: onApplyToAllChanged,
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.copy_all, size: 18),
+                label: const Text('Apply current style to all'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: SacredColors.primary,
+                  side: BorderSide(color: SacredColors.primary.withValues(alpha: 0.5)),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                onPressed: onApplyStylesToAllPressed,
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Divider(),
+            const SizedBox(height: 16),
 
             // Text Inputs Editor
             Text(

@@ -79,7 +79,10 @@ class SlideData {
   String transition;
   double titleFontSize;   // pt size for main title text
   double subtitleFontSize; // pt size for subtitle / quote text
-  String? logoUrl;        // logo image url / data-url
+  String? _logoUrl;       // logo image url / data-url
+  String? get logoUrl => _logoUrl ?? AppSettings.instance.logoUrl;
+  set logoUrl(String? value) => _logoUrl = value;
+
   double logoX;           // relative X position (0.0 to 1.0)
   double logoY;           // relative Y position (0.0 to 1.0)
   double logoSize;        // size of logo in pixels
@@ -107,7 +110,7 @@ class SlideData {
     this.textX = 0.0,
     this.textY = 0.0,
     this.bgColorValue = 0xFF000000,
-  }) : logoUrl = logoUrl ?? AppSettings.instance.logoUrl;
+  }) : _logoUrl = logoUrl;
 
   Map<String, dynamic> toJson() {
     return {
@@ -272,13 +275,47 @@ class AppSettings extends ChangeNotifier {
   }
 
   String? _logoUrl;
-  String? get logoUrl => _logoUrl ?? 'assets/app_icon.ico';
+  String? get logoUrl => _logoUrl;
   set logoUrl(String? value) {
     if (_logoUrl != value) {
       _logoUrl = value;
       saveSettings();
       notifyListeners();
     }
+  }
+
+  DateTime? _lastPdfConversionTime;
+  DateTime? get lastPdfConversionTime => _lastPdfConversionTime;
+  set lastPdfConversionTime(DateTime? value) {
+    if (_lastPdfConversionTime != value) {
+      _lastPdfConversionTime = value;
+      saveSettings();
+      notifyListeners();
+    }
+  }
+
+  bool get canConvertPdf {
+    if (_lastPdfConversionTime == null) return true;
+    final oneWeekAgo = DateTime.now().subtract(const Duration(days: 7));
+    return _lastPdfConversionTime!.isBefore(oneWeekAgo);
+  }
+
+  String get nextPdfConversionTimeRemaining {
+    if (_lastPdfConversionTime == null) return '';
+    final nextAvailableTime = _lastPdfConversionTime!.add(const Duration(days: 7));
+    final diff = nextAvailableTime.difference(DateTime.now());
+    if (diff.isNegative) return '';
+    if (diff.inDays > 0) {
+      return '${diff.inDays} day${diff.inDays == 1 ? '' : 's'}';
+    } else {
+      return '${diff.inHours} hour${diff.inHours == 1 ? '' : 's'}';
+    }
+  }
+
+  void recordPdfConversion() {
+    _lastPdfConversionTime = DateTime.now();
+    saveSettings();
+    notifyListeners();
   }
 
 
@@ -419,6 +456,10 @@ class AppSettings extends ChangeNotifier {
       _churchName = prefs.getString('churchName') ?? _churchName;
       _churchEmail = prefs.getString('churchEmail') ?? _churchEmail;
       _logoUrl = prefs.getString('logoUrl');
+      final lastPdfTimeStr = prefs.getString('lastPdfConversionTime');
+      if (lastPdfTimeStr != null) {
+        _lastPdfConversionTime = DateTime.parse(lastPdfTimeStr);
+      }
 
       final recentJson = prefs.getString('recentPresentations');
       if (recentJson != null) {
@@ -446,6 +487,12 @@ class AppSettings extends ChangeNotifier {
         await prefs.setString('logoUrl', _logoUrl!);
       } else {
         await prefs.remove('logoUrl');
+      }
+
+      if (_lastPdfConversionTime != null) {
+        await prefs.setString('lastPdfConversionTime', _lastPdfConversionTime!.toIso8601String());
+      } else {
+        await prefs.remove('lastPdfConversionTime');
       }
 
       // Loop to try saving, removing oldest presentation if QuotaExceededError or write failure occurs

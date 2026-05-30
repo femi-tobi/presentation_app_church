@@ -1,5 +1,9 @@
 // lib/create_presentation_page.dart
+import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:archive/archive.dart';
 import 'dashboard_page.dart'; // Reuse SacredColors, SacredTypography, SacredShadows
 import 'settings_state.dart';
 import 'preview_page.dart';
@@ -212,11 +216,20 @@ class _TopNavBar extends StatelessWidget {
                 onPressed: () {},
               ),
               SizedBox(width: 8),
-              CircleAvatar(
-                radius: 18,
-                backgroundColor: SacredColors.outlineVariant,
-                backgroundImage: NetworkImage(
-                  'https://lh3.googleusercontent.com/aida-public/AB6AXuDNfafaAK0N7FbiJhmk8n3gkX1nGpVARZocG7tESAu2-RQs_eJ2AvQXmjerkk-2Kvrb3OcjskEnqjdoSss5CZ9UM0HkbIyoY11FWDwVsBYDHNXcAKixzW9TJfCFrwbKJzF0H4F8PHFhfqmWK_uuXnIS8hZUl-c-ydOlnJIU6cdgtQfFP7AHNgtY8VEs_5zGhHv1lgA3uAYHs3OM0m6WO0-ZL8SZwSTena7ZzGaR-O-EMeNdYBrX_jc9FrctSCQzubVUuJtcUQ_KAuXh'
+              ClipOval(
+                child: Image.network(
+                  'https://lh3.googleusercontent.com/aida-public/AB6AXuDNfafaAK0N7FbiJhmk8n3gkX1nGpVARZocG7tESAu2-RQs_eJ2AvQXmjerkk-2Kvrb3OcjskEnqjdoSss5CZ9UM0HkbIyoY11FWDwVsBYDHNXcAKixzW9TJfCFrwbKJzF0H4F8PHFhfqmWK_uuXnIS8hZUl-c-ydOlnJIU6cdgtQfFP7AHNgtY8VEs_5zGhHv1lgA3uAYHs3OM0m6WO0-ZL8SZwSTena7ZzGaR-O-EMeNdYBrX_jc9FrctSCQzubVUuJtcUQ_KAuXh',
+                  width: 36,
+                  height: 36,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) {
+                    return Container(
+                      color: SacredColors.outlineVariant,
+                      width: 36,
+                      height: 36,
+                      child: const Icon(Icons.person, size: 18),
+                    );
+                  },
                 ),
               ),
             ],
@@ -237,12 +250,12 @@ class _EditorPane extends StatelessWidget {
   void _importOutlineFile(BuildContext context) {
     showDialog(
       context: context,
-      builder: (context) {
+      builder: (dialogContext) {
         return AlertDialog(
           backgroundColor: SacredColors.surface,
           title: Text(
             'Import Service Outline File',
-            style: SacredTypography.headlineMd(context).copyWith(color: primaryColor, fontWeight: FontWeight.bold),
+            style: SacredTypography.headlineMd(dialogContext).copyWith(color: primaryColor, fontWeight: FontWeight.bold),
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -250,19 +263,202 @@ class _EditorPane extends StatelessWidget {
             children: [
               Text(
                 'Upload a PDF, DOCX, or TXT file containing your sermon text or liturgy outline:',
-                style: SacredTypography.labelLg(context),
+                style: SacredTypography.labelLg(dialogContext),
               ),
               const SizedBox(height: 20),
-              // Simulated drag & drop area
+              // Choose file or drag here area
               InkWell(
-                onTap: () {
-                  controller.text = "[Prelude]\nPraise to the Lord, the Almighty\n\n[Scripture Reading]\nRomans 8:28-39\n\n[Sermon Outline]\n1. Called According to His Purpose\n2. Conformed to the Image of His Son\n3. More Than Conquerors\n\n[Prayer & Reflection]\nA time of silent meditation\n\n[Closing Hymn]\nAmazing Grace (Hymn 412)";
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Successfully imported "Sunday_Service_Romans8.docx"!'),
-                    ),
-                  );
+                onTap: () async {
+                  try {
+                    FilePickerResult? result = await FilePicker.platform.pickFiles(
+                      type: FileType.custom,
+                      allowedExtensions: ['txt', 'docx', 'pdf'],
+                    );
+
+                    if (result != null && result.files.single.path != null) {
+                      final path = result.files.single.path!;
+                      final name = result.files.single.name;
+                      final file = File(path);
+
+                      if (name.endsWith('.txt')) {
+                        final content = await file.readAsString();
+                        controller.text = content;
+                        if (dialogContext.mounted) {
+                          Navigator.pop(dialogContext);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Successfully imported "$name"!'),
+                              backgroundColor: SacredColors.primary,
+                            ),
+                          );
+                        }
+                      } else if (name.endsWith('.docx')) {
+                        final bytes = await file.readAsBytes();
+                        final content = _extractTextFromDocx(bytes);
+                        if (content != null && content.isNotEmpty) {
+                          controller.text = content;
+                          if (dialogContext.mounted) {
+                            Navigator.pop(dialogContext);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Successfully imported "$name"!'),
+                                backgroundColor: SacredColors.primary,
+                              ),
+                            );
+                          }
+                        } else {
+                          if (dialogContext.mounted) {
+                            ScaffoldMessenger.of(dialogContext).showSnackBar(
+                              const SnackBar(
+                                  content: Text('Could not extract text from this Word document.'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        }
+                      } else if (name.endsWith('.pdf')) {
+                        if (!AppSettings.instance.canConvertPdf) {
+                          if (dialogContext.mounted) {
+                            Navigator.pop(dialogContext); // Close the import file dialog
+                            showDialog(
+                              context: context,
+                              builder: (alertContext) => AlertDialog(
+                                backgroundColor: SacredColors.surface,
+                                title: Row(
+                                  children: [
+                                    Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 28),
+                                    const SizedBox(width: 12),
+                                    Text(
+                                      'Rate Limit Reached',
+                                      style: SacredTypography.headlineMd(alertContext).copyWith(fontWeight: FontWeight.bold),
+                                    ),
+                                  ],
+                                ),
+                                content: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'You are limited to 1 PDF conversion per week to conserve API resources.',
+                                      style: SacredTypography.bodyLg(alertContext),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      'Please manually copy the text from your PDF document and paste it directly into the outline editor.',
+                                      style: SacredTypography.bodyLg(alertContext).copyWith(color: SacredColors.onSurfaceVariant),
+                                    ),
+                                    if (AppSettings.instance.nextPdfConversionTimeRemaining.isNotEmpty) ...[
+                                      const SizedBox(height: 16),
+                                      Text(
+                                        'Next conversion available in: ${AppSettings.instance.nextPdfConversionTimeRemaining}',
+                                        style: SacredTypography.labelLg(alertContext).copyWith(color: SacredColors.primary, fontWeight: FontWeight.bold),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(alertContext),
+                                    child: const Text('OK'),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }
+                          return;
+                        }
+
+                        if (dialogContext.mounted) {
+                          Navigator.pop(dialogContext); // Close the import file dialog
+                          
+                          // Show a loading conversion dialog
+                          BuildContext? loadingDialogContext;
+                          showDialog(
+                            context: context,
+                            barrierDismissible: false,
+                            builder: (loadingCtx) {
+                              loadingDialogContext = loadingCtx;
+                              return AlertDialog(
+                                backgroundColor: SacredColors.surface,
+                                content: Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 20),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      CircularProgressIndicator(color: SacredColors.primary),
+                                      const SizedBox(height: 20),
+                                      Text(
+                                        'Converting PDF outline...',
+                                        style: SacredTypography.labelLg(loadingCtx).copyWith(fontWeight: FontWeight.bold),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        'Converting document via ConvertAPI. Please wait.',
+                                        style: SacredTypography.labelSm(loadingCtx).copyWith(color: SacredColors.outline),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          );
+
+                          try {
+                            final bytes = await file.readAsBytes();
+                            final content = await _convertPdfToDocx(bytes);
+                            
+                            if (loadingDialogContext != null && loadingDialogContext!.mounted) {
+                              Navigator.pop(loadingDialogContext!); // Close loading dialog
+                            }
+
+                            if (content != null && content.isNotEmpty) {
+                              controller.text = content;
+                              AppSettings.instance.recordPdfConversion();
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Successfully imported and converted "$name"!'),
+                                    backgroundColor: SacredColors.primary,
+                                  ),
+                                );
+                              }
+                            } else {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Failed to convert or extract text from this PDF.'),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                            }
+                          } catch (e) {
+                            if (loadingDialogContext != null && loadingDialogContext!.mounted) {
+                              Navigator.pop(loadingDialogContext!); // Close loading dialog if open
+                            }
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Error converting PDF: $e'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          }
+                        }
+                      }
+                    }
+                  } catch (e) {
+                    if (dialogContext.mounted) {
+                      ScaffoldMessenger.of(dialogContext).showSnackBar(
+                        SnackBar(
+                          content: Text('Error picking file: $e'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  }
                 },
                 child: Container(
                   height: 120,
@@ -277,23 +473,23 @@ class _EditorPane extends StatelessWidget {
                     children: [
                       Icon(Icons.cloud_upload_outlined, size: 40, color: primaryColor),
                       const SizedBox(height: 8),
-                      Text('Choose file or drag here', style: SacredTypography.labelLg(context).copyWith(fontWeight: FontWeight.bold)),
+                      Text('Choose file or drag here', style: SacredTypography.labelLg(dialogContext).copyWith(fontWeight: FontWeight.bold)),
                       const SizedBox(height: 4),
-                      Text('PDF, DOCX, TXT up to 10MB', style: SacredTypography.labelSm(context).copyWith(color: SacredColors.outline)),
+                      Text('PDF, DOCX, TXT up to 10MB', style: SacredTypography.labelSm(dialogContext).copyWith(color: SacredColors.outline)),
                     ],
                   ),
                 ),
               ),
               const SizedBox(height: 20),
-              Text('Or select from sample documents:', style: SacredTypography.labelLg(context).copyWith(fontWeight: FontWeight.bold)),
+              Text('Or select from sample documents:', style: SacredTypography.labelLg(dialogContext).copyWith(fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
               ListTile(
                 leading: const Icon(Icons.picture_as_pdf, color: Colors.red, size: 28),
-                title: Text('Sermon_Stillness.pdf', style: SacredTypography.labelLg(context)),
-                subtitle: Text('245 KB', style: SacredTypography.labelSm(context)),
+                title: Text('Sermon_Stillness.pdf', style: SacredTypography.labelLg(dialogContext)),
+                subtitle: Text('245 KB', style: SacredTypography.labelSm(dialogContext)),
                 onTap: () {
                   controller.text = "[Call to Worship]\nPsalm 46:10 - \"Be still, and know that I am God\"\n\n[Sermon Title]\nThe Grace of Stillness\n\n[Scripture Exposition]\n1. Stillness in the Storm (Mark 4:39)\n2. Stillness in Service (Luke 10:41)\n3. Stillness in Sovereignty (Exodus 14:14)\n\n[Benediction]";
-                  Navigator.pop(context);
+                  Navigator.pop(dialogContext);
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Successfully imported "Sermon_Stillness.pdf"')),
                   );
@@ -301,11 +497,11 @@ class _EditorPane extends StatelessWidget {
               ),
               ListTile(
                 leading: const Icon(Icons.description, color: Colors.blue, size: 28),
-                title: Text('Worship_Order.docx', style: SacredTypography.labelLg(context)),
-                subtitle: Text('180 KB', style: SacredTypography.labelSm(context)),
+                title: Text('Worship_Order.docx', style: SacredTypography.labelLg(dialogContext)),
+                subtitle: Text('180 KB', style: SacredTypography.labelSm(dialogContext)),
                 onTap: () {
                   controller.text = "[Prelude]\nImmortal, Invisible, God Only Wise\n\n[Invocation]\nLead pastor opening prayer\n\n[Hymn of Praise]\nHow Great Thou Art\n\n[Benediction]";
-                  Navigator.pop(context);
+                  Navigator.pop(dialogContext);
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Successfully imported "Worship_Order.docx"')),
                   );
@@ -315,7 +511,7 @@ class _EditorPane extends StatelessWidget {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => Navigator.pop(dialogContext),
               child: const Text('Cancel'),
             ),
           ],
@@ -651,4 +847,78 @@ class ThemeCardData {
     required this.imageUrl,
     required this.imageAlt,
   });
+}
+
+String? _extractTextFromDocx(List<int> bytes) {
+  try {
+    final archive = ZipDecoder().decodeBytes(bytes);
+    final documentFile = archive.findFile('word/document.xml');
+    if (documentFile != null) {
+      final xmlString = utf8.decode(documentFile.content as List<int>);
+      final buffer = StringBuffer();
+      
+      // Word document text is structured in paragraphs: <w:p>...</w:p>
+      // Inside paragraphs, text is in runs: <w:r>...<w:t>text</w:t>...</w:r>
+      final paragraphRegExp = RegExp(r'<w:p[^>]*>(.*?)</w:p>');
+      final pMatches = paragraphRegExp.allMatches(xmlString);
+      
+      for (final pMatch in pMatches) {
+        final pContent = pMatch.group(1) ?? '';
+        final tRegExp = RegExp(r'<w:t[^>]*>(.*?)</w:t>');
+        final tMatches = tRegExp.allMatches(pContent);
+        final pText = tMatches.map((m) => m.group(1) ?? '').join('');
+        if (pText.isNotEmpty) {
+          buffer.writeln(pText);
+        }
+      }
+      return buffer.toString().trim();
+    }
+  } catch (e) {
+    debugPrint('Error extracting text from docx file: $e');
+  }
+  return null;
+}
+
+Future<String?> _convertPdfToDocx(List<int> pdfBytes) async {
+  final base64Data = base64Encode(pdfBytes);
+  final url = Uri.parse('https://v2.convertapi.com/convert/pdf/to/docx?Secret=1PILryhl7iSdMxZfMj9Bh6qeEoq0YawH');
+  
+  final client = HttpClient();
+  client.connectionTimeout = const Duration(seconds: 30);
+  try {
+    final request = await client.postUrl(url).timeout(const Duration(seconds: 30));
+    request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
+    
+    final body = jsonEncode({
+      "Parameters": [
+        {
+          "Name": "File",
+          "FileValue": {
+            "Name": "document.pdf",
+            "Data": base64Data
+          }
+        }
+      ]
+    });
+    
+    request.write(body);
+    final response = await request.close().timeout(const Duration(seconds: 30));
+    
+    if (response.statusCode == 200) {
+      final responseBody = await response.transform(utf8.decoder).join().timeout(const Duration(seconds: 30));
+      final jsonResponse = jsonDecode(responseBody);
+      final fileData = jsonResponse['Files'][0]['FileData'] as String;
+      final docxBytes = base64Decode(fileData);
+      return _extractTextFromDocx(docxBytes);
+    } else {
+      final responseBody = await response.transform(utf8.decoder).join().timeout(const Duration(seconds: 10));
+      debugPrint('ConvertAPI error status: ${response.statusCode}, body: $responseBody');
+      throw Exception('ConvertAPI error (${response.statusCode}): $responseBody');
+    }
+  } catch (e) {
+    debugPrint('ConvertAPI request exception: $e');
+    rethrow;
+  } finally {
+    client.close();
+  }
 }

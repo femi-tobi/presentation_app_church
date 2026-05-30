@@ -126,201 +126,275 @@ class _FullscreenPresenterPageState extends State<FullscreenPresenterPage> with 
                   return Center(
                     child: AspectRatio(
                       aspectRatio: 16 / 9,
-                      child: Stack(
-                        children: [
-                          // Base Background Color Layer
-                          Positioned.fill(
-                            child: Container(
-                              color: Color(slide.bgColorValue),
-                            ),
-                          ),
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final double width = constraints.maxWidth;
+                          final double height = constraints.maxHeight;
 
-                          // Background Image Layer with Blur & Opacity
-                          if (slide.imageUrl.isNotEmpty)
-                            Positioned.fill(
-                              child: Opacity(
-                                opacity: slide.opacity,
-                                child: slide.blur == 0.0
-                                    ? (slide.imageUrl.startsWith('data:')
-                                        ? Image.memory(
-                                            _decodeDataUrl(slide.imageUrl),
-                                            fit: BoxFit.cover,
-                                            filterQuality: FilterQuality.low,
-                                            errorBuilder: (c, e, s) => const SizedBox(),
-                                          )
-                                        : Image.network(
-                                            slide.imageUrl,
-                                            fit: BoxFit.cover,
-                                            filterQuality: FilterQuality.low,
-                                            errorBuilder: (c, e, s) => const SizedBox(),
-                                          ))
-                                    : ImageFiltered(
-                                        imageFilter: ImageFilter.blur(
-                                          sigmaX: slide.blur,
-                                          sigmaY: slide.blur,
-                                        ),
-                                        child: slide.imageUrl.startsWith('data:')
-                                            ? Image.memory(
-                                                _decodeDataUrl(slide.imageUrl),
-                                                fit: BoxFit.cover,
-                                                filterQuality: FilterQuality.low,
-                                                errorBuilder: (c, e, s) => const SizedBox(),
-                                              )
-                                            : Image.network(
-                                                slide.imageUrl,
-                                                fit: BoxFit.cover,
-                                                filterQuality: FilterQuality.low,
-                                                errorBuilder: (c, e, s) => const SizedBox(),
+                          return AnimatedBuilder(
+                            animation: _pageController,
+                            builder: (context, child) {
+                              double pageOffset = 0.0;
+                              if (_pageController.hasClients &&
+                                  _pageController.position.haveDimensions) {
+                                pageOffset = (_pageController.page ?? 0.0) - index;
+                              } else {
+                                pageOffset = _currentIndex.toDouble() - index;
+                              }
+
+                              // Calculate animation offset values based on transition selection
+                              double dx = 0.0;
+                              double dy = 0.0;
+                              double opacity = 1.0;
+                              double scale = 1.0;
+                              double blurValue = 0.0;
+
+                              switch (slide.transition) {
+                                case 'Cross Dissolve':
+                                  dx = -pageOffset * width;
+                                  opacity = (1.0 - pageOffset.abs()).clamp(0.0, 1.0);
+                                  break;
+                                case 'Soft Fade':
+                                  dx = -pageOffset * width;
+                                  opacity = (1.0 - pageOffset.abs()).clamp(0.0, 1.0);
+                                  scale = (1.0 - 0.08 * pageOffset.abs()).clamp(0.92, 1.0);
+                                  break;
+                                case 'Wipe Down':
+                                  dx = -pageOffset * width;
+                                  dy = pageOffset * height;
+                                  break;
+                                case 'Sacred Bloom':
+                                  dx = -pageOffset * width;
+                                  opacity = (1.0 - pageOffset.abs()).clamp(0.0, 1.0);
+                                  scale = (1.0 + 0.12 * (1.0 - pageOffset.abs())).clamp(1.0, 1.12);
+                                  blurValue = (15.0 * pageOffset.abs()).clamp(0.0, 15.0);
+                                  break;
+                                default:
+                                  // Standard slide scroll transition
+                                  break;
+                              }
+
+                              Widget mainContent = Stack(
+                                children: [
+                                  // Base Background Color Layer
+                                  Positioned.fill(
+                                    child: Container(
+                                      color: Color(slide.bgColorValue),
+                                    ),
+                                  ),
+
+                                  // Background Image Layer with Blur & Opacity
+                                  if (slide.imageUrl.isNotEmpty)
+                                    Positioned.fill(
+                                      child: Opacity(
+                                        opacity: slide.opacity,
+                                        child: slide.blur == 0.0
+                                            ? (slide.imageUrl.startsWith('data:')
+                                                ? Image.memory(
+                                                    _decodeDataUrl(slide.imageUrl),
+                                                    fit: BoxFit.cover,
+                                                    filterQuality: FilterQuality.low,
+                                                    errorBuilder: (c, e, s) => const SizedBox(),
+                                                  )
+                                                : Image.network(
+                                                    slide.imageUrl,
+                                                    fit: BoxFit.cover,
+                                                    filterQuality: FilterQuality.low,
+                                                    errorBuilder: (c, e, s) => const SizedBox(),
+                                                  ))
+                                            : ImageFiltered(
+                                                imageFilter: ImageFilter.blur(
+                                                  sigmaX: slide.blur,
+                                                  sigmaY: slide.blur,
+                                                ),
+                                                child: slide.imageUrl.startsWith('data:')
+                                                    ? Image.memory(
+                                                        _decodeDataUrl(slide.imageUrl),
+                                                        fit: BoxFit.cover,
+                                                        filterQuality: FilterQuality.low,
+                                                        errorBuilder: (c, e, s) => const SizedBox(),
+                                                      )
+                                                    : Image.network(
+                                                        slide.imageUrl,
+                                                        fit: BoxFit.cover,
+                                                        filterQuality: FilterQuality.low,
+                                                        errorBuilder: (c, e, s) => const SizedBox(),
+                                                      ),
                                               ),
                                       ),
-                              ),
-                            ),
+                                    ),
 
-                          // Spiritual purple overlay blending
-                          if (slide.imageUrl.isNotEmpty)
-                            Positioned.fill(
-                              child: IgnorePointer(
-                                child: Container(
-                                  color: SacredColors.primary.withValues(alpha: 0.20),
-                                ),
-                              ),
-                            ),
+                                  // Spiritual purple overlay blending
+                                  if (slide.imageUrl.isNotEmpty)
+                                    Positioned.fill(
+                                      child: IgnorePointer(
+                                        child: Container(
+                                          color: SacredColors.primary.withValues(alpha: 0.20),
+                                        ),
+                                      ),
+                                    ),
 
-                          // Content Layer
-                          Positioned.fill(
-                            child: LayoutBuilder(
-                              builder: (context, constraints) {
-                                final double w = constraints.maxWidth;
-                                final double h = constraints.maxHeight;
-                                final double left = slide.textX * w;
-                                final double top = slide.textY * h;
-                                final hasSubtitle = slide.subtitle.trim().isNotEmpty;
+                                  // Content Layer
+                                  Positioned.fill(
+                                    child: LayoutBuilder(
+                                      builder: (context, constraints) {
+                                        final double w = constraints.maxWidth;
+                                        final double h = constraints.maxHeight;
+                                        final double left = slide.textX * w;
+                                        final double top = slide.textY * h;
+                                        final hasSubtitle = slide.subtitle.trim().isNotEmpty;
 
-                                return Stack(
-                                  clipBehavior: Clip.none,
-                                  children: [
-                                    Positioned(
-                                      left: left,
-                                      top: top,
-                                      width: w,
-                                      height: h,
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(horizontal: 80.0, vertical: 48.0),
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.center,
-                                          mainAxisAlignment: MainAxisAlignment.center,
+                                        return Stack(
+                                          clipBehavior: Clip.none,
                                           children: [
-                                            Text(
-                                              slide.title,
-                                              textAlign: slide.alignment,
-                                              style: GoogleFonts.getFont(
-                                                AppSettings.instance.fontFamily,
-                                                textStyle: TextStyle(
-                                                  fontSize: 64,
-                                                  color: Colors.white,
-                                                  fontWeight: slide.isBold ? FontWeight.bold : FontWeight.normal,
-                                                  fontStyle: slide.isItalic ? FontStyle.italic : FontStyle.normal,
-                                                  shadows: const [
-                                                    Shadow(
-                                                      color: Colors.black54,
-                                                      offset: Offset(0, 6),
-                                                      blurRadius: 12,
+                                            Positioned(
+                                              left: left,
+                                              top: top,
+                                              width: w,
+                                              height: h,
+                                              child: Padding(
+                                                padding: const EdgeInsets.symmetric(horizontal: 80.0, vertical: 48.0),
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                                  mainAxisAlignment: MainAxisAlignment.center,
+                                                  children: [
+                                                    Text(
+                                                      slide.title,
+                                                      textAlign: slide.alignment,
+                                                      style: GoogleFonts.getFont(
+                                                        AppSettings.instance.fontFamily,
+                                                        textStyle: TextStyle(
+                                                          fontSize: 64,
+                                                          color: Colors.white,
+                                                          fontWeight: slide.isBold ? FontWeight.bold : FontWeight.normal,
+                                                          fontStyle: slide.isItalic ? FontStyle.italic : FontStyle.normal,
+                                                          shadows: const [
+                                                            Shadow(
+                                                              color: Colors.black54,
+                                                              offset: Offset(0, 6),
+                                                              blurRadius: 12,
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ),
                                                     ),
+                                                    if (hasSubtitle) ...[
+                                                      const SizedBox(height: 24),
+                                                      Container(
+                                                        width: 120,
+                                                        height: 4,
+                                                        decoration: BoxDecoration(
+                                                          color: SacredColors.secondaryContainer,
+                                                          borderRadius: BorderRadius.circular(999),
+                                                        ),
+                                                      ),
+                                                      Expanded(
+                                                        child: Center(
+                                                          child: Text(
+                                                            slide.subtitle,
+                                                            textAlign: slide.alignment,
+                                                            style: GoogleFonts.inter(
+                                                              textStyle: TextStyle(
+                                                                fontSize: 28,
+                                                                color: Colors.white.withValues(alpha: 0.9),
+                                                                fontStyle: FontStyle.italic,
+                                                                shadows: const [
+                                                                  Shadow(
+                                                                    color: Colors.black54,
+                                                                    offset: Offset(0, 4),
+                                                                    blurRadius: 8,
+                                                                  ),
+                                                                ],
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
                                                   ],
                                                 ),
                                               ),
                                             ),
-                                            if (hasSubtitle) ...[
-                                              const SizedBox(height: 24),
-                                              Container(
-                                                width: 120,
-                                                height: 4,
-                                                decoration: BoxDecoration(
-                                                  color: SacredColors.secondaryContainer,
-                                                  borderRadius: BorderRadius.circular(999),
-                                                ),
-                                              ),
-                                              Expanded(
-                                                child: Center(
-                                                  child: Text(
-                                                    slide.subtitle,
-                                                    textAlign: slide.alignment,
-                                                    style: GoogleFonts.inter(
-                                                      textStyle: TextStyle(
-                                                        fontSize: 28,
-                                                        color: Colors.white.withValues(alpha: 0.9),
-                                                        fontStyle: FontStyle.italic,
-                                                        shadows: const [
-                                                          Shadow(
-                                                            color: Colors.black54,
-                                                            offset: Offset(0, 4),
-                                                            blurRadius: 8,
-                                                          ),
-                                                        ],
-                                                      ),
-                                                    ),
-                                                  ),
+                                          ],
+                                        );
+                                      },
+                                    ),
+                                  ),
+
+                                  // Logo Layer
+                                  if (slide.logoUrl != null && slide.logoUrl!.isNotEmpty)
+                                    Positioned.fill(
+                                      child: LayoutBuilder(
+                                        builder: (context, constraints) {
+                                          final double w = constraints.maxWidth;
+                                          final double h = constraints.maxHeight;
+                                          final double logoSize = slide.logoSize;
+                                          final double scale = w / 960.0;
+                                          final double scaledLogoSize = (logoSize * scale).clamp(10.0, w);
+                                          final double left = (slide.logoX * w).clamp(0.0, w - scaledLogoSize);
+                                          final double top = (slide.logoY * h).clamp(0.0, h - scaledLogoSize);
+
+                                          return Stack(
+                                            children: [
+                                              Positioned(
+                                                left: left,
+                                                top: top,
+                                                width: scaledLogoSize,
+                                                height: scaledLogoSize,
+                                                child: ClipRRect(
+                                                  borderRadius: BorderRadius.circular(4),
+                                                  child: slide.logoUrl!.startsWith('data:')
+                                                      ? Image.memory(
+                                                          _decodeDataUrl(slide.logoUrl!),
+                                                          fit: BoxFit.contain,
+                                                          errorBuilder: (c, e, s) => const SizedBox(),
+                                                        )
+                                                      : (slide.logoUrl!.startsWith('assets/')
+                                                          ? Image.asset(
+                                                              slide.logoUrl!,
+                                                              fit: BoxFit.contain,
+                                                              errorBuilder: (c, e, s) => const SizedBox(),
+                                                            )
+                                                          : Image.network(
+                                                              slide.logoUrl!,
+                                                              fit: BoxFit.contain,
+                                                              errorBuilder: (c, e, s) => const SizedBox(),
+                                                            )),
                                                 ),
                                               ),
                                             ],
-                                          ],
-                                        ),
+                                          );
+                                        },
                                       ),
                                     ),
-                                  ],
+                                ],
+                              );
+
+                              Widget transformedWidget = Transform.translate(
+                                offset: Offset(dx, dy),
+                                child: Transform.scale(
+                                  scale: scale,
+                                  child: Opacity(
+                                    opacity: opacity,
+                                    child: mainContent,
+                                  ),
+                                ),
+                              );
+
+                              if (blurValue > 0.0) {
+                                transformedWidget = ImageFiltered(
+                                  imageFilter: ImageFilter.blur(
+                                    sigmaX: blurValue,
+                                    sigmaY: blurValue,
+                                  ),
+                                  child: transformedWidget,
                                 );
-                              },
-                            ),
-                          ),
+                              }
 
-                          // Logo Layer — Positioned.fill is required so LayoutBuilder
-                          // receives actual canvas dimensions (not zero from Stack).
-                          if (slide.logoUrl != null && slide.logoUrl!.isNotEmpty)
-                            Positioned.fill(
-                              child: LayoutBuilder(
-                                builder: (context, constraints) {
-                                  final double w = constraints.maxWidth;
-                                  final double h = constraints.maxHeight;
-                                  final double logoSize = slide.logoSize;
-                                  final double scale = w / 960.0;
-                                  final double scaledLogoSize = (logoSize * scale).clamp(10.0, w);
-                                  final double left = (slide.logoX * w).clamp(0.0, w - scaledLogoSize);
-                                  final double top = (slide.logoY * h).clamp(0.0, h - scaledLogoSize);
-
-                                  return Stack(
-                                    children: [
-                                      Positioned(
-                                        left: left,
-                                        top: top,
-                                        width: scaledLogoSize,
-                                        height: scaledLogoSize,
-                                        child: ClipRRect(
-                                          borderRadius: BorderRadius.circular(4),
-                                          child: slide.logoUrl!.startsWith('data:')
-                                              ? Image.memory(
-                                                  _decodeDataUrl(slide.logoUrl!),
-                                                  fit: BoxFit.contain,
-                                                  errorBuilder: (c, e, s) => const SizedBox(),
-                                                )
-                                              : (slide.logoUrl!.startsWith('assets/')
-                                                  ? Image.asset(
-                                                      slide.logoUrl!,
-                                                      fit: BoxFit.contain,
-                                                      errorBuilder: (c, e, s) => const SizedBox(),
-                                                    )
-                                                  : Image.network(
-                                                      slide.logoUrl!,
-                                                      fit: BoxFit.contain,
-                                                      errorBuilder: (c, e, s) => const SizedBox(),
-                                                    )),
-                                        ),
-                                      ),
-                                    ],
-                                  );
-                                },
-                              ),
-                            ),
-                        ],
+                              return transformedWidget;
+                            },
+                          );
+                        },
                       ),
                     ),
                   );

@@ -264,12 +264,18 @@ class _ExportNavBar extends StatelessWidget {
                 height: 32,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  border:
-                      Border.all(color: SacredColors.outlineVariant, width: 1),
-                  image: const DecorationImage(
-                    image: NetworkImage(
-                        'https://lh3.googleusercontent.com/aida-public/AB6AXuDPZhVplp3MbAcTyjAvS7XRVBpniYPeKkJK8k4e-52uheaoJyHfn-MW7EWZIb6OIrb35mA2mf5zyXsoWn2PSuBoz6hK53g7gXW08dnGsHpSSEKBBIv5KiXe-NbyMjgvslUqqyHPVjyOZvy-80awanhnTQoSuvHz0T20nt2RWS1CC3Itgxe1c69ryEMMrftizT38b7UF5-0RnGMyOlSH068doHEb8OLGHqyHl973KoJOI76mD0t4k3nJ-Um9U3VG0klpKR_1MQykFI15'),
+                  border: Border.all(color: SacredColors.outlineVariant, width: 1),
+                ),
+                child: ClipOval(
+                  child: Image.network(
+                    'https://lh3.googleusercontent.com/aida-public/AB6AXuDPZhVplp3MbAcTyjAvS7XRVBpniYPeKkJK8k4e-52uheaoJyHfn-MW7EWZIb6OIrb35mA2mf5zyXsoWn2PSuBoz6hK53g7gXW08dnGsHpSSEKBBIv5KiXe-NbyMjgvslUqqyHPVjyOZvy-80awanhnTQoSuvHz0T20nt2RWS1CC3Itgxe1c69ryEMMrftizT38b7UF5-0RnGMyOlSH068doHEb8OLGHqyHl973KoJOI76mD0t4k3nJ-Um9U3VG0klpKR_1MQykFI15',
                     fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Container(
+                        color: SacredColors.outlineVariant,
+                        child: const Icon(Icons.person, size: 16),
+                      );
+                    },
                   ),
                 ),
               ),

@@ -330,11 +330,20 @@ class _TopNavBar extends StatelessWidget {
                 child: const Text('New Project'),
               ),
               SizedBox(width: 12),
-              CircleAvatar(
-                radius: 18,
-                backgroundColor: SacredColors.outlineVariant,
-                backgroundImage: NetworkImage(
-                  'https://lh3.googleusercontent.com/aida-public/AB6AXuBwh3vonid1ngAi51NslYCK98ch_Ru6XAmw8Jxa4IWPRoat5H6ZbIJUiBont_TIFbOZgF6OJ53PIGZ0_NHSrYOM5EFIYzJXflm5Q5NL8Zyh5qu-OWVeuFWl_XxCfM5VBQWQFvDSHGOh0zJOwfLf-4OcxJfvwU-5SXB1NLgphx6a-3Xc3rR0YhQm2I5gMzPXIzZB_OVDoSEMJMANwl8tbhcWKDSBAFacGr1butev-yNpdl1k5vcXjSNsj249FSUfb79QVrbCpn_p9vZy'
+              ClipOval(
+                child: Image.network(
+                  'https://lh3.googleusercontent.com/aida-public/AB6AXuBwh3vonid1ngAi51NslYCK98ch_Ru6XAmw8Jxa4IWPRoat5H6ZbIJUiBont_TIFbOZgF6OJ53PIGZ0_NHSrYOM5EFIYzJXflm5Q5NL8Zyh5qu-OWVeuFWl_XxCfM5VBQWQFvDSHGOh0zJOwfLf-4OcxJfvwU-5SXB1NLgphx6a-3Xc3rR0YhQm2I5gMzPXIzZB_OVDoSEMJMANwl8tbhcWKDSBAFacGr1butev-yNpdl1k5vcXjSNsj249FSUfb79QVrbCpn_p9vZy',
+                  width: 36,
+                  height: 36,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) {
+                    return Container(
+                      color: SacredColors.outlineVariant,
+                      width: 36,
+                      height: 36,
+                      child: const Icon(Icons.person, size: 18),
+                    );
+                  },
                 ),
               ),
             ],
