@@ -116,6 +116,247 @@ class _PreviewPageState extends State<PreviewPage> {
     const String sharedBg =
         'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?w=1280&q=80';
 
+    final rawLines = outline.split('\n');
+    final lines = rawLines.map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
+
+    if (lines.isEmpty) return _defaultSlides();
+
+    // Check if it's hierarchical:
+    final isHierarchical = lines.any((l) =>
+        RegExp(r'^\*?\d+\.').hasMatch(l) ||
+        RegExp(r'^[a-zA-Z]\.').hasMatch(l) ||
+        RegExp(r'^[iIvVxX]+\.').hasMatch(l));
+
+    if (!isHierarchical) {
+      // Fallback to simple bracket-based parser
+      return _parseBracketOutline(outline);
+    }
+
+    final List<SlideData> slides = [];
+
+    // Helper to get text alignment based on contents
+    TextAlign getAlignment(String subtitleText) {
+      if (subtitleText.isEmpty) return TextAlign.center;
+      if (subtitleText.contains('\n') || subtitleText.length > 60) return TextAlign.left;
+      return TextAlign.center;
+    }
+
+    // Rule 1: First line is the main topic (Title Slide)
+    final String mainTopic = lines[0];
+    slides.add(SlideData(
+      id: '${slides.length + 1}'.padLeft(2, '0'),
+      title: mainTopic,
+      subtitle: '',
+      imageUrl: sharedBg,
+      opacity: 0.80,
+      blur: 8.0,
+      titleFontSize: 56.0,
+      alignment: TextAlign.center, // Main Title Slide: always centered
+    ));
+
+    // Find where the main points summary starts (e.g. "1. ...", "2. ...", "3. ...")
+    int firstMainPointIndex = -1;
+    for (int i = 1; i < lines.length; i++) {
+      if (RegExp(r'^1\.').hasMatch(lines[i])) {
+        firstMainPointIndex = i;
+        break;
+      }
+    }
+
+    // Rule 2: Introduction text on another slide with the topic, but smaller
+    if (firstMainPointIndex > 1) {
+      final introLines = lines.sublist(1, firstMainPointIndex)
+          .where((l) => !l.toLowerCase().startsWith('into details'))
+          .toList();
+      if (introLines.isNotEmpty) {
+        final introText = introLines.join('\n');
+        slides.add(SlideData(
+          id: '${slides.length + 1}'.padLeft(2, '0'),
+          title: mainTopic,
+          subtitle: introText,
+          imageUrl: sharedBg,
+          opacity: 0.80,
+          blur: 8.0,
+          titleFontSize: 36.0,
+          subtitleFontSize: 24.0,
+          alignment: getAlignment(introText),
+        ));
+      }
+    }
+
+    // Rule 3: Main points (e.g., 1 to 3) each on a slide
+    int nextSectionIndex = firstMainPointIndex;
+    if (firstMainPointIndex != -1) {
+      for (int i = firstMainPointIndex; i < lines.length; i++) {
+        final line = lines[i];
+        if (RegExp(r'^\d+\.').hasMatch(line)) {
+          slides.add(SlideData(
+            id: '${slides.length + 1}'.padLeft(2, '0'),
+            title: line,
+            subtitle: '',
+            imageUrl: sharedBg,
+            opacity: 0.80,
+            blur: 8.0,
+            titleFontSize: 44.0,
+            alignment: TextAlign.center, // Title-only slide: always centered
+          ));
+          nextSectionIndex = i + 1;
+        } else {
+          nextSectionIndex = i;
+          break;
+        }
+      }
+    }
+
+    // Group the detailed lines by Main Point
+    final List<MainPointGroup> mainPointGroups = [];
+    MainPointGroup? currentGroup;
+
+    for (int i = nextSectionIndex; i < lines.length; i++) {
+      final line = lines[i];
+      if (line.toLowerCase().startsWith('into details')) continue;
+
+      final isNewMainPoint = RegExp(r'^\*?\d+\.').hasMatch(line) && line.contains(RegExp(r'[a-zA-Z]'));
+      if (isNewMainPoint) {
+        if (currentGroup != null) {
+          mainPointGroups.add(currentGroup);
+        }
+        currentGroup = MainPointGroup(
+          title: line.replaceAll('*', '').trim(),
+          lines: [],
+        );
+        if (currentGroup.title.endsWith('.')) {
+          currentGroup.title = currentGroup.title.substring(0, currentGroup.title.length - 1);
+        }
+      } else {
+        if (currentGroup != null) {
+          currentGroup.lines.add(line);
+        }
+      }
+    }
+    if (currentGroup != null) {
+      mainPointGroups.add(currentGroup);
+    }
+
+    // Parse each Main Point Group into slides
+    for (final mpg in mainPointGroups) {
+      final List<SubPointBlock> blocks = [];
+      SubPointBlock? activeBlock;
+      final List<String> mainPointIntroLines = [];
+
+      for (final line in mpg.lines) {
+        final isLetter = RegExp(r'^[a-zA-Z]\.').hasMatch(line);
+        final isRoman = RegExp(r'^[iIvVxX]+\.').hasMatch(line);
+
+        if (isLetter) {
+          if (activeBlock != null) {
+            blocks.add(activeBlock);
+          }
+          activeBlock = SubPointBlock(header: line);
+        } else if (isRoman) {
+          if (activeBlock != null) {
+            activeBlock.romanLines.add(line);
+          } else {
+            activeBlock = SubPointBlock(header: line);
+          }
+        } else {
+          if (activeBlock != null) {
+            if (activeBlock.romanLines.isNotEmpty) {
+              final lastIdx = activeBlock.romanLines.length - 1;
+              activeBlock.romanLines[lastIdx] = '${activeBlock.romanLines[lastIdx]}\n$line';
+            } else {
+              activeBlock.bodyLines.add(line);
+            }
+          } else {
+            mainPointIntroLines.add(line);
+          }
+        }
+      }
+      if (activeBlock != null) {
+        blocks.add(activeBlock);
+      }
+
+      // Generate slide for main point introduction (e.g. scriptures under main point title)
+      if (mainPointIntroLines.isNotEmpty) {
+        final introText = mainPointIntroLines.join('\n');
+        slides.add(SlideData(
+          id: '${slides.length + 1}'.padLeft(2, '0'),
+          title: mpg.title,
+          subtitle: introText,
+          imageUrl: sharedBg,
+          opacity: 0.80,
+          blur: 8.0,
+          titleFontSize: 36.0,
+          subtitleFontSize: 20.0,
+          alignment: getAlignment(introText),
+        ));
+      }
+
+      // Generate slides for each subpoint block
+      for (final block in blocks) {
+        if (block.romanLines.length > 3) {
+          // If roman lines (i., ii., iii., etc.) is more than 3, keep them all on the same slide
+          final List<String> combinedLines = [];
+          if (block.header.isNotEmpty) combinedLines.add(block.header);
+          combinedLines.addAll(block.bodyLines);
+          combinedLines.addAll(block.romanLines);
+
+          final subText = combinedLines.join('\n');
+          slides.add(SlideData(
+            id: '${slides.length + 1}'.padLeft(2, '0'),
+            title: mpg.title,
+            subtitle: subText,
+            imageUrl: sharedBg,
+            opacity: 0.80,
+            blur: 8.0,
+            titleFontSize: 36.0,
+            subtitleFontSize: 18.0, // slightly smaller for large text blocks
+            alignment: getAlignment(subText),
+          ));
+        } else {
+          // Otherwise, separate them
+          final List<String> mainCombined = [];
+          if (block.header.isNotEmpty) mainCombined.add(block.header);
+          mainCombined.addAll(block.bodyLines);
+
+          final mainText = mainCombined.join('\n');
+          slides.add(SlideData(
+            id: '${slides.length + 1}'.padLeft(2, '0'),
+            title: mpg.title,
+            subtitle: mainText,
+            imageUrl: sharedBg,
+            opacity: 0.80,
+            blur: 8.0,
+            titleFontSize: 36.0,
+            subtitleFontSize: 20.0,
+            alignment: getAlignment(mainText),
+          ));
+
+          for (final romanLine in block.romanLines) {
+            slides.add(SlideData(
+              id: '${slides.length + 1}'.padLeft(2, '0'),
+              title: mpg.title,
+              subtitle: romanLine,
+              imageUrl: sharedBg,
+              opacity: 0.80,
+              blur: 8.0,
+              titleFontSize: 36.0,
+              subtitleFontSize: 20.0,
+              alignment: getAlignment(romanLine),
+            ));
+          }
+        }
+      }
+    }
+
+    return slides.isNotEmpty ? slides : _defaultSlides();
+  }
+
+  /// Original bracket-based parser logic as a fallback.
+  static List<SlideData> _parseBracketOutline(String outline) {
+    const String sharedBg =
+        'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?w=1280&q=80';
+
     final lines = outline.split('\n');
     final List<SlideData> slides = [];
 
@@ -130,10 +371,11 @@ class _PreviewPageState extends State<PreviewPage> {
       slides.add(SlideData(
         id: '${slides.length + 1}'.padLeft(2, '0'),
         title: currentTitle!,
-        subtitle: body.isNotEmpty ? body : currentTitle!,
+        subtitle: body.isNotEmpty ? body : '',
         imageUrl: sharedBg,
         opacity: 0.80,
         blur: 8.0,
+        alignment: body.isNotEmpty ? TextAlign.left : TextAlign.center, // Center title-only slides
       ));
       currentTitle = null;
       currentBodyLines.clear();
@@ -151,22 +393,22 @@ class _PreviewPageState extends State<PreviewPage> {
     }
     flushSlide();
 
-    // No [headers] found — treat each line as its own slide
     if (slides.isEmpty) {
       final nonEmpty = lines.where((l) => l.trim().isNotEmpty).toList();
       for (int i = 0; i < nonEmpty.length; i++) {
         slides.add(SlideData(
           id: '${i + 1}'.padLeft(2, '0'),
           title: nonEmpty[i].trim(),
-          subtitle: nonEmpty[i].trim(),
+          subtitle: '',
           imageUrl: sharedBg,
           opacity: 0.80,
           blur: 8.0,
+          alignment: TextAlign.center, // Center title-only slides
         ));
       }
     }
 
-    return slides.isNotEmpty ? slides : _defaultSlides();
+    return slides;
   }
 
   /// Original hardcoded demo slides used as fallback.
@@ -2337,4 +2579,19 @@ class _LogoImageEditorCardState extends State<_LogoImageEditorCard> {
       ),
     );
   }
+}
+
+class MainPointGroup {
+  String title;
+  final List<String> lines;
+
+  MainPointGroup({required this.title, required this.lines});
+}
+
+class SubPointBlock {
+  final String header;
+  final List<String> bodyLines = [];
+  final List<String> romanLines = [];
+
+  SubPointBlock({required this.header});
 }

@@ -300,6 +300,66 @@ class AppSettings extends ChangeNotifier {
     notifyListeners();
   }
 
+  void deleteRecentPresentation(String id) {
+    _recentPresentations.removeWhere((r) => r.id == id);
+    saveSettings();
+    notifyListeners();
+  }
+
+  void renameRecentPresentation(String id, String newTitle) {
+    final index = _recentPresentations.indexWhere((r) => r.id == id);
+    if (index != -1) {
+      final oldRecord = _recentPresentations[index];
+      _recentPresentations[index] = PresentationRecord(
+        id: oldRecord.id,
+        title: newTitle,
+        slideCount: oldRecord.slideCount,
+        thumbnailUrl: oldRecord.thumbnailUrl,
+        createdAt: oldRecord.createdAt,
+        slides: oldRecord.slides,
+        outlineText: oldRecord.outlineText,
+      );
+      saveSettings();
+      notifyListeners();
+    }
+  }
+
+  void duplicateRecentPresentation(String id) {
+    final index = _recentPresentations.indexWhere((r) => r.id == id);
+    if (index != -1) {
+      final oldRecord = _recentPresentations[index];
+      final newRecord = PresentationRecord(
+        id: '${oldRecord.id}_copy_${DateTime.now().millisecondsSinceEpoch}',
+        title: '${oldRecord.title} (Copy)',
+        slideCount: oldRecord.slideCount,
+        thumbnailUrl: oldRecord.thumbnailUrl,
+        createdAt: DateTime.now(),
+        slides: oldRecord.slides.map((s) => SlideData(
+          id: s.id,
+          title: s.title,
+          subtitle: s.subtitle,
+          imageUrl: s.imageUrl,
+          opacity: s.opacity,
+          blur: s.blur,
+          isBold: s.isBold,
+          isItalic: s.isItalic,
+          alignment: s.alignment,
+          transition: s.transition,
+          titleFontSize: s.titleFontSize,
+          subtitleFontSize: s.subtitleFontSize,
+          logoUrl: s.logoUrl,
+          logoX: s.logoX,
+          logoY: s.logoY,
+          logoSize: s.logoSize,
+        )).toList(),
+        outlineText: oldRecord.outlineText,
+      );
+      _recentPresentations.insert(index + 1, newRecord);
+      saveSettings();
+      notifyListeners();
+    }
+  }
+
   void clearCache() {
     _recentPresentations.clear();
     saveSettings();

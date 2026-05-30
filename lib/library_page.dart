@@ -19,10 +19,12 @@ class _LibraryPageState extends State<LibraryPage> {
   String _searchQuery = '';
   List<LibraryItem> _hymns = [];
   bool _isLoadingHymns = false;
+  late List<LibraryItem> _dynamicMockItems;
 
   @override
   void initState() {
     super.initState();
+    _dynamicMockItems = List.from(_items);
     _loadHymns();
   }
 
@@ -158,6 +160,124 @@ class _LibraryPageState extends State<LibraryPage> {
     ),
   ];
 
+  void _deleteItem(LibraryItem item) {
+    if (item.category == 'Presentations') {
+      if (AppSettings.instance.recentPresentations.any((p) => p.id == item.id)) {
+        AppSettings.instance.deleteRecentPresentation(item.id);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Deleted presentation "${item.title}"'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+        return;
+      }
+    }
+
+    setState(() {
+      _dynamicMockItems.removeWhere((x) => x.id == item.id);
+      _hymns.removeWhere((x) => x.id == item.id);
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Removed "${item.title}" from library'),
+        backgroundColor: Colors.redAccent,
+      ),
+    );
+  }
+
+  void _renameItem(LibraryItem item, String newTitle) {
+    if (newTitle.trim().isEmpty) return;
+
+    if (item.category == 'Presentations') {
+      if (AppSettings.instance.recentPresentations.any((p) => p.id == item.id)) {
+        AppSettings.instance.renameRecentPresentation(item.id, newTitle);
+        return;
+      }
+    }
+
+    setState(() {
+      final mockIdx = _dynamicMockItems.indexWhere((x) => x.id == item.id);
+      if (mockIdx != -1) {
+        final old = _dynamicMockItems[mockIdx];
+        _dynamicMockItems[mockIdx] = LibraryItem(
+          id: old.id,
+          title: newTitle,
+          category: old.category,
+          metadata: old.metadata,
+          imageUrl: old.imageUrl,
+          tag: old.tag,
+          assetPath: old.assetPath,
+        );
+      }
+
+      final hymnIdx = _hymns.indexWhere((x) => x.id == item.id);
+      if (hymnIdx != -1) {
+        final old = _hymns[hymnIdx];
+        _hymns[hymnIdx] = LibraryItem(
+          id: old.id,
+          title: newTitle,
+          category: old.category,
+          metadata: old.metadata,
+          imageUrl: old.imageUrl,
+          tag: old.tag,
+          assetPath: old.assetPath,
+        );
+      }
+    });
+  }
+
+  void _duplicateItem(LibraryItem item) {
+    if (item.category == 'Presentations') {
+      if (AppSettings.instance.recentPresentations.any((p) => p.id == item.id)) {
+        AppSettings.instance.duplicateRecentPresentation(item.id);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Duplicated presentation "${item.title}"'),
+            backgroundColor: AppSettings.instance.primaryColor,
+          ),
+        );
+        return;
+      }
+    }
+
+    setState(() {
+      final String newId = '${item.id}_copy_${DateTime.now().millisecondsSinceEpoch}';
+      final String newTitle = '${item.title} (Copy)';
+
+      final mockIdx = _dynamicMockItems.indexWhere((x) => x.id == item.id);
+      if (mockIdx != -1) {
+        final old = _dynamicMockItems[mockIdx];
+        final duplicated = LibraryItem(
+          id: newId,
+          title: newTitle,
+          category: old.category,
+          metadata: old.metadata,
+          imageUrl: old.imageUrl,
+          tag: old.tag,
+          assetPath: old.assetPath,
+        );
+        _dynamicMockItems.insert(mockIdx + 1, duplicated);
+      }
+
+      final hymnIdx = _hymns.indexWhere((x) => x.id == item.id);
+      if (hymnIdx != -1) {
+        final old = _hymns[hymnIdx];
+        final duplicated = LibraryItem(
+          id: newId,
+          title: newTitle,
+          category: old.category,
+          metadata: old.metadata,
+          imageUrl: old.imageUrl,
+          tag: old.tag,
+          assetPath: old.assetPath,
+        );
+        _hymns.insert(hymnIdx + 1, duplicated);
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final primaryColor = AppSettings.instance.primaryColor;
@@ -183,7 +303,7 @@ class _LibraryPageState extends State<LibraryPage> {
     }
 
     // Add mock items that don't duplicate titles already loaded
-    for (final mockItem in _items) {
+    for (final mockItem in _dynamicMockItems) {
       if (mockItem.category == _selectedCategory) {
         if (!combinedItems.any((item) => item.title == mockItem.title)) {
           combinedItems.add(mockItem);
@@ -327,7 +447,13 @@ class _LibraryPageState extends State<LibraryPage> {
                               ),
                               itemBuilder: (context, index) {
                                 final item = filteredItems[index];
-                                return _LibraryCard(item: item, primaryColor: primaryColor);
+                                return _LibraryCard(
+                                  item: item,
+                                  primaryColor: primaryColor,
+                                  onDelete: () => _deleteItem(item),
+                                  onRename: (newTitle) => _renameItem(item, newTitle),
+                                  onDuplicate: () => _duplicateItem(item),
+                                );
                               },
                             ),
                         ],
@@ -522,10 +648,16 @@ class _CategorySelectionBar extends StatelessWidget {
 class _LibraryCard extends StatefulWidget {
   final LibraryItem item;
   final Color primaryColor;
+  final VoidCallback? onDelete;
+  final ValueChanged<String>? onRename;
+  final VoidCallback? onDuplicate;
 
   const _LibraryCard({
     required this.item,
     required this.primaryColor,
+    this.onDelete,
+    this.onRename,
+    this.onDuplicate,
   });
 
   @override
@@ -696,6 +828,394 @@ class _LibraryCardState extends State<_LibraryCard> {
     }
   }
 
+  Future<void> _showContextMenu(BuildContext context, Offset globalPosition) async {
+    final RenderBox overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final RelativeRect position = RelativeRect.fromRect(
+      Rect.fromLTWH(globalPosition.dx, globalPosition.dy, 0, 0),
+      Offset.zero & overlay.size,
+    );
+
+    final isSong = widget.item.category == 'Songs';
+    final isMedia = widget.item.category == 'Media';
+    final isPresentation = widget.item.category == 'Presentations';
+
+    final result = await showMenu<String>(
+      context: context,
+      position: position,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 8,
+      items: [
+        if (isPresentation || isSong) ...[
+          const PopupMenuItem<String>(
+            value: 'play',
+            child: Row(
+              children: [
+                Icon(Icons.play_arrow, size: 20),
+                SizedBox(width: 8),
+                Text('Go Live (Play)'),
+              ],
+            ),
+          ),
+          const PopupMenuItem<String>(
+            value: 'edit',
+            child: Row(
+              children: [
+                Icon(Icons.edit, size: 20),
+                SizedBox(width: 8),
+                Text('Edit'),
+              ],
+            ),
+          ),
+        ],
+        if (isMedia) ...[
+          const PopupMenuItem<String>(
+            value: 'preview',
+            child: Row(
+              children: [
+                Icon(Icons.visibility, size: 20),
+                SizedBox(width: 8),
+                Text('Preview Media'),
+              ],
+            ),
+          ),
+          const PopupMenuItem<String>(
+            value: 'copy_link',
+            child: Row(
+              children: [
+                Icon(Icons.link, size: 20),
+                SizedBox(width: 8),
+                Text('Copy URL / Path'),
+              ],
+            ),
+          ),
+        ],
+        if (isSong) ...[
+          const PopupMenuItem<String>(
+            value: 'copy_lyrics',
+            child: Row(
+              children: [
+                Icon(Icons.copy, size: 20),
+                SizedBox(width: 8),
+                Text('Copy Lyrics'),
+              ],
+            ),
+          ),
+        ],
+        if (isPresentation) ...[
+          const PopupMenuItem<String>(
+            value: 'rename',
+            child: Row(
+              children: [
+                Icon(Icons.drive_file_rename_outline, size: 20),
+                SizedBox(width: 8),
+                Text('Rename'),
+              ],
+            ),
+          ),
+          const PopupMenuItem<String>(
+            value: 'duplicate',
+            child: Row(
+              children: [
+                Icon(Icons.copy, size: 20),
+                SizedBox(width: 8),
+                Text('Duplicate'),
+              ],
+            ),
+          ),
+        ],
+        const PopupMenuDivider(),
+        PopupMenuItem<String>(
+          value: 'delete',
+          child: Row(
+            children: [
+              Icon(Icons.delete_outline, size: 20, color: SacredColors.error),
+              const SizedBox(width: 8),
+              Text(
+                'Delete',
+                style: TextStyle(color: SacredColors.error),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+
+    if (result == null) return;
+    if (mounted) {
+      _handleMenuAction(context, result);
+    }
+  }
+
+  void _handleMenuAction(BuildContext context, String action) {
+    switch (action) {
+      case 'play':
+        if (widget.item.category == 'Presentations') {
+          final matches = AppSettings.instance.recentPresentations.where((p) => p.id == widget.item.id);
+          if (matches.isNotEmpty) {
+            final realPres = matches.first;
+            AppSettings.instance.updateActiveSlides(realPres.slides);
+            AppSettings.instance.activeSlideIndex = 0;
+          } else {
+            AppSettings.instance.updateActiveSlides(AppSettings.instance.activeSlides);
+            AppSettings.instance.activeSlideIndex = 0;
+          }
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const FullscreenPresenterPage()),
+          );
+        } else if (widget.item.category == 'Songs' && widget.item.assetPath != null) {
+          _playHymn(context);
+        } else {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const FullscreenPresenterPage()),
+          );
+        }
+        break;
+      case 'edit':
+        if (widget.item.category == 'Presentations') {
+          final matches = AppSettings.instance.recentPresentations.where((p) => p.id == widget.item.id);
+          if (matches.isNotEmpty) {
+            final realPres = matches.first;
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => PreviewPage(
+                  presentationId: realPres.id,
+                  initialSlides: realPres.slides,
+                  outlineText: realPres.outlineText,
+                ),
+              ),
+            );
+          } else {
+            final String fallbackId = DateTime.now().millisecondsSinceEpoch.toString();
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => PreviewPage(
+                  presentationId: fallbackId,
+                ),
+              ),
+            );
+          }
+        } else if (widget.item.category == 'Songs' && widget.item.assetPath != null) {
+          _editHymn(context);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Editing ${widget.item.title}...'),
+              backgroundColor: widget.primaryColor,
+            ),
+          );
+        }
+        break;
+      case 'rename':
+        _showRenameDialog(context);
+        break;
+      case 'duplicate':
+        if (widget.onDuplicate != null) {
+          widget.onDuplicate!();
+        }
+        break;
+      case 'delete':
+        _showDeleteConfirmDialog(context);
+        break;
+      case 'preview':
+        _showMediaPreview(context);
+        break;
+      case 'copy_link':
+        _copyLink(context);
+        break;
+      case 'copy_lyrics':
+        _copyLyrics(context);
+        break;
+    }
+  }
+
+  Future<void> _showDeleteConfirmDialog(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Item'),
+        content: Text('Are you sure you want to delete "${widget.item.title}"? This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: SacredColors.error,
+              foregroundColor: SacredColors.onError,
+            ),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && widget.onDelete != null) {
+      widget.onDelete!();
+    }
+  }
+
+  Future<void> _showRenameDialog(BuildContext context) async {
+    final textController = TextEditingController(text: widget.item.title);
+    final newTitle = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Rename Presentation'),
+        content: TextField(
+          controller: textController,
+          decoration: const InputDecoration(
+            hintText: 'Enter new title',
+            border: OutlineInputBorder(),
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(textController.text),
+            child: const Text('Rename'),
+          ),
+        ],
+      ),
+    );
+
+    if (newTitle != null && newTitle.trim().isNotEmpty && widget.onRename != null) {
+      widget.onRename!(newTitle.trim());
+    }
+  }
+
+  void _showMediaPreview(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            color: SacredColors.surface,
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.8,
+              maxWidth: MediaQuery.of(context).size.width * 0.8,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          widget.item.title,
+                          style: SacredTypography.headlineMd(context).copyWith(fontWeight: FontWeight.bold),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
+                    ],
+                  ),
+                ),
+                Flexible(
+                  child: Container(
+                    color: Colors.black12,
+                    child: widget.item.imageUrl.isNotEmpty
+                        ? Image.network(
+                            widget.item.imageUrl,
+                            fit: BoxFit.contain,
+                            errorBuilder: (context, error, stackTrace) => const Center(
+                              child: Icon(Icons.broken_image, size: 64, color: Colors.grey),
+                            ),
+                          )
+                        : const Center(
+                            child: Icon(Icons.video_library_outlined, size: 64, color: Colors.grey),
+                          ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Text(
+                    widget.item.metadata,
+                    style: SacredTypography.bodyMd(context).copyWith(color: SacredColors.onSurfaceVariant),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _copyLink(BuildContext context) async {
+    final link = widget.item.imageUrl.isNotEmpty ? widget.item.imageUrl : widget.item.assetPath ?? '';
+    await Clipboard.setData(ClipboardData(text: link));
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Asset path/URL copied to clipboard!'),
+          backgroundColor: widget.primaryColor,
+        ),
+      );
+    }
+  }
+
+  Future<void> _copyLyrics(BuildContext context) async {
+    String lyrics = '';
+    if (widget.item.assetPath != null) {
+      try {
+        lyrics = await DefaultAssetBundle.of(context).loadString(widget.item.assetPath!);
+      } catch (e) {
+        lyrics = 'Error loading lyrics: $e';
+      }
+    } else {
+      if (widget.item.title.contains('Amazing Grace')) {
+        lyrics = '''Amazing Grace, how sweet the sound,
+That saved a wretch like me.
+I once was lost, but now am found,
+Was blind, but now I see.
+
+'Twas grace that taught my heart to fear,
+And grace my fears relieved.
+How precious did that grace appear,
+The hour I first believed.''';
+      } else if (widget.item.title.contains('How Great Is Our God')) {
+        lyrics = '''The splendor of the King, clothed in majesty,
+Let all the earth rejoice, all the earth rejoice.
+He wraps Himself in light, and darkness tries to hide,
+And trembles at His voice, trembles at His voice.
+
+How great is our God, sing with me,
+How great is our God, all will see,
+How great, how great is our God.''';
+      } else {
+        lyrics = '${widget.item.title}\nLyrics / scripture passage copy placeholder.';
+      }
+    }
+
+    await Clipboard.setData(ClipboardData(text: lyrics));
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Lyrics copied to clipboard!'),
+          backgroundColor: widget.primaryColor,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool isTextItem = widget.item.imageUrl.isEmpty;
@@ -704,7 +1224,10 @@ class _LibraryCardState extends State<_LibraryCard> {
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
-      child: AnimatedContainer(
+      child: GestureDetector(
+        onSecondaryTapDown: (details) => _showContextMenu(context, details.globalPosition),
+        onLongPressStart: (details) => _showContextMenu(context, details.globalPosition),
+        child: AnimatedContainer(
         duration: const Duration(milliseconds: 250),
         curve: Curves.easeInOut,
         decoration: BoxDecoration(
@@ -902,6 +1425,7 @@ class _LibraryCardState extends State<_LibraryCard> {
           ),
         ),
       ),
+    ),
     );
   }
 }
