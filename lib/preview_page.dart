@@ -15,16 +15,7 @@ import 'fullscreen_presenter_page.dart';
 /// Safely decode a base64 data-URL (e.g. "data:image/png;base64,....") to bytes.
 /// Falls back to manual base64 splitting if [Uri] fails to parse the data.
 Uint8List _decodeDataUrl(String dataUrl) {
-  try {
-    final uriData = Uri.parse(dataUrl).data;
-    if (uriData != null) return uriData.contentAsBytes();
-  } catch (_) {}
-  // Fallback: manually strip the prefix
-  final commaIndex = dataUrl.indexOf(',');
-  if (commaIndex != -1) {
-    return base64Decode(dataUrl.substring(commaIndex + 1));
-  }
-  return Uint8List(0);
+  return decodeDataUrl(dataUrl);
 }
 
 
@@ -477,6 +468,7 @@ class _PreviewPageState extends State<PreviewPage> {
     setState(() {
       for (final slide in _slides) {
         slide.imageUrl = dataUrl;
+        slide.bgColorValue = 0xFF000000;
       }
     });
     AppSettings.instance.updateActiveSlides(_slides);
@@ -686,6 +678,14 @@ class _PreviewPageState extends State<PreviewPage> {
                           onAllSlidesImageChanged: _onAllSlidesImageChanged,
                           onLogoChanged: _onLogoChanged,
                           onLogoSizeChanged: _onLogoSizeChanged,
+                          onBgColorChanged: (color) {
+                            setState(() {
+                              activeSlide.bgColorValue = color.value;
+                              activeSlide.imageUrl = "";
+                            });
+                            AppSettings.instance.updateActiveSlides(_slides);
+                            _saveToRecentList();
+                          },
                         ))
                   : _LiveWorkspaceCanvas(
                       activeSlide: activeSlide,
@@ -730,6 +730,14 @@ class _PreviewPageState extends State<PreviewPage> {
                 onAllSlidesImageChanged: _onAllSlidesImageChanged,
                 onLogoChanged: _onLogoChanged,
                 onLogoSizeChanged: _onLogoSizeChanged,
+                onBgColorChanged: (color) {
+                  setState(() {
+                    activeSlide.bgColorValue = color.value;
+                    activeSlide.imageUrl = "";
+                  });
+                  AppSettings.instance.updateActiveSlides(_slides);
+                  _saveToRecentList();
+                },
               ),
           ],
         ),
@@ -1203,42 +1211,61 @@ class _LiveWorkspaceCanvas extends StatelessWidget {
                       borderRadius: BorderRadius.circular(15),
                       child: Stack(
                         children: [
-                          // Background Image Layer with custom opacity and live blurs
+                          // Base Background Color Layer
                           Positioned.fill(
-                            child: activeSlide.imageUrl.isEmpty
-                                ? Container(color: Colors.black)
-                                : ImageFiltered(
-                                    imageFilter: ImageFilter.blur(
-                                      sigmaX: activeSlide.blur,
-                                      sigmaY: activeSlide.blur,
-                                    ),
-                                    child: activeSlide.imageUrl.startsWith('data:')
+                            child: Container(
+                              color: Color(activeSlide.bgColorValue),
+                            ),
+                          ),
+
+                          // Background Image Layer with custom opacity and live blurs
+                          if (activeSlide.imageUrl.isNotEmpty)
+                            Positioned.fill(
+                              child: Opacity(
+                                opacity: activeSlide.opacity,
+                                child: activeSlide.blur == 0.0
+                                    ? (activeSlide.imageUrl.startsWith('data:')
                                         ? Image.memory(
                                             _decodeDataUrl(activeSlide.imageUrl),
                                             fit: BoxFit.cover,
-                                            errorBuilder: (c, e, s) => Container(color: SacredColors.surfaceContainerHighest),
+                                            filterQuality: FilterQuality.low,
+                                            errorBuilder: (c, e, s) => const SizedBox(),
                                           )
                                         : Image.network(
                                             activeSlide.imageUrl,
                                             fit: BoxFit.cover,
-                                            errorBuilder: (c, e, s) => Container(color: SacredColors.surfaceContainerHighest),
-                                          ),
-                                  ),
-                          ),
-
-                          // Translucent overlay blending
-                          if (activeSlide.imageUrl.isNotEmpty)
-                            Positioned.fill(
-                              child: Container(
-                                color: Colors.black.withValues(alpha: 1.0 - activeSlide.opacity),
+                                            filterQuality: FilterQuality.low,
+                                            errorBuilder: (c, e, s) => const SizedBox(),
+                                          ))
+                                    : ImageFiltered(
+                                        imageFilter: ImageFilter.blur(
+                                          sigmaX: activeSlide.blur,
+                                          sigmaY: activeSlide.blur,
+                                        ),
+                                        child: activeSlide.imageUrl.startsWith('data:')
+                                            ? Image.memory(
+                                                _decodeDataUrl(activeSlide.imageUrl),
+                                                fit: BoxFit.cover,
+                                                filterQuality: FilterQuality.low,
+                                                errorBuilder: (c, e, s) => const SizedBox(),
+                                              )
+                                            : Image.network(
+                                                activeSlide.imageUrl,
+                                                fit: BoxFit.cover,
+                                                filterQuality: FilterQuality.low,
+                                                errorBuilder: (c, e, s) => const SizedBox(),
+                                              ),
+                                      ),
                               ),
                             ),
 
                           // Purple spiritual overlay blending
                           if (activeSlide.imageUrl.isNotEmpty)
                             Positioned.fill(
-                              child: Container(
-                                color: SacredColors.primary.withValues(alpha: 0.20),
+                              child: IgnorePointer(
+                                child: Container(
+                                  color: SacredColors.primary.withValues(alpha: 0.20),
+                                ),
                               ),
                             ),
 
@@ -1490,11 +1517,6 @@ class _DraggableLogoLayerState extends State<_DraggableLogoLayer> {
                   _dragPixelY = ((_dragPixelY ?? top) + details.delta.dy)
                       .clamp(0.0, maxTop);
                 });
-                // Sync to parent during drag (throttled by Flutter's frame rate).
-                widget.onPositionChanged?.call(
-                  _dragPixelX! / w,
-                  _dragPixelY! / h,
-                );
               },
               onPanEnd: (_) {
                 if (_dragPixelX != null) {
@@ -1503,7 +1525,6 @@ class _DraggableLogoLayerState extends State<_DraggableLogoLayer> {
                     _dragPixelY! / h,
                   );
                 }
-                // Keep local position so the logo stays where released.
               },
               child: Container(
                 decoration: BoxDecoration(
@@ -1522,15 +1543,25 @@ class _DraggableLogoLayerState extends State<_DraggableLogoLayer> {
                                 color: Colors.white, size: 24),
                           ),
                         )
-                      : Image.network(
-                          widget.logoUrl,
-                          fit: BoxFit.contain,
-                          errorBuilder: (c, e, s) => Container(
-                            color: Colors.black45,
-                            child: const Icon(Icons.broken_image,
-                                color: Colors.white, size: 24),
-                          ),
-                        ),
+                      : (widget.logoUrl.startsWith('assets/')
+                          ? Image.asset(
+                              widget.logoUrl,
+                              fit: BoxFit.contain,
+                              errorBuilder: (c, e, s) => Container(
+                                color: Colors.black45,
+                                child: const Icon(Icons.broken_image,
+                                    color: Colors.white, size: 24),
+                              ),
+                            )
+                          : Image.network(
+                              widget.logoUrl,
+                              fit: BoxFit.contain,
+                              errorBuilder: (c, e, s) => Container(
+                                color: Colors.black45,
+                                child: const Icon(Icons.broken_image,
+                                    color: Colors.white, size: 24),
+                              ),
+                            )),
                 ),
               ),
             ),
@@ -1552,6 +1583,7 @@ class _PropertiesSidebar extends StatelessWidget {
   final ValueChanged<String> onAllSlidesImageChanged;
   final ValueChanged<String?> onLogoChanged;
   final ValueChanged<double> onLogoSizeChanged;
+  final ValueChanged<Color> onBgColorChanged;
 
   const _PropertiesSidebar({
     required this.activeSlide,
@@ -1563,6 +1595,7 @@ class _PropertiesSidebar extends StatelessWidget {
     required this.onAllSlidesImageChanged,
     required this.onLogoChanged,
     required this.onLogoSizeChanged,
+    required this.onBgColorChanged,
   });
 
   @override
@@ -1815,6 +1848,20 @@ class _PropertiesSidebar extends StatelessWidget {
               ],
             ),
             SizedBox(height: 32),
+
+            Text(
+              'BACKGROUND COLOR',
+              style: SacredTypography.labelLg(context).copyWith(
+                color: SacredColors.onSurfaceVariant,
+                letterSpacing: 1.0,
+              ),
+            ),
+            SizedBox(height: 12),
+            _BackgroundColorSelector(
+              selectedColor: Color(activeSlide.bgColorValue),
+              onColorChanged: onBgColorChanged,
+            ),
+            SizedBox(height: 24),
 
             Text(
               'BACKGROUND IMAGE',
@@ -2458,13 +2505,21 @@ class _LogoImageEditorCardState extends State<_LogoImageEditorCard> {
                                       child: Icon(Icons.broken_image, color: SacredColors.primary),
                                     ),
                                   )
-                                : Image.network(
-                                    widget.logoUrl!,
-                                    fit: BoxFit.contain,
-                                    errorBuilder: (c, e, s) => Center(
-                                      child: Icon(Icons.broken_image, color: SacredColors.primary),
-                                    ),
-                                  ),
+                                : (widget.logoUrl!.startsWith('assets/')
+                                    ? Image.asset(
+                                        widget.logoUrl!,
+                                        fit: BoxFit.contain,
+                                        errorBuilder: (c, e, s) => Center(
+                                          child: Icon(Icons.broken_image, color: SacredColors.primary),
+                                        ),
+                                      )
+                                    : Image.network(
+                                        widget.logoUrl!,
+                                        fit: BoxFit.contain,
+                                        errorBuilder: (c, e, s) => Center(
+                                          child: Icon(Icons.broken_image, color: SacredColors.primary),
+                                        ),
+                                      )),
                           ),
                         ),
 
@@ -2639,10 +2694,6 @@ class _DraggableTextLayerState extends State<_DraggableTextLayer> {
                   _dragPixelX = ((_dragPixelX ?? left) + details.delta.dx).clamp(minLeft, maxLeft);
                   _dragPixelY = ((_dragPixelY ?? top) + details.delta.dy).clamp(minTop, maxTop);
                 });
-                widget.onPositionChanged?.call(
-                  _dragPixelX! / w,
-                  _dragPixelY! / h,
-                );
               },
               onPanEnd: (_) {
                 if (_dragPixelX != null) {
@@ -2731,5 +2782,137 @@ class _DraggableTextLayerState extends State<_DraggableTextLayer> {
         ],
       );
     });
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Background Color Selector
+// ─────────────────────────────────────────────────────────────────────────────
+class _BackgroundColorSelector extends StatefulWidget {
+  final Color selectedColor;
+  final ValueChanged<Color> onColorChanged;
+
+  const _BackgroundColorSelector({
+    required this.selectedColor,
+    required this.onColorChanged,
+  });
+
+  @override
+  State<_BackgroundColorSelector> createState() => _BackgroundColorSelectorState();
+}
+
+class _BackgroundColorSelectorState extends State<_BackgroundColorSelector> {
+  late TextEditingController _hexController;
+
+  final List<Color> _presetBgColors = const [
+    Color(0xFF000000), // Pure Black
+    Color(0xFF0F172A), // Slate Black
+    Color(0xFF2E0052), // Spiritual Purple
+    Color(0xFF1E1B4B), // Deep Blue
+    Color(0xFF450A0A), // Deep Red
+    Color(0xFF064E3B), // Deep Green
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _hexController = TextEditingController(
+      text: '#${widget.selectedColor.value.toRadixString(16).substring(2).toUpperCase()}',
+    );
+  }
+
+  @override
+  void didUpdateWidget(_BackgroundColorSelector oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.selectedColor != widget.selectedColor) {
+      _hexController.text = '#${widget.selectedColor.value.toRadixString(16).substring(2).toUpperCase()}';
+    }
+  }
+
+  @override
+  void dispose() {
+    _hexController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            ..._presetBgColors.map((color) {
+              final isSelected = color.value == widget.selectedColor.value;
+              return GestureDetector(
+                onTap: () => widget.onColorChanged(color),
+                child: Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isSelected ? Colors.white : Colors.white24,
+                      width: isSelected ? 2.5 : 1.0,
+                    ),
+                    boxShadow: isSelected
+                        ? [BoxShadow(color: Colors.white24, blurRadius: 4)]
+                        : null,
+                  ),
+                ),
+              );
+            }),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                color: widget.selectedColor,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: Colors.white24),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: SizedBox(
+                height: 36,
+                child: TextField(
+                  controller: _hexController,
+                  style: GoogleFonts.firaCode(fontSize: 12, color: Colors.white),
+                  decoration: InputDecoration(
+                    hintText: '#000000',
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    enabledBorder: OutlineInputBorder(
+                      borderSide: const BorderSide(color: Colors.white24),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: SacredColors.primary),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
+                  onSubmitted: (val) {
+                    try {
+                      final cleanHex = val.replaceAll('#', '').trim();
+                      if (cleanHex.length == 6) {
+                        final color = Color(int.parse('0xFF$cleanHex'));
+                        widget.onColorChanged(color);
+                      }
+                    } catch (_) {}
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
   }
 }

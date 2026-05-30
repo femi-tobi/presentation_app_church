@@ -930,15 +930,21 @@ class _LogoPreview extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         child: logoUrl!.startsWith('data:')
             ? Image.memory(
-                Uri.parse(logoUrl!).data!.contentAsBytes(),
+                decodeDataUrl(logoUrl!),
                 fit: BoxFit.contain,
                 errorBuilder: (_, e, s) => Icon(Icons.broken_image, size: 64, color: selectedPrimary),
               )
-            : Image.network(
-                logoUrl!,
-                fit: BoxFit.contain,
-                errorBuilder: (_, e, s) => Icon(Icons.broken_image, size: 64, color: selectedPrimary),
-              ),
+            : (logoUrl!.startsWith('assets/')
+                ? Image.asset(
+                    logoUrl!,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, e, s) => Icon(Icons.broken_image, size: 64, color: selectedPrimary),
+                  )
+                : Image.network(
+                    logoUrl!,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, e, s) => Icon(Icons.broken_image, size: 64, color: selectedPrimary),
+                  )),
       );
     }
     // Empty state

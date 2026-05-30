@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'dart:typed_data';
+
 
 /// Stores a single entry in the recent presentations list.
 class PresentationRecord {
@@ -98,14 +100,14 @@ class SlideData {
     this.transition = 'Cross Dissolve',
     this.titleFontSize = 48.0,
     this.subtitleFontSize = 20.0,
-    this.logoUrl,
+    String? logoUrl,
     this.logoX = 0.85,
     this.logoY = 0.05,
     this.logoSize = 80.0,
     this.textX = 0.0,
     this.textY = 0.0,
     this.bgColorValue = 0xFF000000,
-  });
+  }) : logoUrl = logoUrl ?? AppSettings.instance.logoUrl;
 
   Map<String, dynamic> toJson() {
     return {
@@ -270,7 +272,7 @@ class AppSettings extends ChangeNotifier {
   }
 
   String? _logoUrl;
-  String? get logoUrl => _logoUrl;
+  String? get logoUrl => _logoUrl ?? 'assets/app_icon.ico';
   set logoUrl(String? value) {
     if (_logoUrl != value) {
       _logoUrl = value;
@@ -469,3 +471,56 @@ class AppSettings extends ChangeNotifier {
     }
   }
 }
+
+// ── Base64 / Data URL Caching Decoder ──────────────────────────────────────────
+final Map<String, Uint8List> _decodedBytesCache = {};
+const int _maxCacheSize = 100;
+
+/// Safely decode a base64 data-URL to bytes using an LRU-like cache to prevent
+/// constant re-decoding of large image data.
+Uint8List decodeDataUrl(String dataUrl) {
+  if (dataUrl.isEmpty) return Uint8List(0);
+  
+  // Create a lightweight cache key from the data URL to avoid hashing megabytes of text
+  final String key = dataUrl.length <= 1000 
+      ? dataUrl 
+      : '${dataUrl.length}_${dataUrl.substring(0, 200)}_${dataUrl.substring(dataUrl.length - 200)}';
+      
+  final cached = _decodedBytesCache[key];
+  if (cached != null) {
+    return cached;
+  }
+  
+  Uint8List decoded;
+  try {
+    final uriData = Uri.parse(dataUrl).data;
+    if (uriData != null) {
+      decoded = uriData.contentAsBytes();
+    } else {
+      final commaIndex = dataUrl.indexOf(',');
+      if (commaIndex != -1) {
+        decoded = base64Decode(dataUrl.substring(commaIndex + 1));
+      } else {
+        decoded = Uint8List(0);
+      }
+    }
+  } catch (_) {
+    final commaIndex = dataUrl.indexOf(',');
+    if (commaIndex != -1) {
+      try {
+        decoded = base64Decode(dataUrl.substring(commaIndex + 1));
+      } catch (__) {
+        decoded = Uint8List(0);
+      }
+    } else {
+      decoded = Uint8List(0);
+    }
+  }
+  
+  if (_decodedBytesCache.length >= _maxCacheSize) {
+    _decodedBytesCache.remove(_decodedBytesCache.keys.first);
+  }
+  _decodedBytesCache[key] = decoded;
+  return decoded;
+}
+

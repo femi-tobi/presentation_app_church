@@ -858,7 +858,7 @@ class _GoLivePresentationTileState extends State<_GoLivePresentationTile> {
                   child: imageUrl.isNotEmpty
                       ? (imageUrl.startsWith('data:')
                           ? Image.memory(
-                              Uri.parse(imageUrl).data!.contentAsBytes(),
+                              decodeDataUrl(imageUrl),
                               fit: BoxFit.cover,
                               errorBuilder: (_, e, s) => _thumbnailPlaceholder(),
                             )
@@ -1741,7 +1741,7 @@ class _PresentationCardState extends State<PresentationCard> {
                           curve: Curves.easeOut,
                           child: imageUrl.startsWith('data:')
                               ? Image.memory(
-                                  Uri.parse(imageUrl).data!.contentAsBytes(),
+                                  decodeDataUrl(imageUrl),
                                   fit: BoxFit.cover,
                                   errorBuilder: (context, error, stackTrace) {
                                     return Container(

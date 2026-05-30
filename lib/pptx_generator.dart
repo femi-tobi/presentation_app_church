@@ -8,6 +8,7 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 class PptxGenerator {
   static Future<void> downloadPptx(
@@ -22,12 +23,13 @@ class PptxGenerator {
       double logoSize,
       double textX,
       double textY,
+      int bgColorValue,
     })> slides,
     String filename, {
     String? backgroundImageUrl,
     String? fontFamily,
   }) async {
-    final bytes = _buildPptx(slides, backgroundImageUrl, fontFamily);
+    final bytes = await _buildPptx(slides, backgroundImageUrl, fontFamily);
 
     if (kIsWeb) {
       // Web: trigger browser download via dart:html (loaded dynamically)
@@ -61,7 +63,7 @@ class PptxGenerator {
     );
   }
 
-  static List<int> _buildPptx(
+  static Future<List<int>> _buildPptx(
     List<({
       String title,
       String subtitle,
@@ -73,10 +75,11 @@ class PptxGenerator {
       double logoSize,
       double textX,
       double textY,
+      int bgColorValue,
     })> slides,
     String? backgroundImageUrl,
     String? fontFamily,
-  ) {
+  ) async {
     final archive = Archive();
 
     // ── Try to extract embedded image bytes from a data: URL ──────────────
@@ -120,29 +123,42 @@ class PptxGenerator {
     String logoMimeType = 'image/png';
     bool hasLogo = false;
 
-    // Find the first slide that has a valid logo data URL
+    // Find the first slide that has a valid logo
     final slideWithLogo = slides.firstWhere(
-      (s) => s.logoUrl != null && s.logoUrl!.startsWith('data:'),
+      (s) => s.logoUrl != null && s.logoUrl!.isNotEmpty,
       orElse: () => slides.first,
     );
 
-    if (slideWithLogo.logoUrl != null && slideWithLogo.logoUrl!.startsWith('data:')) {
-      try {
-        final data = UriData.parse(slideWithLogo.logoUrl!);
-        logoBytes = Uint8List.fromList(data.contentAsBytes());
-        logoMimeType = data.mimeType;
-        if (logoMimeType.contains('jpeg') || logoMimeType.contains('jpg')) {
-          logoExt = 'jpeg';
-        } else if (logoMimeType.contains('png')) {
-          logoExt = 'png';
-        } else if (logoMimeType.contains('gif')) {
-          logoExt = 'gif';
-        } else if (logoMimeType.contains('webp')) {
-          logoExt = 'webp';
+    if (slideWithLogo.logoUrl != null && slideWithLogo.logoUrl!.isNotEmpty) {
+      if (slideWithLogo.logoUrl!.startsWith('data:')) {
+        try {
+          final data = UriData.parse(slideWithLogo.logoUrl!);
+          logoBytes = Uint8List.fromList(data.contentAsBytes());
+          logoMimeType = data.mimeType;
+          if (logoMimeType.contains('jpeg') || logoMimeType.contains('jpg')) {
+            logoExt = 'jpeg';
+          } else if (logoMimeType.contains('png')) {
+            logoExt = 'png';
+          } else if (logoMimeType.contains('gif')) {
+            logoExt = 'gif';
+          } else if (logoMimeType.contains('webp')) {
+            logoExt = 'webp';
+          }
+          hasLogo = true;
+        } catch (_) {
+          hasLogo = false;
         }
-        hasLogo = true;
-      } catch (_) {
-        hasLogo = false;
+      } else if (slideWithLogo.logoUrl!.startsWith('assets/')) {
+        try {
+          final ByteData data = await rootBundle.load(slideWithLogo.logoUrl!);
+          logoBytes = data.buffer.asUint8List();
+          logoExt = slideWithLogo.logoUrl!.split('.').last.toLowerCase();
+          if (logoExt == 'jpg') logoExt = 'jpeg';
+          logoMimeType = 'image/$logoExt';
+          hasLogo = true;
+        } catch (_) {
+          hasLogo = false;
+        }
       }
     }
 
@@ -191,6 +207,7 @@ class PptxGenerator {
         logoSize: s.logoSize,
         textX: s.textX,
         textY: s.textY,
+        bgColorValue: s.bgColorValue,
       ));
       _add(archive, 'ppt/slides/_rels/slide$n.xml.rels', _slideRels(
         hasImage,
@@ -414,6 +431,7 @@ $slideEntries
     double logoSize = 80.0,
     double textX = 0.0,
     double textY = 0.0,
+    int bgColorValue = 0xFF000000,
   }) {
     String esc(String s) => s
         .replaceAll('&', '&amp;')
@@ -422,7 +440,16 @@ $slideEntries
         .replaceAll('"', '&quot;')
         .replaceAll("'", '&apos;');
 
-    // Background: use embedded image if available, otherwise solid black
+    // Extract RGB Hex string from ARGB integer
+    final int r = (bgColorValue >> 16) & 0xFF;
+    final int g = (bgColorValue >> 8) & 0xFF;
+    final int b = bgColorValue & 0xFF;
+    final String hexColor = '${r.toRadixString(16).padLeft(2, '0')}'
+        '${g.toRadixString(16).padLeft(2, '0')}'
+        '${b.toRadixString(16).padLeft(2, '0')}'
+        .toUpperCase();
+
+    // Background: use embedded image if available, otherwise solid background color
     final String bgXml = hasImage
         ? '''<p:bg>
       <p:bgPr>
@@ -435,7 +462,7 @@ $slideEntries
         : '''<p:bg>
       <p:bgPr>
         <a:solidFill>
-          <a:srgbClr val="000000"/>
+          <a:srgbClr val="$hexColor"/>
         </a:solidFill>
       </p:bgPr>
     </p:bg>''';

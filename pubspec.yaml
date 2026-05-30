@@ -63,6 +63,7 @@ flutter:
 
   assets:
     - assets/Hymns/
+    - assets/app_icon.ico
   # assets:
   #   - images/a_dot_burr.jpeg
   #   - images/a_dot_ham.jpeg

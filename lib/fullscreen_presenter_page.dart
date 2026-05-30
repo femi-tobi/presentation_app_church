@@ -1,21 +1,12 @@
 import 'dart:ui';
-import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'settings_state.dart';
 import 'dashboard_page.dart'; // For SacredColors / Shadows / Typography
 
-/// Safely decode a base64 data-URL to bytes.
 Uint8List _decodeDataUrl(String dataUrl) {
-  try {
-    final uriData = Uri.parse(dataUrl).data;
-    if (uriData != null) return uriData.contentAsBytes();
-  } catch (_) {}
-  final commaIndex = dataUrl.indexOf(',');
-  if (commaIndex != -1) return base64Decode(dataUrl.substring(commaIndex + 1));
-  return Uint8List(0);
+  return decodeDataUrl(dataUrl);
 }
 
 class FullscreenPresenterPage extends StatefulWidget {
@@ -137,42 +128,61 @@ class _FullscreenPresenterPageState extends State<FullscreenPresenterPage> with 
                       aspectRatio: 16 / 9,
                       child: Stack(
                         children: [
-                          // Background Image Layer with Blur
+                          // Base Background Color Layer
                           Positioned.fill(
-                            child: slide.imageUrl.isEmpty
-                                ? Container(color: Colors.black)
-                                : ImageFiltered(
-                                    imageFilter: ImageFilter.blur(
-                                      sigmaX: slide.blur,
-                                      sigmaY: slide.blur,
-                                    ),
-                                    child: slide.imageUrl.startsWith('data:')
+                            child: Container(
+                              color: Color(slide.bgColorValue),
+                            ),
+                          ),
+
+                          // Background Image Layer with Blur & Opacity
+                          if (slide.imageUrl.isNotEmpty)
+                            Positioned.fill(
+                              child: Opacity(
+                                opacity: slide.opacity,
+                                child: slide.blur == 0.0
+                                    ? (slide.imageUrl.startsWith('data:')
                                         ? Image.memory(
                                             _decodeDataUrl(slide.imageUrl),
                                             fit: BoxFit.cover,
-                                            errorBuilder: (c, e, s) => Container(color: const Color(0xFF0F172A)),
+                                            filterQuality: FilterQuality.low,
+                                            errorBuilder: (c, e, s) => const SizedBox(),
                                           )
                                         : Image.network(
                                             slide.imageUrl,
                                             fit: BoxFit.cover,
-                                            errorBuilder: (c, e, s) => Container(color: const Color(0xFF0F172A)),
-                                          ),
-                                  ),
-                          ),
-
-                          // Translucent overlay blending
-                          if (slide.imageUrl.isNotEmpty)
-                            Positioned.fill(
-                              child: Container(
-                                color: Colors.black.withValues(alpha: 1.0 - slide.opacity),
+                                            filterQuality: FilterQuality.low,
+                                            errorBuilder: (c, e, s) => const SizedBox(),
+                                          ))
+                                    : ImageFiltered(
+                                        imageFilter: ImageFilter.blur(
+                                          sigmaX: slide.blur,
+                                          sigmaY: slide.blur,
+                                        ),
+                                        child: slide.imageUrl.startsWith('data:')
+                                            ? Image.memory(
+                                                _decodeDataUrl(slide.imageUrl),
+                                                fit: BoxFit.cover,
+                                                filterQuality: FilterQuality.low,
+                                                errorBuilder: (c, e, s) => const SizedBox(),
+                                              )
+                                            : Image.network(
+                                                slide.imageUrl,
+                                                fit: BoxFit.cover,
+                                                filterQuality: FilterQuality.low,
+                                                errorBuilder: (c, e, s) => const SizedBox(),
+                                              ),
+                                      ),
                               ),
                             ),
 
                           // Spiritual purple overlay blending
                           if (slide.imageUrl.isNotEmpty)
                             Positioned.fill(
-                              child: Container(
-                                color: SacredColors.primary.withValues(alpha: 0.20),
+                              child: IgnorePointer(
+                                child: Container(
+                                  color: SacredColors.primary.withValues(alpha: 0.20),
+                                ),
                               ),
                             ),
 
@@ -292,11 +302,17 @@ class _FullscreenPresenterPageState extends State<FullscreenPresenterPage> with 
                                                   fit: BoxFit.contain,
                                                   errorBuilder: (c, e, s) => const SizedBox(),
                                                 )
-                                              : Image.network(
-                                                  slide.logoUrl!,
-                                                  fit: BoxFit.contain,
-                                                  errorBuilder: (c, e, s) => const SizedBox(),
-                                                ),
+                                              : (slide.logoUrl!.startsWith('assets/')
+                                                  ? Image.asset(
+                                                      slide.logoUrl!,
+                                                      fit: BoxFit.contain,
+                                                      errorBuilder: (c, e, s) => const SizedBox(),
+                                                    )
+                                                  : Image.network(
+                                                      slide.logoUrl!,
+                                                      fit: BoxFit.contain,
+                                                      errorBuilder: (c, e, s) => const SizedBox(),
+                                                    )),
                                         ),
                                       ),
                                     ],
