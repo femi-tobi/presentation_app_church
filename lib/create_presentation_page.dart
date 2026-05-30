@@ -881,7 +881,8 @@ String? _extractTextFromDocx(List<int> bytes) {
 
 Future<String?> _convertPdfToDocx(List<int> pdfBytes) async {
   final base64Data = base64Encode(pdfBytes);
-  final url = Uri.parse('https://v2.convertapi.com/convert/pdf/to/docx?Secret=1PILryhl7iSdMxZfMj9Bh6qeEoq0YawH');
+  final secret = AppSettings.instance.convertApiKey;
+  final url = Uri.parse('https://v2.convertapi.com/convert/pdf/to/docx?Secret=$secret');
   
   final client = HttpClient();
   client.connectionTimeout = const Duration(seconds: 30);

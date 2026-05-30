@@ -24,6 +24,7 @@ class _SettingsPageState extends State<SettingsPage> {
   late String _selectedFont;
   late String _churchName;
   late String _churchEmail;
+  late String _convertApiKey;
   
   String? _logoUrl;
   IconData? _logoIcon;
@@ -40,6 +41,7 @@ class _SettingsPageState extends State<SettingsPage> {
   late TextEditingController _nameController;
   late TextEditingController _emailController;
   late TextEditingController _hexController;
+  late TextEditingController _convertApiKeyController;
 
   @override
   void initState() {
@@ -53,12 +55,14 @@ class _SettingsPageState extends State<SettingsPage> {
     _churchName = settings.churchName;
     _churchEmail = settings.churchEmail;
     _logoUrl = settings.logoUrl;
+    _convertApiKey = settings.convertApiKey;
 
     _nameController = TextEditingController(text: _churchName);
     _emailController = TextEditingController(text: _churchEmail);
     _hexController = TextEditingController(
       text: '#${_selectedPrimary.value.toRadixString(16).substring(2).toUpperCase()}'
     );
+    _convertApiKeyController = TextEditingController(text: _convertApiKey);
   }
 
   @override
@@ -66,6 +70,7 @@ class _SettingsPageState extends State<SettingsPage> {
     _nameController.dispose();
     _emailController.dispose();
     _hexController.dispose();
+    _convertApiKeyController.dispose();
     super.dispose();
   }
 
@@ -78,6 +83,7 @@ class _SettingsPageState extends State<SettingsPage> {
     settings.churchName = _nameController.text;
     settings.churchEmail = _emailController.text;
     settings.logoUrl = _logoUrl;
+    settings.convertApiKey = _convertApiKeyController.text;
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -213,11 +219,12 @@ class _SettingsPageState extends State<SettingsPage> {
                              logoBytes: _logoBytes,
                              onUpload: _pickLogo,
                             onClearCache: () => AppSettings.instance.clearCache(),
-                            nameController: _nameController,
-                            emailController: _emailController,
-                            hexController: _hexController,
-                            selectedFont: _selectedFont,
-                            onFontSelect: (f) => setState(() => _selectedFont = f),
+                             nameController: _nameController,
+                             emailController: _emailController,
+                             hexController: _hexController,
+                             convertApiKeyController: _convertApiKeyController,
+                             selectedFont: _selectedFont,
+                             onFontSelect: (f) => setState(() => _selectedFont = f),
                           ),
                         ),
                       ),
@@ -372,6 +379,7 @@ class _SettingsContent extends StatelessWidget {
   final TextEditingController nameController;
   final TextEditingController emailController;
   final TextEditingController hexController;
+  final TextEditingController convertApiKeyController;
 
   final String selectedFont;
   final ValueChanged<String> onFontSelect;
@@ -392,6 +400,7 @@ class _SettingsContent extends StatelessWidget {
     required this.nameController,
     required this.emailController,
     required this.hexController,
+    required this.convertApiKeyController,
     required this.selectedFont,
     required this.onFontSelect,
   });
@@ -774,6 +783,39 @@ class _SettingsContent extends StatelessWidget {
                     ],
                   );
                 },
+              ),
+              Divider(height: 32, color: SacredColors.outlineVariant),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.vpn_key, color: SacredColors.outline),
+                      const SizedBox(width: 16),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('ConvertAPI Secret Key', style: SacredTypography.labelLg(context)),
+                          const SizedBox(height: 2),
+                          Text('Used securely for online PDF-to-Word conversions.', style: SacredTypography.labelSm(context).copyWith(color: SacredColors.onSurfaceVariant)),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: convertApiKeyController,
+                    obscureText: true,
+                    style: SacredTypography.bodyLg(context),
+                    decoration: InputDecoration(
+                      hintText: 'Enter ConvertAPI Secret Key',
+                      filled: true,
+                      fillColor: SacredColors.surfaceContainerLow,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

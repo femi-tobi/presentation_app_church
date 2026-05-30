@@ -294,6 +294,16 @@ class AppSettings extends ChangeNotifier {
     }
   }
 
+  String _convertApiKey = const String.fromEnvironment('CONVERT_API_KEY', defaultValue: '');
+  String get convertApiKey => _convertApiKey;
+  set convertApiKey(String value) {
+    if (_convertApiKey != value) {
+      _convertApiKey = value;
+      saveSettings();
+      notifyListeners();
+    }
+  }
+
   bool get canConvertPdf {
     if (_lastPdfConversionTime == null) return true;
     final oneWeekAgo = DateTime.now().subtract(const Duration(days: 7));
@@ -456,6 +466,7 @@ class AppSettings extends ChangeNotifier {
       _churchName = prefs.getString('churchName') ?? _churchName;
       _churchEmail = prefs.getString('churchEmail') ?? _churchEmail;
       _logoUrl = prefs.getString('logoUrl');
+      _convertApiKey = prefs.getString('convertApiKey') ?? _convertApiKey;
       final lastPdfTimeStr = prefs.getString('lastPdfConversionTime');
       if (lastPdfTimeStr != null) {
         _lastPdfConversionTime = DateTime.parse(lastPdfTimeStr);
@@ -488,6 +499,8 @@ class AppSettings extends ChangeNotifier {
       } else {
         await prefs.remove('logoUrl');
       }
+
+      await prefs.setString('convertApiKey', _convertApiKey);
 
       if (_lastPdfConversionTime != null) {
         await prefs.setString('lastPdfConversionTime', _lastPdfConversionTime!.toIso8601String());
