@@ -77,6 +77,8 @@ class _ExportPageState extends State<ExportPage>
               logoX: s.logoX,
               logoY: s.logoY,
               logoSize: s.logoSize,
+              textX: s.textX,
+              textY: s.textY,
             ))
         .toList();
 

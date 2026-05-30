@@ -20,6 +20,8 @@ class PptxGenerator {
       double logoX,
       double logoY,
       double logoSize,
+      double textX,
+      double textY,
     })> slides,
     String filename, {
     String? backgroundImageUrl,
@@ -69,6 +71,8 @@ class PptxGenerator {
       double logoX,
       double logoY,
       double logoSize,
+      double textX,
+      double textY,
     })> slides,
     String? backgroundImageUrl,
     String? fontFamily,
@@ -185,6 +189,8 @@ class PptxGenerator {
         logoX: s.logoX,
         logoY: s.logoY,
         logoSize: s.logoSize,
+        textX: s.textX,
+        textY: s.textY,
       ));
       _add(archive, 'ppt/slides/_rels/slide$n.xml.rels', _slideRels(
         hasImage,
@@ -406,6 +412,8 @@ $slideEntries
     double logoX = 0.85,
     double logoY = 0.05,
     double logoSize = 80.0,
+    double textX = 0.0,
+    double textY = 0.0,
   }) {
     String esc(String s) => s
         .replaceAll('&', '&amp;')
@@ -467,16 +475,14 @@ $slideEntries
       </p:pic>'''
         : '';
 
-    return '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
-  xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
-  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-  <p:cSld>
-    $bgXml
-    <p:spTree>
-      <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
-      <p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>
+    final bool hasSubtitle = subtitle.trim().isNotEmpty;
+    final int dx = (textX * 9144000).round();
+    final int dy = (textY * 5143500).round();
+    final int titleYDefault = hasSubtitle ? 400000 : 2271750;
+    final int titleX = (457200 + dx).clamp(-9144000, 18288000);
+    final int titleY = (titleYDefault + dy).clamp(-5143500, 10287000);
 
+    final String titleSpXml = '''
       <!-- Title text box -->
       <p:sp>
         <p:nvSpPr>
@@ -485,7 +491,7 @@ $slideEntries
           <p:nvPr/>
         </p:nvSpPr>
         <p:spPr>
-          <a:xfrm><a:off x="457200" y="400000"/><a:ext cx="8229600" cy="600000"/></a:xfrm>
+          <a:xfrm><a:off x="$titleX" y="$titleY"/><a:ext cx="8229600" cy="600000"/></a:xfrm>
           <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
           <a:noFill/>
         </p:spPr>
@@ -508,8 +514,10 @@ $slideEntries
             </a:r>
           </a:p>
         </p:txBody>
-      </p:sp>
+      </p:sp>''';
 
+    final String dividerSpXml = hasSubtitle
+        ? '''
       <!-- Decorative divider line -->
       <p:sp>
         <p:nvSpPr>
@@ -518,13 +526,16 @@ $slideEntries
           <p:nvPr/>
         </p:nvSpPr>
         <p:spPr>
-          <a:xfrm><a:off x="4118400" y="1100000"/><a:ext cx="914400" cy="50800"/></a:xfrm>
+          <a:xfrm><a:off x="${(4118400 + dx).clamp(-9144000, 18288000)}" y="${(1100000 + dy).clamp(-5143500, 10287000)}"/><a:ext cx="914400" cy="50800"/></a:xfrm>
           <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
           <a:solidFill><a:srgbClr val="A78BFA"/></a:solidFill>
         </p:spPr>
         <p:txBody><a:bodyPr/><a:lstStyle/><a:p/></p:txBody>
-      </p:sp>
+      </p:sp>'''
+        : '';
 
+    final String subtitleSpXml = hasSubtitle
+        ? '''
       <!-- Subtitle text box -->
       <p:sp>
         <p:nvSpPr>
@@ -533,7 +544,7 @@ $slideEntries
           <p:nvPr/>
         </p:nvSpPr>
         <p:spPr>
-          <a:xfrm><a:off x="457200" y="1350000"/><a:ext cx="8229600" cy="3400000"/></a:xfrm>
+          <a:xfrm><a:off x="${(457200 + dx).clamp(-9144000, 18288000)}" y="${(1350000 + dy).clamp(-5143500, 10287000)}"/><a:ext cx="8229600" cy="3400000"/></a:xfrm>
           <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
           <a:noFill/>
         </p:spPr>
@@ -551,9 +562,22 @@ $slideEntries
             </a:r>
           </a:p>
         </p:txBody>
-      </p:sp>
-      $logoXml
+      </p:sp>'''
+        : '';
 
+    return '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+  xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <p:cSld>
+    $bgXml
+    <p:spTree>
+      <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+      <p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>
+      $titleSpXml
+      $dividerSpXml
+      $subtitleSpXml
+      $logoXml
     </p:spTree>
   </p:cSld>
   <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>

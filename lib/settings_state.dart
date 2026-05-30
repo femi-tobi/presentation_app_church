@@ -81,6 +81,8 @@ class SlideData {
   double logoX;           // relative X position (0.0 to 1.0)
   double logoY;           // relative Y position (0.0 to 1.0)
   double logoSize;        // size of logo in pixels
+  double textX;           // relative X offset (-1.0 to 1.0)
+  double textY;           // relative Y offset (-1.0 to 1.0)
 
   SlideData({
     required this.id,
@@ -99,6 +101,8 @@ class SlideData {
     this.logoX = 0.85,
     this.logoY = 0.05,
     this.logoSize = 80.0,
+    this.textX = 0.0,
+    this.textY = 0.0,
   });
 
   Map<String, dynamic> toJson() {
@@ -119,6 +123,8 @@ class SlideData {
       'logoX': logoX,
       'logoY': logoY,
       'logoSize': logoSize,
+      'textX': textX,
+      'textY': textY,
     };
   }
 
@@ -143,6 +149,8 @@ class SlideData {
       logoX: (json['logoX'] as num?)?.toDouble() ?? 0.85,
       logoY: (json['logoY'] as num?)?.toDouble() ?? 0.05,
       logoSize: (json['logoSize'] as num?)?.toDouble() ?? 80.0,
+      textX: (json['textX'] as num?)?.toDouble() ?? 0.0,
+      textY: (json['textY'] as num?)?.toDouble() ?? 0.0,
     );
   }
 }
@@ -351,6 +359,8 @@ class AppSettings extends ChangeNotifier {
           logoX: s.logoX,
           logoY: s.logoY,
           logoSize: s.logoSize,
+          textX: s.textX,
+          textY: s.textY,
         )).toList(),
         outlineText: oldRecord.outlineText,
       );

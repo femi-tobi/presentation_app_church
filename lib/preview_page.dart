@@ -706,6 +706,15 @@ class _PreviewPageState extends State<PreviewPage> {
                         AppSettings.instance.updateActiveSlides(_slides);
                         _saveToRecentList();
                       },
+                      onTextPositionChanged: (x, y) {
+                        setState(() {
+                          final slide = _slides[_activeSlideIndex];
+                          slide.textX = x;
+                          slide.textY = y;
+                        });
+                        AppSettings.instance.updateActiveSlides(_slides);
+                        _saveToRecentList();
+                      },
                     ),
             ),
 
@@ -1146,6 +1155,7 @@ class _LiveWorkspaceCanvas extends StatelessWidget {
   final int activeIndex;
   final ValueChanged<int> onNavigate;
   final Function(double, double)? onLogoPositionChanged;
+  final Function(double, double)? onTextPositionChanged;
 
   const _LiveWorkspaceCanvas({
     required this.activeSlide,
@@ -1153,6 +1163,7 @@ class _LiveWorkspaceCanvas extends StatelessWidget {
     required this.activeIndex,
     required this.onNavigate,
     this.onLogoPositionChanged,
+    this.onTextPositionChanged,
   });
 
   @override
@@ -1231,66 +1242,11 @@ class _LiveWorkspaceCanvas extends StatelessWidget {
                               ),
                             ),
 
-                          // Typography Text Elements
+                          // Draggable Typography Text Layer
                           Positioned.fill(
-                            child: Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 48.0, vertical: 32.0),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  Text(
-                                    activeSlide.title,
-                                    textAlign: activeSlide.alignment,
-                                    style: GoogleFonts.getFont(
-                                      AppSettings.instance.fontFamily,
-                                      textStyle: TextStyle(
-                                        fontSize: activeSlide.titleFontSize,
-                                        color: Colors.white,
-                                        fontWeight: activeSlide.isBold ? FontWeight.bold : FontWeight.normal,
-                                        fontStyle: activeSlide.isItalic ? FontStyle.italic : FontStyle.normal,
-                                        shadows: const [
-                                          Shadow(
-                                            color: Colors.black45,
-                                            offset: Offset(0, 4),
-                                            blurRadius: 10,
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                  SizedBox(height: 16),
-                                  Container(
-                                    width: 96,
-                                    height: 4,
-                                    decoration: BoxDecoration(
-                                      color: SacredColors.secondaryContainer,
-                                      borderRadius: BorderRadius.circular(999),
-                                    ),
-                                  ),
-                                  Expanded(
-                                    child: Center(
-                                      child: Text(
-                                        activeSlide.subtitle,
-                                        textAlign: activeSlide.alignment,
-                                        style: GoogleFonts.inter(
-                                          textStyle: TextStyle(
-                                            fontSize: activeSlide.subtitleFontSize,
-                                            color: Colors.white.withValues(alpha: 0.9),
-                                            fontStyle: FontStyle.italic,
-                                            shadows: const [
-                                              Shadow(
-                                                color: Colors.black45,
-                                                offset: Offset(0, 2),
-                                                blurRadius: 6,
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
+                            child: _DraggableTextLayer(
+                              activeSlide: activeSlide,
+                              onPositionChanged: onTextPositionChanged,
                             ),
                           ),
 
@@ -2594,4 +2550,186 @@ class SubPointBlock {
   final List<String> romanLines = [];
 
   SubPointBlock({required this.header});
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Draggable Typography Text Layer
+// ─────────────────────────────────────────────────────────────────────────────
+class _DraggableTextLayer extends StatefulWidget {
+  final SlideData activeSlide;
+  final Function(double, double)? onPositionChanged;
+
+  const _DraggableTextLayer({
+    required this.activeSlide,
+    this.onPositionChanged,
+  });
+
+  @override
+  State<_DraggableTextLayer> createState() => _DraggableTextLayerState();
+}
+
+class _DraggableTextLayerState extends State<_DraggableTextLayer> {
+  double? _dragPixelX;
+  double? _dragPixelY;
+  bool _showBorder = false;
+
+  @override
+  void didUpdateWidget(_DraggableTextLayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Reset local position when slide changes
+    if (oldWidget.activeSlide.id != widget.activeSlide.id) {
+      _dragPixelX = null;
+      _dragPixelY = null;
+      _showBorder = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(builder: (context, constraints) {
+      final double w = constraints.maxWidth;
+      final double h = constraints.maxHeight;
+      if (w == 0 || h == 0) return const SizedBox.expand();
+
+      // Drag offsets range: let them drag up to 85% off screen vertically/horizontally
+      final double maxLeft = w * 0.85;
+      final double minLeft = -w * 0.85;
+      final double maxTop  = h * 0.85;
+      final double minTop  = -h * 0.85;
+
+      final double left = (_dragPixelX ?? (widget.activeSlide.textX * w)).clamp(minLeft, maxLeft);
+      final double top  = (_dragPixelY ?? (widget.activeSlide.textY * h)).clamp(minTop, maxTop);
+
+      final hasSubtitle = widget.activeSlide.subtitle.trim().isNotEmpty;
+
+      return Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            left: left,
+            top: top,
+            width: w,
+            height: h,
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTapDown: (_) {
+                setState(() {
+                  _showBorder = true;
+                });
+              },
+              onTapUp: (_) {
+                setState(() {
+                  _showBorder = false;
+                });
+              },
+              onTapCancel: () {
+                setState(() {
+                  _showBorder = false;
+                });
+              },
+              onPanStart: (_) {
+                setState(() {
+                  _dragPixelX = left;
+                  _dragPixelY = top;
+                  _showBorder = true;
+                });
+              },
+              onPanUpdate: (details) {
+                setState(() {
+                  _dragPixelX = ((_dragPixelX ?? left) + details.delta.dx).clamp(minLeft, maxLeft);
+                  _dragPixelY = ((_dragPixelY ?? top) + details.delta.dy).clamp(minTop, maxTop);
+                });
+                widget.onPositionChanged?.call(
+                  _dragPixelX! / w,
+                  _dragPixelY! / h,
+                );
+              },
+              onPanEnd: (_) {
+                if (_dragPixelX != null) {
+                  widget.onPositionChanged?.call(
+                    _dragPixelX! / w,
+                    _dragPixelY! / h,
+                  );
+                }
+                setState(() {
+                  _showBorder = false;
+                });
+              },
+              child: Container(
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: _showBorder ? Colors.white54 : Colors.transparent,
+                    width: 1.5,
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 48.0, vertical: 32.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        widget.activeSlide.title,
+                        textAlign: widget.activeSlide.alignment,
+                        style: GoogleFonts.getFont(
+                          AppSettings.instance.fontFamily,
+                          textStyle: TextStyle(
+                            fontSize: widget.activeSlide.titleFontSize,
+                            color: Colors.white,
+                            fontWeight: widget.activeSlide.isBold ? FontWeight.bold : FontWeight.normal,
+                            fontStyle: widget.activeSlide.isItalic ? FontStyle.italic : FontStyle.normal,
+                            shadows: const [
+                              Shadow(
+                                color: Colors.black45,
+                                offset: Offset(0, 4),
+                                blurRadius: 10,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (hasSubtitle) ...[
+                        const SizedBox(height: 16),
+                        Container(
+                          width: 96,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: SacredColors.secondaryContainer,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        ),
+                        Expanded(
+                          child: Center(
+                            child: Text(
+                              widget.activeSlide.subtitle,
+                              textAlign: widget.activeSlide.alignment,
+                              style: GoogleFonts.inter(
+                                textStyle: TextStyle(
+                                  fontSize: widget.activeSlide.subtitleFontSize,
+                                  color: Colors.white.withValues(alpha: 0.9),
+                                  fontStyle: FontStyle.italic,
+                                  shadows: const [
+                                    Shadow(
+                                      color: Colors.black45,
+                                      offset: Offset(0, 2),
+                                      blurRadius: 6,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    });
+  }
 }
