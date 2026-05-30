@@ -83,6 +83,7 @@ class SlideData {
   double logoSize;        // size of logo in pixels
   double textX;           // relative X offset (-1.0 to 1.0)
   double textY;           // relative Y offset (-1.0 to 1.0)
+  int bgColorValue;       // ARGB color value (default 0xFF000000 for black)
 
   SlideData({
     required this.id,
@@ -103,6 +104,7 @@ class SlideData {
     this.logoSize = 80.0,
     this.textX = 0.0,
     this.textY = 0.0,
+    this.bgColorValue = 0xFF000000,
   });
 
   Map<String, dynamic> toJson() {
@@ -125,6 +127,7 @@ class SlideData {
       'logoSize': logoSize,
       'textX': textX,
       'textY': textY,
+      'bgColorValue': bgColorValue,
     };
   }
 
@@ -151,6 +154,7 @@ class SlideData {
       logoSize: (json['logoSize'] as num?)?.toDouble() ?? 80.0,
       textX: (json['textX'] as num?)?.toDouble() ?? 0.0,
       textY: (json['textY'] as num?)?.toDouble() ?? 0.0,
+      bgColorValue: json['bgColorValue'] as int? ?? 0xFF000000,
     );
   }
 }
@@ -361,6 +365,7 @@ class AppSettings extends ChangeNotifier {
           logoSize: s.logoSize,
           textX: s.textX,
           textY: s.textY,
+          bgColorValue: s.bgColorValue,
         )).toList(),
         outlineText: oldRecord.outlineText,
       );
