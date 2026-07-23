@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:presentation_app/settings_state.dart';
+import 'package:presentation_app/connectors/connector_manager.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -40,5 +41,46 @@ void main() {
 
     // Clean up
     settings.lastPdfConversionTime = null;
+  });
+
+  test('AppSettings persists slidesGptApiKey, gammaApiKey, and presentationsAiApiKey, and ConnectorManager registers them', () {
+    final settings = AppSettings.instance;
+
+    // Set test keys
+    settings.slidesGptApiKey = 'test_slidesgpt_key';
+    settings.gammaApiKey = 'test_gamma_key';
+    settings.presentationsAiApiKey = 'test_presentations_ai_key';
+
+    expect(settings.slidesGptApiKey, equals('test_slidesgpt_key'));
+    expect(settings.gammaApiKey, equals('test_gamma_key'));
+    expect(settings.presentationsAiApiKey, equals('test_presentations_ai_key'));
+
+    // Test ConnectorManager registers them
+    final manager = ConnectorManager.instance;
+    manager.initialize();
+
+    final slidesGptConnector = manager.getConnector('slidesgpt');
+    final gammaConnector = manager.getConnector('gamma');
+    final presentationsAiConnector = manager.getConnector('presentations_ai');
+    final geminiConnector = manager.getConnector('gemini');
+
+    expect(slidesGptConnector, isNotNull);
+    expect(gammaConnector, isNotNull);
+    expect(presentationsAiConnector, isNotNull);
+    expect(geminiConnector, isNotNull);
+
+    expect(slidesGptConnector!.name, equals('SlidesGPT'));
+    expect(gammaConnector!.name, equals('Gamma App'));
+    expect(presentationsAiConnector!.name, equals('Presentations.ai'));
+
+    // Clean up keys
+    settings.slidesGptApiKey = '';
+    settings.gammaApiKey = '';
+    settings.presentationsAiApiKey = '';
+    
+    manager.initialize();
+    expect(manager.getConnector('slidesgpt'), isNull);
+    expect(manager.getConnector('gamma'), isNull);
+    expect(manager.getConnector('presentations_ai'), isNull);
   });
 }

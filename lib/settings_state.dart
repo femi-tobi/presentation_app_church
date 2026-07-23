@@ -297,8 +297,53 @@ class AppSettings extends ChangeNotifier {
   String _convertApiKey = const String.fromEnvironment('CONVERT_API_KEY', defaultValue: '');
   String get convertApiKey => _convertApiKey;
   set convertApiKey(String value) {
-    if (_convertApiKey != value) {
-      _convertApiKey = value;
+    final trimmed = value.trim();
+    if (_convertApiKey != trimmed) {
+      _convertApiKey = trimmed;
+      saveSettings();
+      notifyListeners();
+    }
+  }
+
+  String _geminiApiKey = const String.fromEnvironment('GEMINI_API_KEY', defaultValue: '');
+  String get geminiApiKey => _geminiApiKey;
+  set geminiApiKey(String value) {
+    final trimmed = value.trim();
+    if (_geminiApiKey != trimmed) {
+      _geminiApiKey = trimmed;
+      saveSettings();
+      notifyListeners();
+    }
+  }
+
+  String _slidesGptApiKey = const String.fromEnvironment('SLIDESGPT_API_KEY', defaultValue: '');
+  String get slidesGptApiKey => _slidesGptApiKey;
+  set slidesGptApiKey(String value) {
+    final trimmed = value.trim();
+    if (_slidesGptApiKey != trimmed) {
+      _slidesGptApiKey = trimmed;
+      saveSettings();
+      notifyListeners();
+    }
+  }
+
+  String _gammaApiKey = const String.fromEnvironment('GAMMA_API_KEY', defaultValue: '');
+  String get gammaApiKey => _gammaApiKey;
+  set gammaApiKey(String value) {
+    final trimmed = value.trim();
+    if (_gammaApiKey != trimmed) {
+      _gammaApiKey = trimmed;
+      saveSettings();
+      notifyListeners();
+    }
+  }
+
+  String _presentationsAiApiKey = const String.fromEnvironment('PRESENTATIONS_AI_API_KEY', defaultValue: '');
+  String get presentationsAiApiKey => _presentationsAiApiKey;
+  set presentationsAiApiKey(String value) {
+    final trimmed = value.trim();
+    if (_presentationsAiApiKey != trimmed) {
+      _presentationsAiApiKey = trimmed;
       saveSettings();
       notifyListeners();
     }
@@ -466,7 +511,11 @@ class AppSettings extends ChangeNotifier {
       _churchName = prefs.getString('churchName') ?? _churchName;
       _churchEmail = prefs.getString('churchEmail') ?? _churchEmail;
       _logoUrl = prefs.getString('logoUrl');
-      _convertApiKey = prefs.getString('convertApiKey') ?? _convertApiKey;
+      _convertApiKey = (prefs.getString('convertApiKey') ?? _convertApiKey).trim();
+      _geminiApiKey = (prefs.getString('geminiApiKey') ?? _geminiApiKey).trim();
+      _slidesGptApiKey = (prefs.getString('slidesGptApiKey') ?? _slidesGptApiKey).trim();
+      _gammaApiKey = (prefs.getString('gammaApiKey') ?? _gammaApiKey).trim();
+      _presentationsAiApiKey = (prefs.getString('presentationsAiApiKey') ?? _presentationsAiApiKey).trim();
       final lastPdfTimeStr = prefs.getString('lastPdfConversionTime');
       if (lastPdfTimeStr != null) {
         _lastPdfConversionTime = DateTime.parse(lastPdfTimeStr);
@@ -501,6 +550,10 @@ class AppSettings extends ChangeNotifier {
       }
 
       await prefs.setString('convertApiKey', _convertApiKey);
+      await prefs.setString('geminiApiKey', _geminiApiKey);
+      await prefs.setString('slidesGptApiKey', _slidesGptApiKey);
+      await prefs.setString('gammaApiKey', _gammaApiKey);
+      await prefs.setString('presentationsAiApiKey', _presentationsAiApiKey);
 
       if (_lastPdfConversionTime != null) {
         await prefs.setString('lastPdfConversionTime', _lastPdfConversionTime!.toIso8601String());

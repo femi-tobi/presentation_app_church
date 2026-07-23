@@ -1,0 +1,303 @@
+Metadata-Version: 2.4
+Name: presentations-ai
+Version: 0.3.2
+Summary: Python client for the Presentations.AI REST API. Create, transform, and manage presentations programmatically.
+Project-URL: Homepage, https://console.presentations.ai
+Project-URL: Documentation, https://console.presentations.ai/apiref/docs/
+Author-email: "Presentations.AI" <support@presentations.ai>
+License-Expression: MIT
+License-File: LICENSE
+Keywords: api-client,pptx,presentations,presentations-ai,slides
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Classifier: Typing :: Typed
+Requires-Python: >=3.10
+Requires-Dist: httpx<1,>=0.27
+Requires-Dist: pydantic<3,>=2.0
+Requires-Dist: typing-extensions>=4.7
+Provides-Extra: agent
+Requires-Dist: anthropic>=0.39; extra == 'agent'
+Provides-Extra: dev
+Requires-Dist: pyright>=1.1; extra == 'dev'
+Requires-Dist: pytest-asyncio>=0.23; extra == 'dev'
+Requires-Dist: pytest>=8.0; extra == 'dev'
+Requires-Dist: respx>=0.21; extra == 'dev'
+Requires-Dist: ruff>=0.5; extra == 'dev'
+Provides-Extra: gemini
+Requires-Dist: google-genai>=1.0; extra == 'gemini'
+Provides-Extra: openai
+Requires-Dist: openai>=1.0; extra == 'openai'
+Description-Content-Type: text/markdown
+
+# presentations-ai
+
+Python client for the [Presentations.AI](https://presentations.ai) REST API. Create, transform, and manage presentations programmatically — or wire up a Claude-powered chatbot that creates them in plain English.
+
+[![PyPI version](https://img.shields.io/pypi/v/presentations-ai)](https://pypi.org/project/presentations-ai/)
+[![Python versions](https://img.shields.io/pypi/pyversions/presentations-ai)](https://pypi.org/project/presentations-ai/)
+[![License](https://img.shields.io/pypi/l/presentations-ai)](https://pypi.org/project/presentations-ai/)
+
+## When to use this
+
+This package gives you two ways to create presentations:
+
+| You're building | Use | Install |
+|---|---|---|
+| A backend service / job queue / workflow that **already knows** what to create | `PresentationsAI` (direct REST client) | `pip install presentations-ai` |
+| A Slack bot, AI agent, or chat product where **users type in plain English** | `AgentRuntime` (Claude + MCP) | `pip install presentations-ai[agent]` |
+
+Pick one or both — they live in the same package.
+
+## Installation
+
+```bash
+pip install presentations-ai             # direct REST client only
+pip install presentations-ai[agent]     # adds Claude + MCP runtime
+```
+
+## Quick start — direct REST client
+
+```python
+from presentations_ai import PresentationsAI
+
+client = PresentationsAI(api_key="pai_...")  # or set PRESENTATIONS_AI_API_KEY env var
+
+result = client.create_from_topic(
+    topic="Series B Pitch: AI-Powered Design Platform",
+    export_type="pptx",
+    slide_count=12,
+)
+
+# Result is a discriminated response — different export types return different fields
+print(getattr(result, "url", None) or getattr(result, "docurl", None))
+```
+
+## Quick start — Claude chatbot
+
+```python
+from presentations_ai.agent import AgentRuntime
+
+agent = AgentRuntime(anthropic_api_key="sk-ant-...")
+
+response = agent.chat(
+    "Create a 12-slide investor pitch deck for an AI-powered design platform",
+    presentations_api_key="pai_...",
+)
+
+print(response.text)               # the agent's natural-language reply
+print(response.presentation_url)   # The deck URL
+print(response.document_id)        # For follow-up edits
+```
+
+## API methods
+
+All 9 methods on `PresentationsAI` (and the same on `AsyncPresentationsAI`):
+
+| Method | Purpose |
+|---|---|
+| `create_from_topic()` | Generate a presentation from a topic description |
+| `create_from_file()` | Convert a file (PDF, DOCX, PPTX, etc.) into a presentation (max 25 MB) |
+| `create_single_slide()` | Generate a single slide (always returns image) |
+| `create_from_content()` | Create from structured slide objects with `{title, section}` |
+| `create_from_raw_content()` | Transform raw text into slides |
+| `update_slides()` | Edit specific slides in an existing presentation |
+| `refresh_presentation()` | Regenerate an existing presentation, optionally with a new source file |
+| `authenticate()` | Verify an API key without consuming credits |
+| `check_job_status()` | Poll an async job started with `callback_url` or `immediate_poll_url=True` |
+
+### Examples
+
+```python
+# From a topic — Claude writes the deck for you
+client.create_from_topic(
+    topic="Q4 Growth Strategy for Enterprise Sales",
+    export_type="pptx",
+    slide_count=15,
+    target_audience="leadership team",
+    tone="professional",
+)
+
+# From a file (max 25 MB) — converts the file's content to slides
+with open("annual-report-2024.pdf", "rb") as f:
+    client.create_from_file(
+        file=f.read(),
+        file_name="annual-report-2024.pdf",
+        export_type="pptx",
+        instruction="summarize",   # or "enhance" / "preserve" / "instruction"
+    )
+
+# From raw text — turn meeting notes, articles, blog posts into a deck
+client.create_from_raw_content(
+    content="Our platform processed 2M+ presentations this quarter...",
+    export_type="pptx",
+    instruction="enhance",
+    slide_count=10,
+    target_audience="investors",
+)
+
+# From structured slides — you provide title + section text per slide
+client.create_from_content(
+    name="Product Launch Plan",
+    slides=[
+        {"title": "Market Opportunity", "section": "$4.2B TAM with 23% CAGR"},
+        {"title": "Go-to-Market", "section": "Three-phase rollout, enterprise first"},
+    ],
+)
+
+# Edit specific slides
+client.update_slides(
+    doc_id=12345,
+    slides=[
+        {"action": "update", "slide_content": "Revised Q4 outlook", "index": 0},
+        {"action": "add", "slide_content": "Competitive analysis", "index": 5},
+        {"action": "delete", "slide_content": "", "index": 8},
+    ],
+)
+
+# Regenerate the whole deck (optionally with a new source file)
+client.refresh_presentation(docid="12345")
+
+# Verify your API key (no credits consumed)
+auth = client.authenticate()
+print(auth.message)  # "API key is valid"
+```
+
+Use `update_slides` for surgical edits, `refresh_presentation` to redo the whole deck.
+
+## Async support
+
+Every method has an async counterpart on `AsyncPresentationsAI`:
+
+```python
+from presentations_ai import AsyncPresentationsAI
+
+async with AsyncPresentationsAI(api_key="pai_...") as client:
+    result = await client.create_from_topic(
+        topic="Q4 Product Roadmap",
+        export_type="pptx",
+    )
+```
+
+## Polling async jobs
+
+Long-running requests return an `AsyncJobResponse` instead of the final result. Poll with `poll_until_complete`:
+
+```python
+from presentations_ai import poll_until_complete
+
+job = client.create_from_topic(
+    topic="2024 Annual Report",
+    export_type="pdf",
+    slide_count=30,
+    callback_url="https://your-webhook.example.com/presentations",
+)
+
+if hasattr(job, "job_id"):
+    result = poll_until_complete(client, job.job_id)
+    print(result.url)
+```
+
+The async version is `async_poll_until_complete`.
+
+## Agent runtime — multi-turn conversations
+
+Pass conversation history on follow-up turns so the bot can reference prior decks:
+
+```python
+from presentations_ai.agent import AgentRuntime
+from presentations_ai.agent.types import AgentMessage
+
+agent = AgentRuntime(anthropic_api_key="sk-ant-...")
+api_key = "pai_..."
+
+turn1 = agent.chat(
+    "Create a product roadmap presentation for Q1 2025",
+    presentations_api_key=api_key,
+)
+
+turn2 = agent.chat(
+    "Add a slide comparing our timeline against competitors",
+    presentations_api_key=api_key,
+    conversation_history=[
+        AgentMessage(role="user", content="Create a product roadmap presentation for Q1 2025"),
+        AgentMessage(role="assistant", content=turn1.text),
+    ],
+)
+```
+
+`AgentResponse` exposes `text`, `presentation_url`, `document_id`, `animated_url`, `job_id`, `tool_calls`, `stop_reason`, and `usage`.
+
+## Configuration
+
+```python
+client = PresentationsAI(
+    api_key="pai_...",         # or set PRESENTATIONS_AI_API_KEY env var
+    base_url="...",            # default: https://api.presentations.ai
+    timeout_ms=60_000,         # per-request timeout (default: 60s)
+    max_retries=3,             # retries on 429/5xx with exponential backoff
+)
+```
+
+## Retries and timeouts
+
+- Retries on **429** and **5xx** with exponential backoff (1s base, 30s cap)
+- Stops after **3 retries** by default
+- Times out after **60s** per request — override with `timeout_ms`
+- **Does not** retry on 4xx client errors (400/401/402/404) — those raise immediately
+
+For requests that genuinely take longer (e.g. a 50-slide deck from a 25 MB PDF), use `callback_url` or `immediate_poll_url=True` to fire async, then poll.
+
+## Error handling
+
+All errors inherit from `PresentationsAIError` and carry `code`, `message`, and `remediation`:
+
+```python
+from presentations_ai import (
+    PresentationsAI,
+    AuthenticationError,
+    InsufficientCreditsError,
+    BadRequestError,
+    RateLimitError,
+)
+
+try:
+    result = client.create_from_topic(topic="...", export_type="pptx")
+except AuthenticationError as e:
+    print(e.code, e.remediation)        # "API_UNAUTHORIZED", "Verify your API key..."
+except InsufficientCreditsError:
+    print("Account is out of credits")
+except BadRequestError as e:
+    print(e.message)                     # e.g. "topic must be a non-empty string"
+except RateLimitError:
+    print("Too many requests")
+```
+
+| Exception | HTTP | Meaning |
+|---|---|---|
+| `AuthenticationError` | 401 | Invalid or missing API key |
+| `InsufficientCreditsError` | 402 | Account is out of credits |
+| `BadRequestError` | 400 | Invalid request parameters |
+| `NotFoundError` | 404 | Resource not found |
+| `RateLimitError` | 429 | Too many requests (auto-retried) |
+| `InternalServerError` | 5xx | Server error (auto-retried) |
+| `APITimeoutError` | — | Request exceeded `timeout_ms` |
+| `APIConnectionError` | — | Could not reach the server |
+| `AgentError` | — | Failure inside the Agent runtime (Anthropic / MCP) |
+
+## Requirements
+
+- Python >= 3.10
+- [Presentations.AI API key](https://console.presentations.ai)
+- For `AgentRuntime`: an [Anthropic API key](https://console.anthropic.com) (the runtime adds the MCP Connector beta header automatically)
+
+## License
+
+MIT

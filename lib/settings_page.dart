@@ -25,6 +25,10 @@ class _SettingsPageState extends State<SettingsPage> {
   late String _churchName;
   late String _churchEmail;
   late String _convertApiKey;
+  late String _geminiApiKey;
+  late String _slidesGptApiKey;
+  late String _gammaApiKey;
+  late String _presentationsAiApiKey;
   
   String? _logoUrl;
   IconData? _logoIcon;
@@ -38,10 +42,15 @@ class _SettingsPageState extends State<SettingsPage> {
     Color(0xFFBA1A1A),
   ];
 
+  // Text Controllers
   late TextEditingController _nameController;
   late TextEditingController _emailController;
   late TextEditingController _hexController;
   late TextEditingController _convertApiKeyController;
+  late TextEditingController _geminiApiKeyController;
+  late TextEditingController _slidesGptApiKeyController;
+  late TextEditingController _gammaApiKeyController;
+  late TextEditingController _presentationsAiApiKeyController;
 
   @override
   void initState() {
@@ -56,6 +65,10 @@ class _SettingsPageState extends State<SettingsPage> {
     _churchEmail = settings.churchEmail;
     _logoUrl = settings.logoUrl;
     _convertApiKey = settings.convertApiKey;
+    _geminiApiKey = settings.geminiApiKey;
+    _slidesGptApiKey = settings.slidesGptApiKey;
+    _gammaApiKey = settings.gammaApiKey;
+    _presentationsAiApiKey = settings.presentationsAiApiKey;
 
     _nameController = TextEditingController(text: _churchName);
     _emailController = TextEditingController(text: _churchEmail);
@@ -63,6 +76,10 @@ class _SettingsPageState extends State<SettingsPage> {
       text: '#${_selectedPrimary.value.toRadixString(16).substring(2).toUpperCase()}'
     );
     _convertApiKeyController = TextEditingController(text: _convertApiKey);
+    _geminiApiKeyController = TextEditingController(text: _geminiApiKey);
+    _slidesGptApiKeyController = TextEditingController(text: _slidesGptApiKey);
+    _gammaApiKeyController = TextEditingController(text: _gammaApiKey);
+    _presentationsAiApiKeyController = TextEditingController(text: _presentationsAiApiKey);
   }
 
   @override
@@ -71,6 +88,10 @@ class _SettingsPageState extends State<SettingsPage> {
     _emailController.dispose();
     _hexController.dispose();
     _convertApiKeyController.dispose();
+    _geminiApiKeyController.dispose();
+    _slidesGptApiKeyController.dispose();
+    _gammaApiKeyController.dispose();
+    _presentationsAiApiKeyController.dispose();
     super.dispose();
   }
 
@@ -84,6 +105,10 @@ class _SettingsPageState extends State<SettingsPage> {
     settings.churchEmail = _emailController.text;
     settings.logoUrl = _logoUrl;
     settings.convertApiKey = _convertApiKeyController.text;
+    settings.geminiApiKey = _geminiApiKeyController.text;
+    settings.slidesGptApiKey = _slidesGptApiKeyController.text;
+    settings.gammaApiKey = _gammaApiKeyController.text;
+    settings.presentationsAiApiKey = _presentationsAiApiKeyController.text;
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -222,8 +247,12 @@ class _SettingsPageState extends State<SettingsPage> {
                              nameController: _nameController,
                              emailController: _emailController,
                              hexController: _hexController,
-                             convertApiKeyController: _convertApiKeyController,
-                             selectedFont: _selectedFont,
+                              convertApiKeyController: _convertApiKeyController,
+                              geminiApiKeyController: _geminiApiKeyController,
+                              slidesGptApiKeyController: _slidesGptApiKeyController,
+                              gammaApiKeyController: _gammaApiKeyController,
+                              presentationsAiApiKeyController: _presentationsAiApiKeyController,
+                              selectedFont: _selectedFont,
                              onFontSelect: (f) => setState(() => _selectedFont = f),
                           ),
                         ),
@@ -380,6 +409,10 @@ class _SettingsContent extends StatelessWidget {
   final TextEditingController emailController;
   final TextEditingController hexController;
   final TextEditingController convertApiKeyController;
+  final TextEditingController geminiApiKeyController;
+  final TextEditingController slidesGptApiKeyController;
+  final TextEditingController gammaApiKeyController;
+  final TextEditingController presentationsAiApiKeyController;
 
   final String selectedFont;
   final ValueChanged<String> onFontSelect;
@@ -401,6 +434,10 @@ class _SettingsContent extends StatelessWidget {
     required this.emailController,
     required this.hexController,
     required this.convertApiKeyController,
+    required this.geminiApiKeyController,
+    required this.slidesGptApiKeyController,
+    required this.gammaApiKeyController,
+    required this.presentationsAiApiKeyController,
     required this.selectedFont,
     required this.onFontSelect,
   });
@@ -809,6 +846,138 @@ class _SettingsContent extends StatelessWidget {
                     style: SacredTypography.bodyLg(context),
                     decoration: InputDecoration(
                       hintText: 'Enter ConvertAPI Secret Key',
+                      filled: true,
+                      fillColor: SacredColors.surfaceContainerLow,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    ),
+                  ),
+                ],
+              ),
+              Divider(height: 32, color: SacredColors.outlineVariant),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.psychology, color: SacredColors.outline),
+                      const SizedBox(width: 16),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Gemini AI API Key', style: SacredTypography.labelLg(context)),
+                          const SizedBox(height: 2),
+                          Text('Used for automated slide structure and content generation.', style: SacredTypography.labelSm(context).copyWith(color: SacredColors.onSurfaceVariant)),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: geminiApiKeyController,
+                    obscureText: true,
+                    style: SacredTypography.bodyLg(context),
+                    decoration: InputDecoration(
+                      hintText: 'Enter Gemini API Key',
+                      filled: true,
+                      fillColor: SacredColors.surfaceContainerLow,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    ),
+                  ),
+                ],
+              ),
+              Divider(height: 32, color: SacredColors.outlineVariant),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.slideshow, color: SacredColors.outline),
+                      const SizedBox(width: 16),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('SlidesGPT API Key', style: SacredTypography.labelLg(context)),
+                          const SizedBox(height: 2),
+                          Text('Used securely for automated presentation creation via SlidesGPT.', style: SacredTypography.labelSm(context).copyWith(color: SacredColors.onSurfaceVariant)),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: slidesGptApiKeyController,
+                    obscureText: true,
+                    style: SacredTypography.bodyLg(context),
+                    decoration: InputDecoration(
+                      hintText: 'Enter SlidesGPT API Key',
+                      filled: true,
+                      fillColor: SacredColors.surfaceContainerLow,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    ),
+                  ),
+                ],
+              ),
+              Divider(height: 32, color: SacredColors.outlineVariant),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.brush, color: SacredColors.outline),
+                      const SizedBox(width: 16),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Gamma API Key', style: SacredTypography.labelLg(context)),
+                          const SizedBox(height: 2),
+                          Text('Used securely for automated presentation generation via Gamma.', style: SacredTypography.labelSm(context).copyWith(color: SacredColors.onSurfaceVariant)),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: gammaApiKeyController,
+                    obscureText: true,
+                    style: SacredTypography.bodyLg(context),
+                    decoration: InputDecoration(
+                      hintText: 'Enter Gamma API Key',
+                      filled: true,
+                      fillColor: SacredColors.surfaceContainerLow,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    ),
+                  ),
+                ],
+              ),
+              Divider(height: 32, color: SacredColors.outlineVariant),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.auto_awesome, color: SacredColors.outline),
+                      const SizedBox(width: 16),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Presentations.ai API Key', style: SacredTypography.labelLg(context)),
+                          const SizedBox(height: 2),
+                          Text('Used securely for automated presentation generation via Presentations.ai.', style: SacredTypography.labelSm(context).copyWith(color: SacredColors.onSurfaceVariant)),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: presentationsAiApiKeyController,
+                    obscureText: true,
+                    style: SacredTypography.bodyLg(context),
+                    decoration: InputDecoration(
+                      hintText: 'Enter Presentations.ai API Key',
                       filled: true,
                       fillColor: SacredColors.surfaceContainerLow,
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),

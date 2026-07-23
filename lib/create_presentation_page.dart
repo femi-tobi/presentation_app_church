@@ -2,12 +2,16 @@
 import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:archive/archive.dart';
 import 'dashboard_page.dart'; // Reuse SacredColors, SacredTypography, SacredShadows
 import 'settings_state.dart';
 import 'preview_page.dart';
+import 'settings_page.dart';
 import 'connectivity_badge.dart';
+import 'connectors/connector_contract.dart';
+import 'connectors/connector_manager.dart';
 
 class CreatePresentationPage extends StatefulWidget {
   const CreatePresentationPage({super.key});
@@ -23,6 +27,13 @@ class _CreatePresentationPageState extends State<CreatePresentationPage> {
   );
 
   bool _isGenerating = false;
+  int _sidebarTabIndex = 0; // 0: Church Themes, 1: AI PPTX Generator
+
+  @override
+  void initState() {
+    super.initState();
+    ConnectorManager.instance.initialize();
+  }
 
   final List<ThemeCardData> _themes = [
     ThemeCardData(
@@ -52,7 +63,8 @@ class _CreatePresentationPageState extends State<CreatePresentationPage> {
   }
 
   void _generateSlides() async {
-    if (_outlineController.text.trim().isEmpty) {
+    final outlineText = _outlineController.text.trim();
+    if (outlineText.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Please paste or write a service outline first.')),
       );
@@ -61,8 +73,8 @@ class _CreatePresentationPageState extends State<CreatePresentationPage> {
 
     setState(() => _isGenerating = true);
 
-    // Simulate brief generation delay
-    await Future.delayed(const Duration(milliseconds: 1500));
+    // Bypassing Gemini completely for Church Themes, generating manually (offline parser)
+    await Future.delayed(const Duration(milliseconds: 1000));
 
     if (!mounted) return;
     setState(() => _isGenerating = false);
@@ -74,7 +86,8 @@ class _CreatePresentationPageState extends State<CreatePresentationPage> {
       MaterialPageRoute(
         builder: (context) => PreviewPage(
           presentationId: presentationId,
-          outlineText: _outlineController.text.trim(),
+          outlineText: outlineText,
+          initialSlides: null, // Forces offline/manual parser
           selectedTheme: _selectedTheme,
         ),
       ),
@@ -126,16 +139,96 @@ class _CreatePresentationPageState extends State<CreatePresentationPage> {
                           ),
                         ),
                         Container(width: 1, color: SacredColors.outlineVariant),
-                        // Right Pane: Style Selector
+                        // Right Pane: Switchable Sidebar
                         Expanded(
                           flex: 2,
-                          child: _StyleSelectorPane(
-                            themes: _themes,
-                            selectedTheme: _selectedTheme,
-                            onThemeSelect: (name) => setState(() => _selectedTheme = name),
-                            onGenerate: _generateSlides,
-                            isGenerating: _isGenerating,
-                            primaryColor: primaryColor,
+                          child: Container(
+                            color: SacredColors.surfaceContainerLow,
+                            child: Column(
+                              children: [
+                                // Tab Switcher
+                                Container(
+                                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: SacredColors.surfaceContainerHigh,
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: InkWell(
+                                            onTap: () => setState(() => _sidebarTabIndex = 0),
+                                            borderRadius: const BorderRadius.only(
+                                              topLeft: Radius.circular(12),
+                                              bottomLeft: Radius.circular(12),
+                                            ),
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(vertical: 12),
+                                              decoration: BoxDecoration(
+                                                color: _sidebarTabIndex == 0 ? primaryColor : Colors.transparent,
+                                                borderRadius: BorderRadius.circular(12),
+                                              ),
+                                              alignment: Alignment.center,
+                                              child: Text(
+                                                'Church Themes',
+                                                style: SacredTypography.labelLg(context).copyWith(
+                                                  color: _sidebarTabIndex == 0 ? Colors.white : SacredColors.onSurfaceVariant,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        Expanded(
+                                          child: InkWell(
+                                            onTap: () => setState(() => _sidebarTabIndex = 1),
+                                            borderRadius: const BorderRadius.only(
+                                              topRight: Radius.circular(12),
+                                              bottomRight: Radius.circular(12),
+                                            ),
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(vertical: 12),
+                                              decoration: BoxDecoration(
+                                                color: _sidebarTabIndex == 1 ? primaryColor : Colors.transparent,
+                                                borderRadius: BorderRadius.circular(12),
+                                              ),
+                                              alignment: Alignment.center,
+                                              child: Text(
+                                                'AI PPTX Generator',
+                                                style: SacredTypography.labelLg(context).copyWith(
+                                                  color: _sidebarTabIndex == 1 ? Colors.white : SacredColors.onSurfaceVariant,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  child: IndexedStack(
+                                    index: _sidebarTabIndex,
+                                    children: [
+                                      _StyleSelectorPane(
+                                        themes: _themes,
+                                        selectedTheme: _selectedTheme,
+                                        onThemeSelect: (name) => setState(() => _selectedTheme = name),
+                                        onGenerate: _generateSlides,
+                                        isGenerating: _isGenerating,
+                                        primaryColor: primaryColor,
+                                      ),
+                                      _PptxGeneratorPane(
+                                        primaryColor: primaryColor,
+                                        outlineController: _outlineController,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ],
@@ -148,14 +241,74 @@ class _CreatePresentationPageState extends State<CreatePresentationPage> {
                             primaryColor: primaryColor,
                           ),
                           Divider(height: 1, color: SacredColors.outlineVariant),
-                          _StyleSelectorPane(
-                            themes: _themes,
-                            selectedTheme: _selectedTheme,
-                            onThemeSelect: (name) => setState(() => _selectedTheme = name),
-                            onGenerate: _generateSlides,
-                            isGenerating: _isGenerating,
-                            primaryColor: primaryColor,
+                          // Mobile: Tab Switcher
+                          Container(
+                            color: SacredColors.surfaceContainerLow,
+                            padding: const EdgeInsets.all(16),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: SacredColors.surfaceContainerHigh,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: InkWell(
+                                      onTap: () => setState(() => _sidebarTabIndex = 0),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(vertical: 12),
+                                        decoration: BoxDecoration(
+                                          color: _sidebarTabIndex == 0 ? primaryColor : Colors.transparent,
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                        alignment: Alignment.center,
+                                        child: Text(
+                                          'Church Themes',
+                                          style: SacredTypography.labelLg(context).copyWith(
+                                            color: _sidebarTabIndex == 0 ? Colors.white : SacredColors.onSurfaceVariant,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: InkWell(
+                                      onTap: () => setState(() => _sidebarTabIndex = 1),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(vertical: 12),
+                                        decoration: BoxDecoration(
+                                          color: _sidebarTabIndex == 1 ? primaryColor : Colors.transparent,
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                        alignment: Alignment.center,
+                                        child: Text(
+                                          'AI PPTX Generator',
+                                          style: SacredTypography.labelLg(context).copyWith(
+                                            color: _sidebarTabIndex == 1 ? Colors.white : SacredColors.onSurfaceVariant,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
+                          _sidebarTabIndex == 0
+                              ? _StyleSelectorPane(
+                                  themes: _themes,
+                                  selectedTheme: _selectedTheme,
+                                  onThemeSelect: (name) => setState(() => _selectedTheme = name),
+                                  onGenerate: _generateSlides,
+                                  isGenerating: _isGenerating,
+                                  primaryColor: primaryColor,
+                                )
+                              : _PptxGeneratorPane(
+                                  primaryColor: primaryColor,
+                                  outlineController: _outlineController,
+                                ),
                         ],
                       ),
                     ),
@@ -921,5 +1074,542 @@ Future<String?> _convertPdfToDocx(List<int> pdfBytes) async {
     rethrow;
   } finally {
     client.close();
+  }
+}
+
+Future<List<SlideData>?> _generateSlidesWithGemini(String outlineText, String themeName) async {
+  final apiKey = AppSettings.instance.geminiApiKey;
+  if (apiKey.isEmpty) return null;
+
+  final client = HttpClient();
+  client.connectionTimeout = const Duration(seconds: 30);
+  
+  try {
+    final url = Uri.parse('https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=$apiKey');
+    final request = await client.postUrl(url).timeout(const Duration(seconds: 30));
+    request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
+
+    final String systemInstruction = 
+        "You are an expert church presentation creator. Given the user's sermon or liturgy outline text, structure it into a beautiful slide presentation. "
+        "Create between 5 and 15 slides. For each slide, return a 'title' (short title) and a 'subtitle' (lyrics, verses, or summary description). "
+        "Format your output as a raw JSON array of objects with keys 'title' and 'subtitle'. "
+        "Do not wrap your response in markdown code blocks (like ```json). Return ONLY raw JSON text.";
+
+    final body = jsonEncode({
+      "contents": [
+        {
+          "parts": [
+            {"text": "$systemInstruction\n\nOutline Text:\n$outlineText"}
+          ]
+        }
+      ]
+    });
+
+    request.write(body);
+    final response = await request.close().timeout(const Duration(seconds: 30));
+    
+    if (response.statusCode == 200) {
+      final responseBody = await response.transform(utf8.decoder).join().timeout(const Duration(seconds: 30));
+      final jsonResponse = jsonDecode(responseBody);
+      final rawText = jsonResponse['candidates'][0]['content']['parts'][0]['text'] as String;
+      
+      final cleanJson = rawText.replaceAll('```json', '').replaceAll('```', '').trim();
+      final List<dynamic> parsedSlides = jsonDecode(cleanJson);
+      
+      // Map to SlideData objects
+      const String sharedBg = 'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?w=1280&q=80';
+      int index = 1;
+      return parsedSlides.map((item) {
+        final id = DateTime.now().microsecondsSinceEpoch.toString() + '_' + (index++).toString();
+        return SlideData(
+          id: id,
+          title: item['title'] ?? '',
+          subtitle: item['subtitle'] ?? '',
+          imageUrl: sharedBg,
+          opacity: 0.80,
+          blur: 8.0,
+          alignment: TextAlign.center,
+        );
+      }).toList();
+    } else {
+      final responseBody = await response.transform(utf8.decoder).join().timeout(const Duration(seconds: 10));
+      debugPrint('Gemini API error: ${response.statusCode}, body: $responseBody');
+      throw Exception('Gemini API error (${response.statusCode}): $responseBody');
+    }
+  } catch (e) {
+    debugPrint('Gemini request exception: $e');
+    rethrow;
+  } finally {
+    client.close();
+  }
+}
+
+class _PptxGeneratorPane extends StatefulWidget {
+  final Color primaryColor;
+  final TextEditingController outlineController;
+
+  const _PptxGeneratorPane({
+    required this.primaryColor,
+    required this.outlineController,
+  });
+
+  @override
+  State<_PptxGeneratorPane> createState() => _PptxGeneratorPaneState();
+}
+
+class _PptxGeneratorPaneState extends State<_PptxGeneratorPane> {
+  String? _selectedConnectorId;
+  double _slideCount = 8.0;
+  String _themeName = 'Modern';
+  String _primaryColorHex = '#2E0052';
+  String _fontPreference = 'Inter';
+  final TextEditingController _stylePromptController = TextEditingController();
+  bool _isGenerating = false;
+
+  final List<String> _themesList = ['Modern', 'Classic', 'Minimal', 'Creative'];
+  final List<String> _fontsList = ['Inter', 'Roboto', 'Outfit', 'Playfair Display'];
+
+  @override
+  void initState() {
+    super.initState();
+    _initConnector();
+  }
+
+  void _initConnector() {
+    final connectors = ConnectorManager.instance.availableConnectors;
+    if (connectors.isNotEmpty) {
+      if (_selectedConnectorId == null || !connectors.any((c) => c.id == _selectedConnectorId)) {
+        _selectedConnectorId = connectors.first.id;
+      }
+    } else {
+      _selectedConnectorId = null;
+    }
+  }
+
+  void _runGeneration() async {
+    final outlineText = widget.outlineController.text.trim();
+    if (outlineText.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please paste or write a presentation outline first.')),
+      );
+      return;
+    }
+
+    if (_selectedConnectorId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select an AI service.')),
+      );
+      return;
+    }
+
+    final connector = ConnectorManager.instance.getConnector(_selectedConnectorId!);
+    if (connector == null) return;
+
+    setState(() => _isGenerating = true);
+
+    BuildContext? loadingDialogContext;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (loadingCtx) {
+        loadingDialogContext = loadingCtx;
+        return AlertDialog(
+          backgroundColor: SacredColors.surface,
+          content: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(color: widget.primaryColor),
+                const SizedBox(height: 20),
+                Text(
+                  'Generating Presentation...',
+                  style: SacredTypography.labelLg(loadingCtx).copyWith(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Connecting to ${connector.name} API. Please wait.',
+                  style: SacredTypography.labelSm(loadingCtx).copyWith(color: SacredColors.outline),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    try {
+      final config = PresentationConfig(
+        themeName: _themeName,
+        targetSlideCount: _slideCount.toInt(),
+        primaryColorHex: _primaryColorHex,
+        fontPreference: _fontPreference,
+        stylePrompt: _stylePromptController.text,
+      );
+
+      if (connector.generatesLocalSlides) {
+        final slides = await connector.generatePresentation(outlineText, config);
+        
+        if (loadingDialogContext != null && loadingDialogContext!.mounted) {
+          Navigator.pop(loadingDialogContext!);
+        }
+
+        if (!mounted) return;
+        setState(() => _isGenerating = false);
+
+        final String presentationId = DateTime.now().millisecondsSinceEpoch.toString();
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => PreviewPage(
+              presentationId: presentationId,
+              outlineText: outlineText,
+              initialSlides: slides,
+              selectedTheme: _themeName,
+            ),
+          ),
+        );
+      } else {
+        final bytes = await connector.downloadPresentationBytes(outlineText, config);
+        
+        if (loadingDialogContext != null && loadingDialogContext!.mounted) {
+          Navigator.pop(loadingDialogContext!);
+        }
+
+        if (!mounted) return;
+        setState(() => _isGenerating = false);
+
+        if (bytes.isNotEmpty) {
+          final String filename = 'Generated_${connector.id}_Presentation';
+          final String? outputPath = await FilePicker.platform.saveFile(
+            dialogTitle: 'Save presentation as…',
+            fileName: '$filename.pptx',
+            type: FileType.custom,
+            allowedExtensions: ['pptx'],
+            bytes: Uint8List.fromList(bytes),
+          );
+
+          if (outputPath != null && !kIsWeb) {
+            await File(outputPath).writeAsBytes(bytes);
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Successfully saved presentation to: $outputPath'),
+                  backgroundColor: widget.primaryColor,
+                ),
+              );
+            }
+          }
+        }
+      }
+    } catch (e) {
+      if (loadingDialogContext != null && loadingDialogContext!.mounted) {
+        Navigator.pop(loadingDialogContext!);
+      }
+      if (!mounted) return;
+      setState(() => _isGenerating = false);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Generation failed: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Make sure connectors are initialized/synced
+    _initConnector();
+    final connectors = ConnectorManager.instance.availableConnectors;
+
+    if (connectors.isEmpty) {
+      return Container(
+        color: SacredColors.surfaceContainerLow,
+        padding: const EdgeInsets.all(40.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.api_outlined, size: 64, color: SacredColors.outline),
+            const SizedBox(height: 24),
+            Text(
+              'No API Keys Configured',
+              style: SacredTypography.headlineMd(context).copyWith(
+                fontWeight: FontWeight.bold,
+                color: SacredColors.onSurface,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Configure API keys for Gemini, SlidesGPT, Gamma, or Presentations.ai in Settings to unlock automated PowerPoint generation.',
+              style: SacredTypography.bodyLg(context).copyWith(color: SacredColors.onSurfaceVariant),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 32),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: widget.primaryColor,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const SettingsPage()),
+                ).then((_) {
+                  // Reinitialize connectors after returning from Settings
+                  setState(() {
+                    ConnectorManager.instance.initialize();
+                    _initConnector();
+                  });
+                });
+              },
+              icon: const Icon(Icons.settings, color: Colors.white),
+              label: const Text('Configure API Keys', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final selectedConnector = connectors.firstWhere(
+      (c) => c.id == _selectedConnectorId,
+      orElse: () => connectors.first,
+    );
+
+    return Container(
+      color: SacredColors.surfaceContainerLow,
+      padding: const EdgeInsets.all(32.0),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'AI PPTX Generator',
+              style: SacredTypography.headlineMd(context).copyWith(
+                fontWeight: FontWeight.bold,
+                color: SacredColors.onSurface,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Configure and build your presentation via external AI models.',
+              style: SacredTypography.labelLg(context).copyWith(color: SacredColors.onSurfaceVariant),
+            ),
+            const SizedBox(height: 24),
+
+            // AI Service Selector
+            DropdownButtonFormField<String>(
+              value: _selectedConnectorId,
+              decoration: InputDecoration(
+                labelText: 'AI Generation Service',
+                labelStyle: TextStyle(color: widget.primaryColor),
+                filled: true,
+                fillColor: SacredColors.surfaceContainerHigh,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              items: connectors.map((c) {
+                return DropdownMenuItem<String>(
+                  value: c.id,
+                  child: Text(c.name),
+                );
+              }).toList(),
+              onChanged: (val) {
+                setState(() => _selectedConnectorId = val);
+              },
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: SacredColors.surfaceContainerHigh.withOpacity(0.5),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: SacredColors.outlineVariant),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.info_outline, size: 18, color: widget.primaryColor),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      selectedConnector.description,
+                      style: SacredTypography.labelSm(context).copyWith(color: SacredColors.onSurfaceVariant),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // Slides Count Slider
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Slide Count',
+                  style: SacredTypography.labelLg(context).copyWith(fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  '${_slideCount.toInt()} slides',
+                  style: SacredTypography.labelLg(context).copyWith(color: widget.primaryColor, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            Slider(
+              value: _slideCount,
+              min: 5.0,
+              max: 20.0,
+              divisions: 15,
+              activeColor: widget.primaryColor,
+              inactiveColor: widget.primaryColor.withOpacity(0.2),
+              onChanged: (val) => setState(() => _slideCount = val),
+            ),
+            const SizedBox(height: 16),
+
+            // Style Theme Dropdown
+            DropdownButtonFormField<String>(
+              value: _themeName,
+              decoration: InputDecoration(
+                labelText: 'Visual Style / Theme',
+                labelStyle: TextStyle(color: widget.primaryColor),
+                filled: true,
+                fillColor: SacredColors.surfaceContainerHigh,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              items: _themesList.map((t) {
+                return DropdownMenuItem<String>(
+                  value: t,
+                  child: Text(t),
+                );
+              }).toList(),
+              onChanged: (val) {
+                if (val != null) setState(() => _themeName = val);
+              },
+            ),
+            const SizedBox(height: 16),
+
+            // Primary Color Input
+            TextFormField(
+              initialValue: _primaryColorHex,
+              decoration: InputDecoration(
+                labelText: 'Primary Color (Hex Code)',
+                labelStyle: TextStyle(color: widget.primaryColor),
+                filled: true,
+                fillColor: SacredColors.surfaceContainerHigh,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                suffixIcon: Container(
+                  margin: const EdgeInsets.all(8),
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color: Color(int.parse(_primaryColorHex.replaceAll('#', '0xFF'))),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2),
+                  ),
+                ),
+              ),
+              onChanged: (val) {
+                if (RegExp(r'^#?[0-9a-fA-F]{6}$').hasMatch(val)) {
+                  setState(() {
+                    _primaryColorHex = val.startsWith('#') ? val : '#$val';
+                  });
+                }
+              },
+            ),
+            const SizedBox(height: 16),
+
+            // Font Dropdown
+            DropdownButtonFormField<String>(
+              value: _fontPreference,
+              decoration: InputDecoration(
+                labelText: 'Font Preference',
+                labelStyle: TextStyle(color: widget.primaryColor),
+                filled: true,
+                fillColor: SacredColors.surfaceContainerHigh,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              items: _fontsList.map((f) {
+                return DropdownMenuItem<String>(
+                  value: f,
+                  child: Text(f),
+                );
+              }).toList(),
+              onChanged: (val) {
+                if (val != null) setState(() => _fontPreference = val);
+              },
+            ),
+            const SizedBox(height: 16),
+
+            // Visual Prompt / Instructions TextField
+            TextField(
+              controller: _stylePromptController,
+              maxLines: 3,
+              style: SacredTypography.bodyMd(context),
+              decoration: InputDecoration(
+                labelText: 'AI Visual Style Prompt',
+                labelStyle: TextStyle(color: widget.primaryColor),
+                hintText: 'e.g. Clean minimalist dark-themed design with warm gold tones for a solemn ceremony.',
+                filled: true,
+                fillColor: SacredColors.surfaceContainerHigh,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+            const SizedBox(height: 32),
+
+            // Generate Button
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: widget.primaryColor,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 20),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                elevation: 4,
+              ),
+              onPressed: _isGenerating ? null : _runGeneration,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (_isGenerating)
+                    const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  else ...[
+                    const Icon(Icons.auto_awesome, color: Colors.white, size: 20),
+                    const SizedBox(width: 10),
+                    Text(
+                      selectedConnector.generatesLocalSlides
+                          ? 'Generate Slides (Editor)'
+                          : 'Generate & Download PPTX',
+                      style: SacredTypography.headlineMd(context).copyWith(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ]
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Center(
+              child: Text(
+                selectedConnector.generatesLocalSlides
+                    ? 'Generates local editable preview in 10-15s.'
+                    : 'Downloads raw .pptx directly in 20-30s.',
+                style: TextStyle(color: SacredColors.outline, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
