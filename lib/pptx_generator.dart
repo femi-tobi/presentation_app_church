@@ -11,6 +11,18 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 class PptxGenerator {
+  static String _generateUuid() {
+    final random = Random();
+    String hexDigit(int len) {
+      final buffer = StringBuffer();
+      for (var i = 0; i < len; i++) {
+        buffer.write(random.nextInt(16).toRadixString(16));
+      }
+      return buffer.toString().toUpperCase();
+    }
+    return '{${hexDigit(8)}-${hexDigit(4)}-${hexDigit(4)}-${hexDigit(4)}-${hexDigit(12)}}';
+  }
+
   static Future<void> downloadPptx(
     List<({
       String title,
@@ -28,8 +40,12 @@ class PptxGenerator {
     String filename, {
     String? backgroundImageUrl,
     String? fontFamily,
+    List<({
+      String name,
+      List<int> slideIndices,
+    })>? sections,
   }) async {
-    final bytes = await _buildPptx(slides, backgroundImageUrl, fontFamily);
+    final bytes = await _buildPptx(slides, backgroundImageUrl, fontFamily, sections);
 
     if (kIsWeb) {
       // Web: trigger browser download via dart:html (loaded dynamically)
@@ -82,6 +98,10 @@ class PptxGenerator {
     })> slides,
     String? backgroundImageUrl,
     String? fontFamily,
+    List<({
+      String name,
+      List<int> slideIndices,
+    })>? sections,
   ) async {
     final archive = Archive();
 
@@ -375,6 +395,11 @@ $slideEntries
   <p:sldLayoutIdLst>
     <p:sldLayoutId id="2147483649" r:id="rId1"/>
   </p:sldLayoutIdLst>
+  <p:txStyles>
+    <p:titleStyle/>
+    <p:bodyStyle/>
+    <p:otherStyle/>
+  </p:txStyles>
 </p:sldMaster>''';
 
   static String _slideMasterRels() => '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
