@@ -5,13 +5,91 @@ import 'dart:typed_data';
 import 'dart:async';
 
 
-/// Stores a single entry in the recent presentations list.
+enum SectionType {
+  verse,
+  chorus,
+  bridge,
+  preChorus,
+  intro,
+  outro,
+  coda,
+  medley,
+  tag,
+  unknown,
+}
+
+SectionType getSectionTypeFromName(String name) {
+  final clean = name.trim().toUpperCase();
+  if (clean.startsWith('CHORUS') || clean.startsWith('CHR') || clean == 'CHO' || clean == 'CH') {
+    return SectionType.chorus;
+  }
+  if (clean.startsWith('VERSE') || clean.startsWith('VS') || clean.startsWith('V') || clean.startsWith('V_')) {
+    return SectionType.verse;
+  }
+  if (clean.startsWith('BRIDGE') || clean.startsWith('BR')) {
+    return SectionType.bridge;
+  }
+  if (clean.startsWith('PRECHORUS') || clean.startsWith('PRE-CHORUS') || clean.startsWith('PRE CHORUS') || clean.startsWith('PRE')) {
+    return SectionType.preChorus;
+  }
+  if (clean.startsWith('INTRO') || clean.startsWith('INT')) {
+    return SectionType.intro;
+  }
+  if (clean.startsWith('OUTRO') || clean.startsWith('OUT')) {
+    return SectionType.outro;
+  }
+  if (clean.startsWith('CODA') || clean.startsWith('COD')) {
+    return SectionType.coda;
+  }
+  if (clean.startsWith('MEDLEY') || clean.startsWith('MED')) {
+    return SectionType.medley;
+  }
+  if (clean.startsWith('TAG')) {
+    return SectionType.tag;
+  }
+  return SectionType.unknown;
+}
+
+Color getSectionColor(SectionType type, {bool isDarkMode = false}) {
+  if (isDarkMode) {
+    switch (type) {
+      case SectionType.verse: return const Color(0xFF81C784); // Light Green
+      case SectionType.chorus: return const Color(0xFF64B5F6); // Light Blue
+      case SectionType.bridge: return const Color(0xFFFFB74D); // Light Orange
+      case SectionType.preChorus: return const Color(0xFFBA68C8); // Light Purple
+      case SectionType.intro: return const Color(0xFF4DD0E1); // Light Cyan
+      case SectionType.outro: return const Color(0xFFF06292); // Light Pink
+      case SectionType.coda: return const Color(0xFFE57373); // Light Red
+      case SectionType.medley: return const Color(0xFFFFF176); // Light Yellow
+      case SectionType.tag: return const Color(0xFF7986CB); // Light Indigo
+      case SectionType.unknown: return const Color(0xFF90A4AE); // Light Gray
+    }
+  } else {
+    switch (type) {
+      case SectionType.verse: return const Color(0xFF2E7D32); // Dark Green
+      case SectionType.chorus: return const Color(0xFF1565C0); // Dark Blue
+      case SectionType.bridge: return const Color(0xFFE65100); // Dark Orange
+      case SectionType.preChorus: return const Color(0xFF4A148C); // Dark Purple
+      case SectionType.intro: return const Color(0xFF006064); // Dark Cyan
+      case SectionType.outro: return const Color(0xFF880E4F); // Dark Pink
+      case SectionType.coda: return const Color(0xFFB71C1C); // Dark Red
+      case SectionType.medley: return const Color(0xFFF57F17); // Dark Yellow
+      case SectionType.tag: return const Color(0xFF1A237E); // Dark Indigo
+      case SectionType.unknown: return const Color(0xFF37474F); // Dark Gray
+    }
+  }
+}
+
 class SlideSection {
   final String id;
   String name;
   List<String> slideIds;
   bool isCollapsed;
   int? colorValue;
+  String? notes;
+  bool locked;
+  String? rawLyrics; // Raw lyric text — single source of truth for outline editing
+  SectionType sectionType; // Cached section type derived from name
 
   SlideSection({
     required this.id,
@@ -19,7 +97,11 @@ class SlideSection {
     required this.slideIds,
     this.isCollapsed = false,
     this.colorValue,
-  });
+    this.notes,
+    this.locked = false,
+    this.rawLyrics,
+    SectionType? sectionType,
+  }) : sectionType = sectionType ?? getSectionTypeFromName(name);
 
   Map<String, dynamic> toJson() {
     return {
@@ -28,6 +110,10 @@ class SlideSection {
       'slideIds': slideIds,
       'isCollapsed': isCollapsed,
       'colorValue': colorValue,
+      'notes': notes,
+      'locked': locked,
+      'rawLyrics': rawLyrics,
+      'sectionType': sectionType.index,
     };
   }
 
@@ -38,6 +124,12 @@ class SlideSection {
       slideIds: List<String>.from(json['slideIds'] as List<dynamic>),
       isCollapsed: json['isCollapsed'] as bool? ?? false,
       colorValue: json['colorValue'] as int?,
+      notes: json['notes'] as String?,
+      locked: json['locked'] as bool? ?? false,
+      rawLyrics: json['rawLyrics'] as String?,
+      sectionType: json['sectionType'] != null
+          ? SectionType.values[json['sectionType'] as int]
+          : getSectionTypeFromName(json['name'] as String),
     );
   }
 }
@@ -603,11 +695,27 @@ class AppSettings extends ChangeNotifier {
     notifyListeners();
   }
 
+  List<SlideSection> _activeSections = [];
+  List<SlideSection> get activeSections => _activeSections;
+  void updateActiveSections(List<SlideSection> sections) {
+    _activeSections = List.from(sections);
+    notifyListeners();
+  }
+
   int _activeSlideIndex = 0;
   int get activeSlideIndex => _activeSlideIndex;
   set activeSlideIndex(int value) {
     if (_activeSlideIndex != value) {
       _activeSlideIndex = value;
+      notifyListeners();
+    }
+  }
+
+  double _averageSlideDuration = 6.0;
+  double get averageSlideDuration => _averageSlideDuration;
+  set averageSlideDuration(double value) {
+    if (_averageSlideDuration != value) {
+      _averageSlideDuration = value;
       notifyListeners();
     }
   }

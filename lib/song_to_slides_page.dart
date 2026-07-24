@@ -699,7 +699,10 @@ class SongParseResult {
 
 /// Top-level song-to-slides parser used by both the full page and sidebar pane.
 SongParseResult parseSongToSlides(
-    String lyrics, String title, int linesPerSlide) {
+    String lyrics, String title, int linesPerSlide, {
+    List<SlideSection>? existingSections,
+    List<SlideData>? existingSlides,
+}) {
   const String sharedBg =
       'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?w=1280&q=80';
 
@@ -815,10 +818,72 @@ SongParseResult parseSongToSlides(
     rawSections.add(_SongSection(currentSectionName, List.from(currentSectionLines)));
   }
 
+  final lockedSections = existingSections?.where((s) => s.locked).toList() ?? [];
+
+  String normalizeForMatching(String name) {
+    return name.trim().toUpperCase().replaceAll(RegExp(r'\s+'), '');
+  }
+
   // Helper to construct slides and map them to a SlideSection
   void generateSectionSlides(String name, List<String> lines) {
-    final sectionId = 'sec_${slideSections.length + 1}';
     final sectionName = name.isNotEmpty ? name.toUpperCase() : 'VERSE';
+    final normalizedName = normalizeForMatching(sectionName);
+    
+    // Check if there is a matching locked section
+    final matchingLockedIdx = lockedSections.indexWhere(
+      (s) => normalizeForMatching(s.name) == normalizedName,
+    );
+    final matchingLockedSec = matchingLockedIdx >= 0 ? lockedSections[matchingLockedIdx] : null;
+
+    if (matchingLockedSec != null && existingSlides != null) {
+      final sectionId = 'sec_${slideSections.length + 1}';
+      final List<String> sectionSlideIds = [];
+
+      for (final oldSlideId in matchingLockedSec.slideIds) {
+        final oldSlideIdx = existingSlides.indexWhere((s) => s.id == oldSlideId);
+        final oldSlide = oldSlideIdx >= 0 ? existingSlides[oldSlideIdx] : null;
+        if (oldSlide != null) {
+          final newSlideId = 'slide_${slides.length + 1}';
+          sectionSlideIds.add(newSlideId);
+          slides.add(SlideData(
+            id: newSlideId,
+            title: oldSlide.title,
+            subtitle: oldSlide.subtitle,
+            imageUrl: oldSlide.imageUrl,
+            opacity: oldSlide.opacity,
+            blur: oldSlide.blur,
+            titleFontSize: oldSlide.titleFontSize,
+            subtitleFontSize: oldSlide.subtitleFontSize,
+            alignment: oldSlide.alignment,
+            isBold: oldSlide.isBold,
+            isItalic: oldSlide.isItalic,
+            logoUrl: oldSlide.logoUrl,
+            logoX: oldSlide.logoX,
+            logoY: oldSlide.logoY,
+            logoSize: oldSlide.logoSize,
+            textX: oldSlide.textX,
+            textY: oldSlide.textY,
+            bgColorValue: oldSlide.bgColorValue,
+            sectionId: sectionId,
+          ));
+        }
+      }
+
+      if (sectionSlideIds.isNotEmpty) {
+        slideSections.add(SlideSection(
+          id: sectionId,
+          name: matchingLockedSec.name,
+          slideIds: sectionSlideIds,
+          locked: true,
+          colorValue: matchingLockedSec.colorValue,
+          isCollapsed: matchingLockedSec.isCollapsed,
+          notes: matchingLockedSec.notes,
+        ));
+      }
+      return;
+    }
+
+    final sectionId = 'sec_${slideSections.length + 1}';
     final List<String> sectionSlideIds = [];
 
     for (int i = 0; i < lines.length; i += linesPerSlide) {

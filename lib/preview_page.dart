@@ -12,12 +12,23 @@ import 'dashboard_page.dart'; // import to reuse SacredColors / Typography
 import 'export_page.dart';
 import 'settings_state.dart';
 import 'fullscreen_presenter_page.dart';
+import 'outline_view.dart';
+import 'presenter_view.dart';
 
 
 /// Safely decode a base64 data-URL (e.g. "data:image/png;base64,....") to bytes.
 /// Falls back to manual base64 splitting if [Uri] fails to parse the data.
 Uint8List _decodeDataUrl(String dataUrl) {
   return decodeDataUrl(dataUrl);
+}
+
+
+Color getSectionAccentColor(SlideSection section, BuildContext context) {
+  if (section.colorValue != null && section.colorValue != 0) {
+    return Color(section.colorValue!);
+  }
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  return getSectionColor(getSectionTypeFromName(section.name), isDarkMode: isDark);
 }
 
 
@@ -46,15 +57,25 @@ class _PreviewPageState extends State<PreviewPage> {
   late List<SlideData> _slides;
   int _activeSlideIndex = 0;
   int _mobileSelectedTab = 1; // 0: Slides Outline, 1: Live Canvas, 2: Properties
+  String? _selectedSectionId;
   late TextEditingController _titleController;
   late TextEditingController _subtitleController;
   bool _applyToAll = false;
+  int _sidebarTab = 0; // 0: Outline, 1: Slide Thumbnails
 
   void _applyActiveStylesToAll() {
     if (_slides.isEmpty) return;
     final active = _slides[_activeSlideIndex];
     for (final slide in _slides) {
       if (slide.id == active.id) continue;
+
+      // Skip styling if the slide belongs to a locked section
+      final secIdx = _sections.indexWhere(
+        (s) => s.slideIds.contains(slide.id),
+      );
+      final section = secIdx >= 0 ? _sections[secIdx] : null;
+      if (section != null && section.locked) continue;
+
       slide.imageUrl = active.imageUrl;
       slide.bgColorValue = active.bgColorValue;
       slide.opacity = active.opacity;
@@ -97,6 +118,7 @@ class _PreviewPageState extends State<PreviewPage> {
         logoX: s.logoX,
         logoY: s.logoY,
         logoSize: s.logoSize,
+        sectionId: s.sectionId,
       )));
     } else if (widget.outlineText.isNotEmpty) {
       _slides = _parseSlidesFromOutline(widget.outlineText);
@@ -111,6 +133,9 @@ class _PreviewPageState extends State<PreviewPage> {
         slideIds: List.from(s.slideIds),
         isCollapsed: s.isCollapsed,
         colorValue: s.colorValue,
+        notes: s.notes,
+        locked: s.locked,
+        rawLyrics: s.rawLyrics,
       )));
     } else {
       _sections = [
@@ -124,13 +149,133 @@ class _PreviewPageState extends State<PreviewPage> {
 
     _titleController = TextEditingController(text: _slides[0].title);
     _subtitleController = TextEditingController(text: _slides[0].subtitle);
+
+    // Initialize rawLyrics for sections that don't have them yet
+    _initializeRawLyrics();
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       AppSettings.instance.updateActiveSlides(_slides);
+      AppSettings.instance.updateActiveSections(_sections);
       AppSettings.instance.activeSlideIndex = 0;
 
       // Save this presentation to the recent list so the dashboard reflects it
       _saveToRecentList();
     });
+  }
+
+  /// Initializes rawLyrics for sections loaded from disk that don't have them.
+  /// Reconstructs lyrics from slide subtitles.
+  void _initializeRawLyrics() {
+    for (final section in _sections) {
+      if (section.rawLyrics == null || section.rawLyrics!.isEmpty) {
+        final sectionSlides = _slides.where(
+          (s) => section.slideIds.contains(s.id),
+        ).toList();
+        if (sectionSlides.isNotEmpty) {
+          section.rawLyrics = sectionSlides
+              .map((s) => s.subtitle.isNotEmpty ? s.subtitle : s.title)
+              .join('\n\n');
+        }
+      }
+    }
+  }
+
+  /// Regenerates slides for a section based on its raw lyrics text.
+  /// Preserves style properties (background, colors, transitions, logo) from
+  /// existing slides and only changes text content.
+  void _regenerateSlidesFromLyrics(String sectionId, String lyrics) {
+    final sectionIdx = _sections.indexWhere((s) => s.id == sectionId);
+    if (sectionIdx == -1) return;
+    final section = _sections[sectionIdx];
+    if (section.locked) return;
+
+    // Get existing slides for style reference
+    final oldSlides = _slides.where(
+      (s) => section.slideIds.contains(s.id),
+    ).toList();
+
+    // Reference slide for inheriting styles
+    final refSlide = oldSlides.isNotEmpty ? oldSlides.first : (_slides.isNotEmpty ? _slides.first : null);
+
+    // Split lyrics into stanzas using double newlines or explicit page break ---
+    final stanzas = lyrics
+        .split(RegExp(r'\n\n+|---'))
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+
+    if (stanzas.isEmpty) {
+      // If lyrics are completely empty, keep at least one empty slide
+      stanzas.add('');
+    }
+
+    // Auto-chunk stanzas > 3 lines into 2 lines per slide
+    final List<String> finalStanzas = [];
+    for (final stanza in stanzas) {
+      final lines = stanza.split('\n');
+      if (lines.length > 3) {
+        // Chunk into groups of 2 lines
+        for (int i = 0; i < lines.length; i += 2) {
+          final end = (i + 2).clamp(0, lines.length);
+          finalStanzas.add(lines.sublist(i, end).join('\n'));
+        }
+      } else {
+        finalStanzas.add(stanza);
+      }
+    }
+
+    // Generate new slides
+    final List<SlideData> newSlides = [];
+    final List<String> newSlideIds = [];
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+
+    for (int i = 0; i < finalStanzas.length; i++) {
+      // Reuse existing slide if available, otherwise create new
+      final existingSlide = i < oldSlides.length ? oldSlides[i] : null;
+      final slideId = existingSlide?.id ?? 'slide_${timestamp}_${sectionId}_$i';
+
+      final newSlide = SlideData(
+        id: slideId,
+        title: existingSlide?.title ?? section.name,
+        subtitle: finalStanzas[i],
+        imageUrl: existingSlide?.imageUrl ?? refSlide?.imageUrl ?? '',
+        bgColorValue: existingSlide?.bgColorValue ?? refSlide?.bgColorValue ?? 0xFF000000,
+        opacity: existingSlide?.opacity ?? refSlide?.opacity ?? 0.80,
+        blur: existingSlide?.blur ?? refSlide?.blur ?? 8.0,
+        isBold: existingSlide?.isBold ?? refSlide?.isBold ?? false,
+        isItalic: existingSlide?.isItalic ?? refSlide?.isItalic ?? false,
+        alignment: existingSlide?.alignment ?? refSlide?.alignment ?? TextAlign.center,
+        transition: existingSlide?.transition ?? refSlide?.transition ?? 'fade',
+        titleFontSize: existingSlide?.titleFontSize ?? refSlide?.titleFontSize ?? 36.0,
+        subtitleFontSize: existingSlide?.subtitleFontSize ?? refSlide?.subtitleFontSize ?? 20.0,
+        logoUrl: existingSlide?.logoUrl ?? refSlide?.logoUrl,
+        logoX: existingSlide?.logoX ?? refSlide?.logoX ?? 0.0,
+        logoY: existingSlide?.logoY ?? refSlide?.logoY ?? 0.0,
+        logoSize: existingSlide?.logoSize ?? refSlide?.logoSize ?? 60.0,
+        sectionId: sectionId,
+      );
+      newSlides.add(newSlide);
+      newSlideIds.add(slideId);
+    }
+
+    setState(() {
+      // Remove old slides for this section
+      _slides.removeWhere((s) => section.slideIds.contains(s.id));
+      // Update section's slide IDs
+      section.slideIds = newSlideIds;
+      // Insert new slides
+      _slides.addAll(newSlides);
+    });
+
+    _syncSlidesFromSections();
+  }
+
+  /// Called when lyrics change in the SongOutlineView
+  void _onSectionLyricsChanged(String sectionId, String newLyrics) {
+    final sectionIdx = _sections.indexWhere((s) => s.id == sectionId);
+    if (sectionIdx == -1) return;
+    _sections[sectionIdx].rawLyrics = newLyrics;
+    _regenerateSlidesFromLyrics(sectionId, newLyrics);
   }
 
   void _saveToRecentList() {
@@ -565,7 +710,8 @@ class _PreviewPageState extends State<PreviewPage> {
     final List<SlideData> ordered = [];
     for (final section in _sections) {
       for (final slideId in section.slideIds) {
-        final slide = _slides.firstWhere((s) => s.id == slideId, orElse: () => null as dynamic);
+        final slideIdx = _slides.indexWhere((s) => s.id == slideId);
+        final slide = slideIdx >= 0 ? _slides[slideIdx] : null;
         if (slide != null) {
           slide.sectionId = section.id;
           ordered.add(slide);
@@ -594,6 +740,7 @@ class _PreviewPageState extends State<PreviewPage> {
       }
     }
     AppSettings.instance.updateActiveSlides(_slides);
+    AppSettings.instance.updateActiveSections(_sections);
     _saveToRecentList();
     setState(() {});
   }
@@ -961,11 +1108,55 @@ class _PreviewPageState extends State<PreviewPage> {
             },
             onPresent: () {
               AppSettings.instance.updateActiveSlides(_slides);
+              AppSettings.instance.updateActiveSections(_sections);
               AppSettings.instance.activeSlideIndex = _activeSlideIndex;
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const FullscreenPresenterPage(),
+              showDialog(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  title: Row(
+                    children: [
+                      Icon(Icons.slideshow, color: SacredColors.primary),
+                      const SizedBox(width: 10),
+                      const Text('Launch Presentation'),
+                    ],
+                  ),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _PresentationModeCard(
+                        icon: Icons.desktop_windows,
+                        title: 'Presenter View',
+                        subtitle: 'Dashboard with notes, timer, and next slide preview',
+                        color: Colors.cyan,
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const ProfessionalPresenterView(),
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      _PresentationModeCard(
+                        icon: Icons.tv,
+                        title: 'Audience View',
+                        subtitle: 'Fullscreen display for the congregation',
+                        color: Colors.amber,
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const FullscreenPresenterPage(),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
                 ),
               );
             },
@@ -973,31 +1164,190 @@ class _PreviewPageState extends State<PreviewPage> {
         ),
         body: Row(
           children: [
-            // Left Panel (Outline)
+            // Left Panel (Tabbed: Outline ↔ Slides)
             if (isDesktop)
-              _SlidesOutlineSidebar(
-                sections: _sections,
-                slides: _slides,
-                activeIndex: _activeSlideIndex,
-                onSlideSelected: _setActiveSlide,
-                onAddSlide: _addSlide,
-                onAddSection: (name) => _addSection(name),
-                onRenameSection: _renameSection,
-                onDeleteSection: _deleteSection,
-                onMoveSection: _moveSection,
-                onMoveSlideToSection: _moveSlideToSection,
-                onAddSectionBeforeSlide: _addSectionBeforeSlide,
-                onDuplicateSlide: (idx) {
-                  _setActiveSlide(idx);
-                  _duplicateSlide();
-                },
-                onDeleteSlide: (idx) {
-                  _setActiveSlide(idx);
-                  _removeSlide();
-                },
-                onMoveSlideInOutline: _moveSlideInOutline,
-                onRenameSlide: (slide) => _showSlideRenameDialog(context, slide),
-                onDuplicateSection: _duplicateSection,
+              SizedBox(
+                width: 300,
+                child: Column(
+                  children: [
+                    // Tab toggle row
+                    Container(
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: SacredColors.surface.withValues(alpha: 0.7),
+                        border: Border(
+                          right: BorderSide(color: SacredColors.outlineVariant, width: 1),
+                          bottom: BorderSide(color: SacredColors.outlineVariant, width: 1),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: InkWell(
+                              onTap: () => setState(() => _sidebarTab = 0),
+                              child: Container(
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  border: Border(
+                                    bottom: BorderSide(
+                                      color: _sidebarTab == 0
+                                          ? SacredColors.primary
+                                          : Colors.transparent,
+                                      width: 2.5,
+                                    ),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.article_outlined,
+                                      size: 15,
+                                      color: _sidebarTab == 0
+                                          ? SacredColors.primary
+                                          : SacredColors.onSurfaceVariant,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Outline',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: _sidebarTab == 0
+                                            ? FontWeight.bold
+                                            : FontWeight.w500,
+                                        color: _sidebarTab == 0
+                                            ? SacredColors.primary
+                                            : SacredColors.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: InkWell(
+                              onTap: () => setState(() => _sidebarTab = 1),
+                              child: Container(
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  border: Border(
+                                    bottom: BorderSide(
+                                      color: _sidebarTab == 1
+                                          ? SacredColors.primary
+                                          : Colors.transparent,
+                                      width: 2.5,
+                                    ),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.view_carousel_outlined,
+                                      size: 15,
+                                      color: _sidebarTab == 1
+                                          ? SacredColors.primary
+                                          : SacredColors.onSurfaceVariant,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Slides',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: _sidebarTab == 1
+                                            ? FontWeight.bold
+                                            : FontWeight.w500,
+                                        color: _sidebarTab == 1
+                                            ? SacredColors.primary
+                                            : SacredColors.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Tab content
+                    Expanded(
+                      child: _sidebarTab == 0
+                          ? SongOutlineView(
+                              sections: _sections,
+                              slides: _slides,
+                              activeSlideIndex: _activeSlideIndex,
+                              selectedSectionId: _selectedSectionId,
+                              onSectionLyricsChanged: _onSectionLyricsChanged,
+                              onSelectedSectionChanged: (secId) {
+                                setState(() => _selectedSectionId = secId);
+                              },
+                              onSlideSelected: _setActiveSlide,
+                              onAddSection: (name) => _addSection(name),
+                              onRenameSection: _renameSection,
+                              onDeleteSection: _deleteSection,
+                              onMoveSection: _moveSection,
+                              onDuplicateSection: _duplicateSection,
+                              onLockChanged: (sectionId, locked) {
+                                final idx = _sections.indexWhere((s) => s.id == sectionId);
+                                if (idx != -1) {
+                                  setState(() => _sections[idx].locked = locked);
+                                  _saveToRecentList();
+                                }
+                              },
+                              onNotesChanged: (sectionId, notes) {
+                                final idx = _sections.indexWhere((s) => s.id == sectionId);
+                                if (idx != -1) {
+                                  setState(() => _sections[idx].notes = notes);
+                                  _saveToRecentList();
+                                }
+                              },
+                              onColorChanged: (sectionId, colorValue) {
+                                final idx = _sections.indexWhere((s) => s.id == sectionId);
+                                if (idx != -1) {
+                                  setState(() => _sections[idx].colorValue = colorValue);
+                                  _saveToRecentList();
+                                }
+                              },
+                              onCollapseChanged: (sectionId, collapsed) {
+                                final idx = _sections.indexWhere((s) => s.id == sectionId);
+                                if (idx != -1) {
+                                  setState(() => _sections[idx].isCollapsed = collapsed);
+                                }
+                              },
+                            )
+                          : _SlidesOutlineSidebar(
+                              sections: _sections,
+                              slides: _slides,
+                              activeIndex: _activeSlideIndex,
+                              onSlideSelected: _setActiveSlide,
+                              onAddSlide: _addSlide,
+                              onAddSection: (name) => _addSection(name),
+                              onRenameSection: _renameSection,
+                              onDeleteSection: _deleteSection,
+                              onMoveSection: _moveSection,
+                              onMoveSlideToSection: _moveSlideToSection,
+                              onAddSectionBeforeSlide: _addSectionBeforeSlide,
+                              onDuplicateSlide: (idx) {
+                                _setActiveSlide(idx);
+                                _duplicateSlide();
+                              },
+                              onDeleteSlide: (idx) {
+                                _setActiveSlide(idx);
+                                _removeSlide();
+                              },
+                              onMoveSlideInOutline: _moveSlideInOutline,
+                              onRenameSlide: (slide) => _showSlideRenameDialog(context, slide),
+                              onDuplicateSection: _duplicateSection,
+                              selectedSectionId: _selectedSectionId,
+                              onSelectedSectionChanged: (secId) {
+                                setState(() => _selectedSectionId = secId);
+                              },
+                            ),
+                    ),
+                  ],
+                ),
               ),
 
             // Middle Workspace (Canvas)
@@ -1027,6 +1377,12 @@ class _PreviewPageState extends State<PreviewPage> {
                           onMoveSlideInOutline: _moveSlideInOutline,
                           onRenameSlide: (slide) => _showSlideRenameDialog(context, slide),
                           onDuplicateSection: _duplicateSection,
+                          selectedSectionId: _selectedSectionId,
+                          onSelectedSectionChanged: (secId) {
+                            setState(() {
+                              _selectedSectionId = secId;
+                            });
+                          },
                         )
                       : _PropertiesSidebar(
                           activeSlide: activeSlide,
@@ -1067,6 +1423,18 @@ class _PreviewPageState extends State<PreviewPage> {
                                 backgroundColor: SacredColors.primary,
                               ),
                             );
+                          },
+                          sections: _sections,
+                          selectedSectionId: _selectedSectionId,
+                          slides: _slides,
+                          onSelectedSectionChanged: (secId) {
+                            setState(() {
+                              _selectedSectionId = secId;
+                            });
+                          },
+                          onSaveRecent: () {
+                            _saveToRecentList();
+                            setState(() {});
                           },
                         ))
                   : _LiveWorkspaceCanvas(
@@ -1144,6 +1512,18 @@ class _PreviewPageState extends State<PreviewPage> {
                       backgroundColor: SacredColors.primary,
                     ),
                   );
+                },
+                sections: _sections,
+                selectedSectionId: _selectedSectionId,
+                slides: _slides,
+                onSelectedSectionChanged: (secId) {
+                  setState(() {
+                    _selectedSectionId = secId;
+                  });
+                },
+                onSaveRecent: () {
+                  _saveToRecentList();
+                  setState(() {});
                 },
               ),
           ],
@@ -1318,6 +1698,76 @@ class _EditorNavBar extends StatelessWidget {
   }
 }
 
+/// Card used in the presentation mode selection dialog.
+class _PresentationModeCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _PresentationModeCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.06),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withOpacity(0.2)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: color, size: 22),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey[400]),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Outline Navigation Sidebar (Slide list builder)
 // ─────────────────────────────────────────────────────────────────────────────
 // PowerPoint Section Sidebar Classes
@@ -1413,6 +1863,122 @@ class _SidebarDropTargetState extends State<_SidebarDropTarget> {
   }
 }
 
+class _MiniSlideThumbnail extends StatelessWidget {
+  final SlideData slide;
+  final String slideNum;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _MiniSlideThumbnail({
+    required this.slide,
+    required this.slideNum,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const scale = 0.12; // Very small scale
+    final width = 120.0;
+    final height = 67.5; // 16:9 aspect ratio
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          children: [
+            // Miniature Slide aspect ratio container
+            Container(
+              width: width,
+              height: height,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(
+                  color: isSelected ? SacredColors.primary : Colors.grey[400]!,
+                  width: isSelected ? 2.0 : 1.0,
+                ),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child: Stack(
+                  children: [
+                    // Bg color
+                    Positioned.fill(child: Container(color: Color(slide.bgColorValue))),
+                    // Bg image
+                    if (slide.imageUrl.isNotEmpty)
+                      Positioned.fill(
+                        child: slide.imageUrl.startsWith('data:')
+                            ? Image.memory(decodeDataUrl(slide.imageUrl), fit: BoxFit.cover)
+                            : Image.network(slide.imageUrl, fit: BoxFit.cover),
+                      ),
+                    // Logo
+                    if (slide.logoUrl != null && slide.logoUrl!.isNotEmpty)
+                      Positioned(
+                        left: slide.logoX * width,
+                        top: slide.logoY * height,
+                        width: slide.logoSize * scale,
+                        height: slide.logoSize * scale,
+                        child: slide.logoUrl!.startsWith('data:')
+                            ? Image.memory(decodeDataUrl(slide.logoUrl!), fit: BoxFit.contain)
+                            : Image.network(slide.logoUrl!, fit: BoxFit.contain),
+                      ),
+                    // Slide subtitle/text
+                    Positioned(
+                      left: (slide.textX * width) + 6,
+                      top: (slide.textY * height) + 4,
+                      width: width - 12,
+                      height: height - 8,
+                      child: Center(
+                        child: Text(
+                          slide.subtitle.isNotEmpty ? slide.subtitle : slide.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 4.5,
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            shadows: [Shadow(color: Colors.black, blurRadius: 1)],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            // Slide number and selected indicator
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Slide $slideNum',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    color: isSelected ? SacredColors.primary : SacredColors.onSurface,
+                  ),
+                ),
+                if (isSelected)
+                  Text(
+                    'Active Slide',
+                    style: TextStyle(
+                      fontSize: 9,
+                      color: SacredColors.primary,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _SectionHeader extends StatefulWidget {
   final SlideSection section;
   final int slideCount;
@@ -1427,6 +1993,16 @@ class _SectionHeader extends StatefulWidget {
   final VoidCallback? onDuplicate;
   final VoidCallback? onAutoExpand;
 
+  // New parameters
+  final bool isSelected;
+  final VoidCallback onTap;
+  final ValueChanged<bool> onLockChanged;
+  final VoidCallback onLockAllChoruses;
+  final VoidCallback onLockAllBridges;
+  final VoidCallback onUnlockAllSections;
+  final List<SlideData> sectionSlides;
+  final ValueChanged<int>? onSlideSelected;
+
   const _SectionHeader({
     required this.section,
     required this.slideCount,
@@ -1440,6 +2016,14 @@ class _SectionHeader extends StatefulWidget {
     this.onColorChange,
     this.onDuplicate,
     this.onAutoExpand,
+    required this.isSelected,
+    required this.onTap,
+    required this.onLockChanged,
+    required this.onLockAllChoruses,
+    required this.onLockAllBridges,
+    required this.onUnlockAllSections,
+    required this.sectionSlides,
+    this.onSlideSelected,
   });
 
   @override
@@ -1450,135 +2034,150 @@ class _SectionHeaderState extends State<_SectionHeader> {
   bool _isHovered = false;
   Timer? _autoExpandTimer;
 
+  // Hover preview timers and OverlayEntry
+  OverlayEntry? _overlayEntry;
+  Timer? _showTimer;
+  Timer? _hideTimer;
+
   @override
   void dispose() {
     _autoExpandTimer?.cancel();
+    _showTimer?.cancel();
+    _hideTimer?.cancel();
+    _removeOverlayEntry();
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    Widget header = MouseRegion(
-      onEnter: (_) => setState(() => _isHovered = true),
-      onExit: (_) => setState(() => _isHovered = false),
-      child: GestureDetector(
-        onDoubleTap: () {
-          _showRenameDialog(context, widget.section.name, 'Rename Section', widget.onRename);
-        },
-        onSecondaryTapUp: (details) {
-          _showSectionContextMenu(context, details.globalPosition);
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
-          decoration: BoxDecoration(
-            color: widget.section.colorValue != null
-                ? Color(widget.section.colorValue!).withValues(alpha: _isHovered ? 0.25 : 0.15)
-                : (_isHovered
-                    ? SacredColors.surfaceContainerHigh.withValues(alpha: 0.95)
-                    : SacredColors.surfaceContainerHigh.withValues(alpha: 0.8)),
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(
-              color: widget.isActive ? SacredColors.primary : Colors.transparent,
-              width: 1.5,
-            ),
-          ),
-          child: Row(
-            children: [
-              IconButton(
-                icon: Icon(
-                  widget.section.isCollapsed ? Icons.chevron_right : Icons.expand_more,
-                  size: 18,
-                  color: SacredColors.onSurfaceVariant,
-                ),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                onPressed: widget.onToggleCollapse,
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  widget.section.name,
-                  style: SacredTypography.labelLg(context).copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: widget.section.colorValue != null
-                        ? Color(widget.section.colorValue!)
-                        : SacredColors.onSurface,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              Text(
-                '${widget.slideCount} slide${widget.slideCount == 1 ? '' : 's'}',
-                style: SacredTypography.labelSm(context).copyWith(
-                  color: SacredColors.outline,
-                ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                icon: const Icon(Icons.add, size: 16),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                onPressed: widget.onAddSlide,
-              ),
-              const SizedBox(width: 4),
-              IconButton(
-                icon: const Icon(Icons.more_vert, size: 16),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                onPressed: () {
-                  final renderBox = context.findRenderObject() as RenderBox;
-                  final offset = renderBox.localToGlobal(Offset.zero);
-                  _showSectionContextMenu(context, offset + Offset(renderBox.size.width - 100, 24));
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+  void _showHoverPreview() {
+    _showTimer?.cancel();
+    _hideTimer?.cancel();
+    _showTimer = Timer(const Duration(milliseconds: 250), () {
+      if (!mounted) return;
+      _createOverlayEntry();
+    });
+  }
 
-    return DragTarget<String>(
-      onWillAcceptWithDetails: (details) => !details.data.startsWith('section_'),
-      onMove: (_) {
-        if (widget.section.isCollapsed) {
-          _autoExpandTimer ??= Timer(const Duration(milliseconds: 600), () {
-            widget.onAutoExpand?.call();
-          });
-        }
-      },
-      onLeave: (_) {
-        _autoExpandTimer?.cancel();
-        _autoExpandTimer = null;
-      },
-      onAcceptWithDetails: (_) {
-        _autoExpandTimer?.cancel();
-        _autoExpandTimer = null;
-      },
-      builder: (context, candidateData, rejectedData) {
-        return Draggable<String>(
-          data: widget.section.id,
-          feedback: Material(
-            elevation: 8,
-            borderRadius: BorderRadius.circular(6),
-            child: Container(
-              width: 240,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              color: SacredColors.primary.withValues(alpha: 0.9),
-              child: Text(
-                widget.section.name,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+  void _hideHoverPreview() {
+    _showTimer?.cancel();
+    _hideTimer?.cancel();
+    _hideTimer = Timer(const Duration(milliseconds: 200), () {
+      _removeOverlayEntry();
+    });
+  }
+
+  void _createOverlayEntry() {
+    if (_overlayEntry != null) return;
+    if (widget.sectionSlides.isEmpty) return;
+
+    final renderBox = context.findRenderObject() as RenderBox;
+    final size = renderBox.size;
+    final offset = renderBox.localToGlobal(Offset.zero);
+
+    _overlayEntry = OverlayEntry(
+      builder: (context) {
+        double opacity = 0.0;
+        return StatefulBuilder(
+          builder: (context, setOverlayState) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              setOverlayState(() {
+                opacity = 1.0;
+              });
+            });
+
+            // Find overall slide indexes to display index correctly
+            final activeSlides = AppSettings.instance.activeSlides;
+            final activeIdx = AppSettings.instance.activeSlideIndex;
+            final activeSlideId = activeSlides.isNotEmpty && activeIdx < activeSlides.length
+                ? activeSlides[activeIdx].id
+                : '';
+
+            return Positioned(
+              left: offset.dx + size.width + 12,
+              top: offset.dy,
+              child: Material(
+                elevation: 12,
+                borderRadius: BorderRadius.circular(10),
+                color: SacredColors.surface,
+                child: MouseRegion(
+                  onEnter: (_) {
+                    _hideTimer?.cancel();
+                  },
+                  onExit: (_) {
+                    _hideHoverPreview();
+                  },
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 150),
+                    opacity: opacity,
+                    child: Container(
+                      width: 240,
+                      constraints: const BoxConstraints(maxHeight: 300),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: SacredColors.surface,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: SacredColors.outlineVariant),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${widget.section.name} PREVIEW',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 1.0,
+                              color: SacredColors.primary,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          const Divider(height: 1),
+                          const SizedBox(height: 8),
+                          Flexible(
+                            child: SingleChildScrollView(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: widget.sectionSlides.map((slide) {
+                                  final globalIdx = activeSlides.indexWhere((s) => s.id == slide.id);
+                                  final slideNum = (globalIdx != -1 ? globalIdx + 1 : 0).toString().padLeft(2, '0');
+                                  final isSelected = slide.id == activeSlideId;
+                                  return _MiniSlideThumbnail(
+                                    slide: slide,
+                                    slideNum: slideNum,
+                                    isSelected: isSelected,
+                                    onTap: () {
+                                      if (globalIdx != -1) {
+                                        widget.onSlideSelected?.call(globalIdx);
+                                        _removeOverlayEntry();
+                                      }
+                                    },
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               ),
-            ),
-          ),
-          childWhenDragging: Opacity(
-            opacity: 0.4,
-            child: header,
-          ),
-          child: header,
+            );
+          },
         );
       },
     );
+
+    Overlay.of(context).insert(_overlayEntry!);
+  }
+
+  void _removeOverlayEntry() {
+    _showTimer?.cancel();
+    _hideTimer?.cancel();
+    if (_overlayEntry != null) {
+      _overlayEntry?.remove();
+      _overlayEntry = null;
+    }
   }
 
   void _showSectionContextMenu(BuildContext context, Offset position) {
@@ -1629,6 +2228,39 @@ class _SectionHeaderState extends State<_SectionHeader> {
               dense: true,
             ),
           ),
+        PopupMenuItem(
+          value: 'toggle_lock',
+          child: ListTile(
+            leading: Icon(widget.section.locked ? Icons.lock_open : Icons.lock, size: 18),
+            title: Text(widget.section.locked ? 'Unlock Section' : 'Lock Section'),
+            dense: true,
+          ),
+        ),
+        const PopupMenuDivider(),
+        const PopupMenuItem(
+          value: 'lock_choruses',
+          child: ListTile(
+            leading: Icon(Icons.lock, color: Colors.blue, size: 18),
+            title: Text('Lock All Choruses'),
+            dense: true,
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'lock_bridges',
+          child: ListTile(
+            leading: Icon(Icons.lock, color: Colors.orange, size: 18),
+            title: Text('Lock All Bridges'),
+            dense: true,
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'unlock_all',
+          child: ListTile(
+            leading: Icon(Icons.lock_open, size: 18),
+            title: Text('Unlock All Sections'),
+            dense: true,
+          ),
+        ),
         const PopupMenuDivider(),
         const PopupMenuItem(
           value: 'delete',
@@ -1652,6 +2284,14 @@ class _SectionHeaderState extends State<_SectionHeader> {
         widget.onDuplicate?.call();
       } else if (value == 'color') {
         _showColorPicker(context);
+      } else if (value == 'toggle_lock') {
+        widget.onLockChanged(!widget.section.locked);
+      } else if (value == 'lock_choruses') {
+        widget.onLockAllChoruses();
+      } else if (value == 'lock_bridges') {
+        widget.onLockAllBridges();
+      } else if (value == 'unlock_all') {
+        widget.onUnlockAllSections();
       }
     });
   }
@@ -1667,38 +2307,19 @@ class _SectionHeaderState extends State<_SectionHeader> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             final baseColors = [
-              Colors.red,
-              Colors.pink,
-              Colors.purple,
-              Colors.deepPurple,
-              Colors.indigo,
-              Colors.blue,
-              Colors.lightBlue,
-              Colors.cyan,
-              Colors.teal,
-              Colors.green,
-              Colors.lightGreen,
-              Colors.lime,
-              Colors.yellow,
-              Colors.amber,
-              Colors.orange,
-              Colors.deepOrange,
-              Colors.brown,
-              Colors.blueGrey,
+              Colors.red, Colors.pink, Colors.purple, Colors.deepPurple,
+              Colors.indigo, Colors.blue, Colors.lightBlue, Colors.cyan,
+              Colors.teal, Colors.green, Colors.lightGreen, Colors.lime,
+              Colors.yellow, Colors.amber, Colors.orange, Colors.deepOrange,
+              Colors.brown, Colors.blueGrey,
             ];
 
             MaterialColor? matchingBase;
             for (final base in baseColors) {
               if (base is MaterialColor) {
-                if (base.value == selectedColor.value) {
-                  matchingBase = base;
-                  break;
-                }
+                if (base.value == selectedColor.value) { matchingBase = base; break; }
                 for (final shade in [50, 100, 200, 300, 400, 500, 600, 700, 800, 900]) {
-                  if (base[shade]?.value == selectedColor.value) {
-                    matchingBase = base;
-                    break;
-                  }
+                  if (base[shade]?.value == selectedColor.value) { matchingBase = base; break; }
                 }
                 if (matchingBase != null) break;
               }
@@ -1713,10 +2334,8 @@ class _SectionHeaderState extends State<_SectionHeader> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Preview box
                     Container(
-                      height: 50,
-                      width: double.infinity,
+                      height: 50, width: double.infinity,
                       decoration: BoxDecoration(
                         color: selectedColor,
                         borderRadius: BorderRadius.circular(8),
@@ -1727,8 +2346,7 @@ class _SectionHeaderState extends State<_SectionHeader> {
                         'Preview: #${selectedColor.value.toRadixString(16).substring(2).toUpperCase()}',
                         style: TextStyle(
                           color: ThemeData.estimateBrightnessForColor(selectedColor) == Brightness.dark
-                              ? Colors.white
-                              : Colors.black,
+                              ? Colors.white : Colors.black,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -1736,15 +2354,12 @@ class _SectionHeaderState extends State<_SectionHeader> {
                     const SizedBox(height: 16),
                     const Text('Base Color', style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
-                    // Grid of base colors
                     SizedBox(
                       height: 80,
                       child: GridView.builder(
                         scrollDirection: Axis.horizontal,
                         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          mainAxisSpacing: 8,
-                          crossAxisSpacing: 8,
+                          crossAxisCount: 2, mainAxisSpacing: 8, crossAxisSpacing: 8,
                         ),
                         itemCount: baseColors.length,
                         itemBuilder: (context, index) {
@@ -1754,27 +2369,14 @@ class _SectionHeaderState extends State<_SectionHeader> {
                             onTap: () {
                               setDialogState(() {
                                 selectedColor = color;
-                                if (color is MaterialColor) {
-                                  matchingBase = color;
-                                } else {
-                                  matchingBase = null;
-                                }
+                                matchingBase = color is MaterialColor ? color : null;
                               });
                             },
                             child: Container(
                               decoration: BoxDecoration(
-                                color: color,
-                                shape: BoxShape.circle,
-                                border: isSelected
-                                    ? Border.all(color: Colors.black, width: 3)
-                                    : null,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.1),
-                                    blurRadius: 2,
-                                    offset: const Offset(0, 1),
-                                  )
-                                ],
+                                color: color, shape: BoxShape.circle,
+                                border: isSelected ? Border.all(color: Colors.black, width: 3) : null,
+                                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 2, offset: const Offset(0, 1))],
                               ),
                             ),
                           );
@@ -1785,7 +2387,6 @@ class _SectionHeaderState extends State<_SectionHeader> {
                       const SizedBox(height: 16),
                       const Text('Shades', style: TextStyle(fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),
-                      // Shades selection row
                       SizedBox(
                         height: 45,
                         child: ListView.builder(
@@ -1796,21 +2397,13 @@ class _SectionHeaderState extends State<_SectionHeader> {
                             final color = matchingBase![shade]!;
                             final isSelected = selectedColor.value == color.value;
                             return GestureDetector(
-                              onTap: () {
-                                setDialogState(() {
-                                  selectedColor = color;
-                                });
-                              },
+                              onTap: () { setDialogState(() { selectedColor = color; }); },
                               child: Container(
-                                width: 36,
-                                height: 36,
+                                width: 36, height: 36,
                                 margin: const EdgeInsets.only(right: 8),
                                 decoration: BoxDecoration(
-                                  color: color,
-                                  borderRadius: BorderRadius.circular(4),
-                                  border: isSelected
-                                      ? Border.all(color: Colors.black, width: 2.5)
-                                      : null,
+                                  color: color, borderRadius: BorderRadius.circular(4),
+                                  border: isSelected ? Border.all(color: Colors.black, width: 2.5) : null,
                                 ),
                               ),
                             );
@@ -1821,72 +2414,26 @@ class _SectionHeaderState extends State<_SectionHeader> {
                     const SizedBox(height: 16),
                     const Text('Custom Fine-Tuning (HSL)', style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
-                    // HSL Sliders
                     Builder(
                       builder: (context) {
                         final hsl = HSLColor.fromColor(selectedColor);
                         return Column(
                           children: [
-                            // Hue
-                            Row(
-                              children: [
-                                const SizedBox(width: 30, child: Text('H')),
-                                Expanded(
-                                  child: Slider(
-                                    value: hsl.hue,
-                                    min: 0.0,
-                                    max: 360.0,
-                                    activeColor: Colors.red,
-                                    onChanged: (val) {
-                                      setDialogState(() {
-                                        selectedColor = hsl.withHue(val).toColor();
-                                      });
-                                    },
-                                  ),
-                                ),
-                                Text('${hsl.hue.round()}°'),
-                              ],
-                            ),
-                            // Saturation
-                            Row(
-                              children: [
-                                const SizedBox(width: 30, child: Text('S')),
-                                Expanded(
-                                  child: Slider(
-                                    value: hsl.saturation,
-                                    min: 0.0,
-                                    max: 1.0,
-                                    activeColor: Colors.green,
-                                    onChanged: (val) {
-                                      setDialogState(() {
-                                        selectedColor = hsl.withSaturation(val).toColor();
-                                      });
-                                    },
-                                  ),
-                                ),
-                                Text('${(hsl.saturation * 100).round()}%'),
-                              ],
-                            ),
-                            // Lightness
-                            Row(
-                              children: [
-                                const SizedBox(width: 30, child: Text('L')),
-                                Expanded(
-                                  child: Slider(
-                                    value: hsl.lightness,
-                                    min: 0.0,
-                                    max: 1.0,
-                                    activeColor: Colors.blue,
-                                    onChanged: (val) {
-                                      setDialogState(() {
-                                        selectedColor = hsl.withLightness(val).toColor();
-                                      });
-                                    },
-                                  ),
-                                ),
-                                Text('${(hsl.lightness * 100).round()}%'),
-                              ],
-                            ),
+                            Row(children: [
+                              const SizedBox(width: 30, child: Text('H')),
+                              Expanded(child: Slider(value: hsl.hue, min: 0, max: 360, activeColor: Colors.red, onChanged: (v) { setDialogState(() { selectedColor = hsl.withHue(v).toColor(); }); })),
+                              Text('${hsl.hue.round()}°'),
+                            ]),
+                            Row(children: [
+                              const SizedBox(width: 30, child: Text('S')),
+                              Expanded(child: Slider(value: hsl.saturation, min: 0, max: 1, activeColor: Colors.green, onChanged: (v) { setDialogState(() { selectedColor = hsl.withSaturation(v).toColor(); }); })),
+                              Text('${(hsl.saturation * 100).round()}%'),
+                            ]),
+                            Row(children: [
+                              const SizedBox(width: 30, child: Text('L')),
+                              Expanded(child: Slider(value: hsl.lightness, min: 0, max: 1, activeColor: Colors.blue, onChanged: (v) { setDialogState(() { selectedColor = hsl.withLightness(v).toColor(); }); })),
+                              Text('${(hsl.lightness * 100).round()}%'),
+                            ]),
                           ],
                         );
                       },
@@ -1895,27 +2442,178 @@ class _SectionHeaderState extends State<_SectionHeader> {
                 ),
               ),
               actions: [
-                TextButton(
-                  onPressed: () {
-                    widget.onColorChange?.call(0);
-                    Navigator.of(context).pop();
-                  },
-                  child: const Text('Clear Color'),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Cancel'),
-                ),
-                ElevatedButton(
-                  onPressed: () {
-                    widget.onColorChange?.call(selectedColor.value);
-                    Navigator.of(context).pop();
-                  },
-                  child: const Text('Select'),
-                ),
+                TextButton(onPressed: () { widget.onColorChange?.call(0); Navigator.of(context).pop(); }, child: const Text('Clear Color')),
+                TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+                ElevatedButton(onPressed: () { widget.onColorChange?.call(selectedColor.value); Navigator.of(context).pop(); }, child: const Text('Select')),
               ],
             );
           },
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accentColor = getSectionAccentColor(widget.section, context);
+
+    Widget header = Focus(
+      autofocus: false,
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent) {
+          if (event.logicalKey == LogicalKeyboardKey.space ||
+              event.logicalKey == LogicalKeyboardKey.enter) {
+            if (_overlayEntry == null) {
+              _createOverlayEntry();
+            } else {
+              _removeOverlayEntry();
+            }
+            return KeyEventResult.handled;
+          }
+        }
+        return KeyEventResult.ignored;
+      },
+      child: MouseRegion(
+        onEnter: (_) => _showHoverPreview(),
+        onExit: (_) => _hideHoverPreview(),
+        child: GestureDetector(
+          onTap: () {
+            widget.onTap();
+            _removeOverlayEntry();
+          },
+          onDoubleTap: () {
+            _showRenameDialog(context, widget.section.name, 'Rename Section', widget.onRename);
+          },
+          onSecondaryTapUp: (details) {
+            _showSectionContextMenu(context, details.globalPosition);
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+            decoration: BoxDecoration(
+              color: widget.section.colorValue != null
+                  ? Color(widget.section.colorValue!).withOpacity(_isHovered ? 0.25 : 0.15)
+                  : (_isHovered
+                      ? SacredColors.surfaceContainerHigh.withOpacity(0.95)
+                      : SacredColors.surfaceContainerHigh.withOpacity(0.8)),
+              borderRadius: BorderRadius.circular(6),
+              border: Border(
+                left: BorderSide(
+                  color: accentColor,
+                  width: 4.5,
+                ),
+                bottom: BorderSide(
+                  color: widget.isSelected ? SacredColors.primary : Colors.transparent,
+                  width: 1.5,
+                ),
+                top: BorderSide(
+                  color: widget.isSelected ? SacredColors.primary : Colors.transparent,
+                  width: 1.5,
+                ),
+                right: BorderSide(
+                  color: widget.isSelected ? SacredColors.primary : Colors.transparent,
+                  width: 1.5,
+                ),
+              ),
+            ),
+            child: Row(
+              children: [
+                IconButton(
+                  icon: Icon(
+                    widget.section.isCollapsed ? Icons.chevron_right : Icons.expand_more,
+                    size: 18,
+                    color: accentColor,
+                  ),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: widget.onToggleCollapse,
+                ),
+                const SizedBox(width: 6),
+                Icon(
+                  widget.section.locked ? Icons.lock : Icons.folder,
+                  color: accentColor,
+                  size: 16,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    widget.section.name,
+                    style: SacredTypography.labelLg(context).copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: accentColor,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Text(
+                  '${widget.slideCount} slide${widget.slideCount == 1 ? '' : 's'}',
+                  style: SacredTypography.labelSm(context).copyWith(
+                    color: SacredColors.outline,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: const Icon(Icons.add, size: 16),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: widget.onAddSlide,
+                ),
+                const SizedBox(width: 4),
+                IconButton(
+                  icon: const Icon(Icons.more_vert, size: 16),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () {
+                    final renderBox = context.findRenderObject() as RenderBox;
+                    final offset = renderBox.localToGlobal(Offset.zero);
+                    _showSectionContextMenu(context, offset + Offset(renderBox.size.width - 100, 24));
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    return DragTarget<String>(
+      onWillAcceptWithDetails: (details) => !details.data.startsWith('section_'),
+      onMove: (_) {
+        if (widget.section.isCollapsed) {
+          _autoExpandTimer ??= Timer(const Duration(milliseconds: 600), () {
+            widget.onAutoExpand?.call();
+          });
+        }
+      },
+      onLeave: (_) {
+        _autoExpandTimer?.cancel();
+        _autoExpandTimer = null;
+      },
+      onAcceptWithDetails: (_) {
+        _autoExpandTimer?.cancel();
+        _autoExpandTimer = null;
+      },
+      builder: (context, candidateData, rejectedData) {
+        return Draggable<String>(
+          data: widget.section.id,
+          feedback: Material(
+            elevation: 8,
+            borderRadius: BorderRadius.circular(6),
+            child: Container(
+              width: 240,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              color: SacredColors.primary.withOpacity(0.9),
+              child: Text(
+                widget.section.name,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+          childWhenDragging: Opacity(
+            opacity: 0.4,
+            child: header,
+          ),
+          child: header,
         );
       },
     );
@@ -1939,6 +2637,8 @@ class _SlidesOutlineSidebar extends StatefulWidget {
   final Function(int fromIndex, int toIndex) onMoveSlideInOutline;
   final Function(SlideData slide) onRenameSlide;
   final Function(String id)? onDuplicateSection;
+  final String? selectedSectionId;
+  final ValueChanged<String?> onSelectedSectionChanged;
 
   const _SlidesOutlineSidebar({
     required this.sections,
@@ -1957,6 +2657,8 @@ class _SlidesOutlineSidebar extends StatefulWidget {
     required this.onMoveSlideInOutline,
     required this.onRenameSlide,
     this.onDuplicateSection,
+    required this.selectedSectionId,
+    required this.onSelectedSectionChanged,
   });
 
   @override
@@ -2060,10 +2762,10 @@ class _SlidesOutlineSidebarState extends State<_SlidesOutlineSidebar> {
                     return KeyEventResult.ignored;
                   }
                   final activeSlideId = widget.slides[widget.activeIndex].id;
-                  final activeSection = widget.sections.firstWhere(
+                  final secIdx = widget.sections.indexWhere(
                     (s) => s.slideIds.contains(activeSlideId),
-                    orElse: () => null as dynamic,
                   );
+                  final activeSection = secIdx >= 0 ? widget.sections[secIdx] : null;
 
                   if (event.logicalKey == LogicalKeyboardKey.f2) {
                     if (activeSection != null) {
@@ -2106,6 +2808,7 @@ class _SlidesOutlineSidebarState extends State<_SlidesOutlineSidebar> {
                         ? widget.slides[widget.activeIndex].id
                         : '';
                     final bool isSectionActive = item.section.slideIds.contains(activeSlideId);
+                    final sectionSlides = widget.slides.where((s) => item.section.slideIds.contains(s.id)).toList();
 
                     return Semantics(
                       label: '${item.section.name} section, ${item.section.slideIds.length} slides',
@@ -2116,6 +2819,46 @@ class _SlidesOutlineSidebarState extends State<_SlidesOutlineSidebar> {
                           section: item.section,
                           slideCount: item.section.slideIds.length,
                           isActive: isSectionActive,
+                          isSelected: widget.selectedSectionId == item.section.id,
+                          sectionSlides: sectionSlides,
+                          onSlideSelected: widget.onSlideSelected,
+                          onTap: () {
+                            widget.onSelectedSectionChanged(item.section.id);
+                          },
+                          onLockChanged: (locked) {
+                            setState(() {
+                              item.section.locked = locked;
+                            });
+                            widget.onRenameSection(item.section.id, item.section.name);
+                          },
+                          onLockAllChoruses: () {
+                            setState(() {
+                              for (final s in widget.sections) {
+                                if (getSectionTypeFromName(s.name) == SectionType.chorus) {
+                                  s.locked = true;
+                                }
+                              }
+                            });
+                            widget.onRenameSection(item.section.id, item.section.name);
+                          },
+                          onLockAllBridges: () {
+                            setState(() {
+                              for (final s in widget.sections) {
+                                if (getSectionTypeFromName(s.name) == SectionType.bridge) {
+                                  s.locked = true;
+                                }
+                              }
+                            });
+                            widget.onRenameSection(item.section.id, item.section.name);
+                          },
+                          onUnlockAllSections: () {
+                            setState(() {
+                              for (final s in widget.sections) {
+                                s.locked = false;
+                              }
+                            });
+                            widget.onRenameSection(item.section.id, item.section.name);
+                          },
                           onToggleCollapse: () {
                             setState(() {
                               item.section.isCollapsed = !item.section.isCollapsed;
@@ -2159,6 +2902,10 @@ class _SlidesOutlineSidebarState extends State<_SlidesOutlineSidebar> {
                     );
                   } else if (item is SlideItem) {
                     final bool isActive = item.slideIndex == widget.activeIndex;
+                    final secIdx2 = widget.sections.indexWhere((s) => s.id == item.sectionId);
+                    final section = secIdx2 >= 0 ? widget.sections[secIdx2] : null;
+                    final String? sectionName = section?.name;
+                    final Color? sectionColor = section != null ? getSectionAccentColor(section, context) : null;
                     
                     return Semantics(
                       label: 'Slide ${item.slideIndex + 1}, title: ${item.slide.title}',
@@ -2197,6 +2944,8 @@ class _SlidesOutlineSidebarState extends State<_SlidesOutlineSidebar> {
                               isActive: isActive,
                               indexText: '${item.slideIndex + 1}'.padLeft(2, '0'),
                               onTap: () => widget.onSlideSelected(item.slideIndex),
+                              sectionName: sectionName,
+                              sectionColor: sectionColor,
                             ),
                           ),
                         ),
@@ -2211,6 +2960,8 @@ class _SlidesOutlineSidebarState extends State<_SlidesOutlineSidebar> {
                               isActive: isActive,
                               indexText: '${item.slideIndex + 1}'.padLeft(2, '0'),
                               onTap: () => widget.onSlideSelected(item.slideIndex),
+                              sectionName: sectionName,
+                              sectionColor: sectionColor,
                             ),
                           ),
                         ),
@@ -2417,12 +3168,16 @@ class _SlideThumbnailCard extends StatefulWidget {
   final bool isActive;
   final String indexText;
   final VoidCallback onTap;
+  final String? sectionName;
+  final Color? sectionColor;
 
   const _SlideThumbnailCard({
     required this.slide,
     required this.isActive,
     required this.indexText,
     required this.onTap,
+    this.sectionName,
+    this.sectionColor,
   });
 
   @override
@@ -2603,6 +3358,26 @@ class _SlideThumbnailCardState extends State<_SlideThumbnailCard> {
                                 ),
                               ),
 
+                              if (widget.sectionName != null && widget.sectionName!.isNotEmpty)
+                                Positioned(
+                                  top: 6,
+                                  left: 6,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: (widget.sectionColor ?? Colors.grey).withOpacity(0.95),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      widget.sectionName!,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 8,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
                               Positioned(
                                 bottom: 4,
                                 right: 4,
@@ -3072,7 +3847,7 @@ class _DraggableLogoLayerState extends State<_DraggableLogoLayer> {
 }
 
 
-class _PropertiesSidebar extends StatelessWidget {
+class _PropertiesSidebar extends StatefulWidget {
   final SlideData activeSlide;
   final TextEditingController titleController;
   final TextEditingController subtitleController;
@@ -3087,7 +3862,15 @@ class _PropertiesSidebar extends StatelessWidget {
   final ValueChanged<bool> onApplyToAllChanged;
   final VoidCallback onApplyStylesToAllPressed;
 
+  // New parameters
+  final List<SlideSection> sections;
+  final String? selectedSectionId;
+  final List<SlideData> slides;
+  final ValueChanged<String?> onSelectedSectionChanged;
+  final VoidCallback onSaveRecent;
+
   const _PropertiesSidebar({
+    super.key,
     required this.activeSlide,
     required this.titleController,
     required this.subtitleController,
@@ -3101,18 +3884,1191 @@ class _PropertiesSidebar extends StatelessWidget {
     required this.applyToAll,
     required this.onApplyToAllChanged,
     required this.onApplyStylesToAllPressed,
+    required this.sections,
+    required this.selectedSectionId,
+    required this.slides,
+    required this.onSelectedSectionChanged,
+    required this.onSaveRecent,
   });
 
   @override
-  Widget build(BuildContext context) {
+  State<_PropertiesSidebar> createState() => _PropertiesSidebarState();
+}
+
+class _PropertiesSidebarState extends State<_PropertiesSidebar> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  late TextEditingController _notesController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 3, vsync: this);
+    _notesController = TextEditingController(text: _getSelectedSectionNotes());
+  }
+
+  @override
+  void didUpdateWidget(covariant _PropertiesSidebar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.selectedSectionId != widget.selectedSectionId) {
+      _notesController.text = _getSelectedSectionNotes();
+      
+      // If a section is selected, automatically switch to the Section tab (index 1)
+      if (widget.selectedSectionId != null && _tabController.index != 1) {
+        _tabController.animateTo(1);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    _notesController.dispose();
+    super.dispose();
+  }
+
+  String _getSelectedSectionNotes() {
+    if (widget.selectedSectionId == null) return '';
+    final idx = widget.sections.indexWhere(
+      (s) => s.id == widget.selectedSectionId,
+    );
+    final sec = idx >= 0 ? widget.sections[idx] : null;
+    return sec?.notes ?? '';
+  }
+
+  SlideSection? _getSelectedSection() {
+    if (widget.selectedSectionId == null) return null;
+    final idx2 = widget.sections.indexWhere(
+      (s) => s.id == widget.selectedSectionId,
+    );
+    return idx2 >= 0 ? widget.sections[idx2] : null;
+  }
+
+  void _saveNotes(String val) {
+    final sec = _getSelectedSection();
+    if (sec != null) {
+      sec.notes = val.isEmpty ? null : val;
+      AppSettings.instance.updateActiveSections(widget.sections);
+      widget.onSaveRecent();
+    }
+  }
+
+  void _lockSection(bool locked) {
+    final sec = _getSelectedSection();
+    if (sec != null) {
+      setState(() {
+        sec.locked = locked;
+      });
+      AppSettings.instance.updateActiveSections(widget.sections);
+      widget.onSaveRecent();
+    }
+  }
+
+  void _showColorPicker(BuildContext context, SlideSection section) {
+    Color selectedColor = section.colorValue != null && section.colorValue != 0
+        ? Color(section.colorValue!)
+        : Colors.blue;
+
+    showDialog<void>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final baseColors = [
+              Colors.red,
+              Colors.pink,
+              Colors.purple,
+              Colors.deepPurple,
+              Colors.indigo,
+              Colors.blue,
+              Colors.lightBlue,
+              Colors.cyan,
+              Colors.teal,
+              Colors.green,
+              Colors.lightGreen,
+              Colors.lime,
+              Colors.yellow,
+              Colors.amber,
+              Colors.orange,
+              Colors.deepOrange,
+              Colors.brown,
+              Colors.blueGrey,
+            ];
+
+            return AlertDialog(
+              title: const Text('Choose Section Color'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Base Theme Colors', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    // Grid of colors
+                    SizedBox(
+                      width: 280,
+                      height: 120,
+                      child: GridView.builder(
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 6,
+                          crossAxisSpacing: 8,
+                          mainAxisSpacing: 8,
+                        ),
+                        itemCount: baseColors.length,
+                        itemBuilder: (context, idx) {
+                          final color = baseColors[idx];
+                          final isSelected = selectedColor.value == color.value;
+                          return GestureDetector(
+                            onTap: () {
+                              setDialogState(() {
+                                selectedColor = color;
+                              });
+                            },
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: color,
+                                shape: BoxShape.circle,
+                                border: isSelected
+                                    ? Border.all(color: Colors.black, width: 3)
+                                    : null,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.1),
+                                    blurRadius: 2,
+                                    offset: const Offset(0, 1),
+                                  )
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text('Custom Fine-Tuning (HSL)', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    Builder(
+                      builder: (context) {
+                        final hsl = HSLColor.fromColor(selectedColor);
+                        return Column(
+                          children: [
+                            Row(
+                              children: [
+                                const SizedBox(width: 30, child: Text('H')),
+                                Expanded(
+                                  child: Slider(
+                                    value: hsl.hue,
+                                    min: 0.0,
+                                    max: 360.0,
+                                    activeColor: Colors.red,
+                                    onChanged: (val) {
+                                      setDialogState(() {
+                                        selectedColor = hsl.withHue(val).toColor();
+                                      });
+                                    },
+                                  ),
+                                ),
+                                Text('${hsl.hue.round()}°'),
+                              ],
+                            ),
+                            Row(
+                              children: [
+                                const SizedBox(width: 30, child: Text('S')),
+                                Expanded(
+                                  child: Slider(
+                                    value: hsl.saturation,
+                                    min: 0.0,
+                                    max: 1.0,
+                                    activeColor: Colors.green,
+                                    onChanged: (val) {
+                                      setDialogState(() {
+                                        selectedColor = hsl.withSaturation(val).toColor();
+                                      });
+                                    },
+                                  ),
+                                ),
+                                Text('${(hsl.saturation * 100).round()}%'),
+                              ],
+                            ),
+                            Row(
+                              children: [
+                                const SizedBox(width: 30, child: Text('L')),
+                                Expanded(
+                                  child: Slider(
+                                    value: hsl.lightness,
+                                    min: 0.0,
+                                    max: 1.0,
+                                    activeColor: Colors.blue,
+                                    onChanged: (val) {
+                                      setDialogState(() {
+                                        selectedColor = hsl.withLightness(val).toColor();
+                                      });
+                                    },
+                                  ),
+                                ),
+                                Text('${(hsl.lightness * 100).round()}%'),
+                              ],
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      section.colorValue = null;
+                    });
+                    AppSettings.instance.updateActiveSections(widget.sections);
+                    widget.onSaveRecent();
+                    Navigator.of(context).pop();
+                  },
+                  child: const Text('Clear Color'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    setState(() {
+                      section.colorValue = selectedColor.value;
+                    });
+                    AppSettings.instance.updateActiveSections(widget.sections);
+                    widget.onSaveRecent();
+                    Navigator.of(context).pop();
+                  },
+                  child: const Text('Select'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildSlideTab() {
     return ListenableBuilder(
-      listenable: activeSlide,
+      listenable: widget.activeSlide,
       builder: (context, _) {
-        return Container(
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Apply to all slides',
+                      style: SacredTypography.bodyMd(context).copyWith(
+                        color: SacredColors.onSurface,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  Switch(
+                    value: widget.applyToAll,
+                    activeColor: SacredColors.primary,
+                    onChanged: widget.onApplyToAllChanged,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.copy_all, size: 18),
+                  label: const Text('Apply current style to all'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: SacredColors.primary,
+                    side: BorderSide(color: SacredColors.primary.withOpacity(0.5)),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  onPressed: widget.onApplyStylesToAllPressed,
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 16),
+
+              // Text Inputs Editor
+              Text(
+                'SLIDE TITLE',
+                style: SacredTypography.labelLg(context).copyWith(
+                  color: SacredColors.onSurfaceVariant,
+                  letterSpacing: 1.0,
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: widget.titleController,
+                onChanged: (text) {
+                  widget.activeSlide.title = text;
+                  widget.onSlideChanged();
+                },
+                style: SacredTypography.bodyLg(context).copyWith(
+                  color: SacredColors.onSurface,
+                ),
+                decoration: InputDecoration(
+                  enabledBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(color: SacredColors.outlineVariant),
+                  ),
+                  focusedBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(color: SacredColors.primary),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              Text(
+                'SLIDE QUOTE / SUBTITLE',
+                style: SacredTypography.labelLg(context).copyWith(
+                  color: SacredColors.onSurfaceVariant,
+                  letterSpacing: 1.0,
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: widget.subtitleController,
+                onChanged: (text) {
+                  widget.activeSlide.subtitle = text;
+                  widget.onSlideChanged();
+                },
+                style: SacredTypography.bodyMd(context).copyWith(
+                  color: SacredColors.onSurface,
+                ),
+                decoration: InputDecoration(
+                  enabledBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(color: SacredColors.outlineVariant),
+                  ),
+                  focusedBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(color: SacredColors.primary),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Font Size Controls
+              Text(
+                'TITLE FONT SIZE',
+                style: SacredTypography.labelLg(context).copyWith(
+                  color: SacredColors.onSurfaceVariant,
+                  letterSpacing: 1.0,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Expanded(
+                    child: Slider(
+                      value: widget.activeSlide.titleFontSize,
+                      min: 16.0,
+                      max: 96.0,
+                      divisions: 16,
+                      activeColor: SacredColors.primary,
+                      inactiveColor: SacredColors.surfaceContainerHighest,
+                      onChanged: (val) {
+                        widget.activeSlide.titleFontSize = val;
+                        widget.onSlideChanged();
+                      },
+                    ),
+                  ),
+                  SizedBox(
+                    width: 44,
+                    child: Text(
+                      '${widget.activeSlide.titleFontSize.toInt()}pt',
+                      style: SacredTypography.labelSm(context).copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: SacredColors.primary,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+
+              Text(
+                'SUBTITLE FONT SIZE',
+                style: SacredTypography.labelLg(context).copyWith(
+                  color: SacredColors.onSurfaceVariant,
+                  letterSpacing: 1.0,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Expanded(
+                    child: Slider(
+                      value: widget.activeSlide.subtitleFontSize,
+                      min: 10.0,
+                      max: 48.0,
+                      divisions: 19,
+                      activeColor: SacredColors.primary,
+                      inactiveColor: SacredColors.surfaceContainerHighest,
+                      onChanged: (val) {
+                        widget.activeSlide.subtitleFontSize = val;
+                        widget.onSlideChanged();
+                      },
+                    ),
+                  ),
+                  SizedBox(
+                    width: 44,
+                    child: Text(
+                      '${widget.activeSlide.subtitleFontSize.toInt()}pt',
+                      style: SacredTypography.labelSm(context).copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: SacredColors.primary,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              Row(
+                children: [
+                  Expanded(
+                    child: _FormatToggleIcon(
+                      icon: Icons.format_bold,
+                      isSelected: widget.activeSlide.isBold,
+                      onPressed: () {
+                        widget.activeSlide.isBold = !widget.activeSlide.isBold;
+                        widget.onSlideChanged();
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _FormatToggleIcon(
+                      icon: Icons.format_italic,
+                      isSelected: widget.activeSlide.isItalic,
+                      onPressed: () {
+                        widget.activeSlide.isItalic = !widget.activeSlide.isItalic;
+                        widget.onSlideChanged();
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: PopupMenuButton<TextAlign>(
+                      initialValue: widget.activeSlide.alignment,
+                      onSelected: (alignment) {
+                        widget.activeSlide.alignment = alignment;
+                        widget.onSlideChanged();
+                      },
+                      itemBuilder: (context) => const [
+                        PopupMenuItem(
+                          value: TextAlign.left,
+                          child: Row(
+                            children: [
+                              Icon(Icons.format_align_left),
+                              SizedBox(width: 8),
+                              Text('Left'),
+                            ],
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: TextAlign.center,
+                          child: Row(
+                            children: [
+                              Icon(Icons.format_align_center),
+                              SizedBox(width: 8),
+                              Text('Center'),
+                            ],
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: TextAlign.right,
+                          child: Row(
+                            children: [
+                              Icon(Icons.format_align_right),
+                              SizedBox(width: 8),
+                              Text('Right'),
+                            ],
+                          ),
+                        ),
+                      ],
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        decoration: BoxDecoration(
+                          color: SacredColors.surfaceContainer,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: SacredColors.outlineVariant),
+                        ),
+                        child: Icon(
+                          widget.activeSlide.alignment == TextAlign.left
+                              ? Icons.format_align_left
+                              : (widget.activeSlide.alignment == TextAlign.right
+                                  ? Icons.format_align_right
+                                  : Icons.format_align_center),
+                          size: 20,
+                          color: SacredColors.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 32),
+
+              Text(
+                'BACKGROUND COLOR',
+                style: SacredTypography.labelLg(context).copyWith(
+                  color: SacredColors.onSurfaceVariant,
+                  letterSpacing: 1.0,
+                ),
+              ),
+              const SizedBox(height: 12),
+              _BackgroundColorSelector(
+                selectedColor: Color(widget.activeSlide.bgColorValue),
+                onColorChanged: widget.onBgColorChanged,
+              ),
+              const SizedBox(height: 24),
+
+              Text(
+                'BACKGROUND IMAGE',
+                style: SacredTypography.labelLg(context).copyWith(
+                  color: SacredColors.onSurfaceVariant,
+                  letterSpacing: 1.0,
+                ),
+              ),
+              const SizedBox(height: 12),
+              _BackgroundImageEditorCard(
+                imageUrl: widget.activeSlide.imageUrl,
+                onImageChanged: widget.onAllSlidesImageChanged,
+              ),
+              const SizedBox(height: 24),
+
+              Text(
+                'SLIDE LOGO',
+                style: SacredTypography.labelLg(context).copyWith(
+                  color: SacredColors.onSurfaceVariant,
+                  letterSpacing: 1.0,
+                ),
+              ),
+              const SizedBox(height: 12),
+              _LogoImageEditorCard(
+                logoUrl: widget.activeSlide.logoUrl,
+                onLogoChanged: widget.onLogoChanged,
+              ),
+              if (widget.activeSlide.logoUrl != null && widget.activeSlide.logoUrl!.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Logo Size', style: SacredTypography.labelSm(context)),
+                    Text(
+                      '${widget.activeSlide.logoSize.toInt()}px',
+                      style: SacredTypography.labelSm(context).copyWith(fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+                Slider(
+                  value: widget.activeSlide.logoSize,
+                  min: 40.0,
+                  max: 200.0,
+                  activeColor: SacredColors.primary,
+                  inactiveColor: SacredColors.surfaceContainerHighest,
+                  onChanged: widget.onLogoSizeChanged,
+                ),
+              ],
+              const SizedBox(height: 24),
+
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Opacity', style: SacredTypography.labelSm(context)),
+                  Text(
+                    '${(widget.activeSlide.opacity * 100).toInt()}%',
+                    style: SacredTypography.labelSm(context).copyWith(fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              Slider(
+                value: widget.activeSlide.opacity,
+                min: 0.0,
+                max: 1.0,
+                activeColor: SacredColors.primary,
+                inactiveColor: SacredColors.surfaceContainerHighest,
+                onChanged: (val) {
+                  widget.activeSlide.opacity = val;
+                  widget.onSlideChanged();
+                },
+              ),
+              const SizedBox(height: 16),
+
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Blur', style: SacredTypography.labelSm(context)),
+                  Text(
+                    '${widget.activeSlide.blur.toInt()}px',
+                    style: SacredTypography.labelSm(context).copyWith(fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              Slider(
+                value: widget.activeSlide.blur,
+                min: 0.0,
+                max: 30.0,
+                activeColor: SacredColors.primary,
+                inactiveColor: SacredColors.surfaceContainerHighest,
+                onChanged: (val) {
+                  widget.activeSlide.blur = val;
+                  widget.onSlideChanged();
+                },
+              ),
+              const SizedBox(height: 32),
+
+              Text(
+                'TRANSITION',
+                style: SacredTypography.labelLg(context).copyWith(
+                  color: SacredColors.onSurfaceVariant,
+                  letterSpacing: 1.0,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: SacredColors.surfaceContainer,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: SacredColors.outlineVariant),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: widget.activeSlide.transition,
+                    isExpanded: true,
+                    icon: const Icon(Icons.arrow_drop_down),
+                    onChanged: (val) {
+                      if (val != null) {
+                        widget.activeSlide.transition = val;
+                        widget.onSlideChanged();
+                      }
+                    },
+                    items: const [
+                      DropdownMenuItem(value: 'Cross Dissolve', child: Text('Cross Dissolve')),
+                      DropdownMenuItem(value: 'Wipe Down', child: Text('Wipe Down')),
+                      DropdownMenuItem(value: 'Sacred Bloom', child: Text('Sacred Bloom')),
+                      DropdownMenuItem(value: 'Soft Fade', child: Text('Soft Fade')),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 32),
+
+              ElevatedButton.icon(
+                onPressed: widget.onDuplicate,
+                icon: const Icon(Icons.content_copy, size: 18),
+                label: const Text('Duplicate Slide'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: SacredColors.surfaceContainerHighest,
+                  foregroundColor: SacredColors.primary,
+                  minimumSize: const Size.fromHeight(48),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  elevation: 0,
+                ),
+              ),
+              const SizedBox(height: 12),
+              ElevatedButton.icon(
+                onPressed: widget.onDelete,
+                icon: const Icon(Icons.delete_outline, size: 18),
+                label: const Text('Remove Slide'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: SacredColors.errorContainer,
+                  foregroundColor: SacredColors.onErrorContainer,
+                  minimumSize: const Size.fromHeight(48),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  elevation: 0,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSectionTab() {
+    final section = _getSelectedSection();
+    if (section == null) {
+      return Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.sticky_note_2_outlined, size: 48, color: SacredColors.outlineVariant),
+            const SizedBox(height: 16),
+            Text(
+              'No Section Selected',
+              style: TextStyle(fontWeight: FontWeight.bold, color: SacredColors.onSurface),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Select a section from the slides outline sidebar to view, lock, or edit section notes.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: SacredColors.onSurfaceVariant),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final accentColor = getSectionAccentColor(section, context);
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 12,
+                height: 24,
+                decoration: BoxDecoration(
+                  color: accentColor,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  section.name.toUpperCase(),
+                  style: SacredTypography.headlineMd(context).copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: SacredColors.onSurface,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          const Divider(),
+          const SizedBox(height: 16),
+
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Icon(section.locked ? Icons.lock : Icons.lock_open, size: 20, color: accentColor),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Lock Section',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: SacredColors.onSurface,
+                    ),
+                  ),
+                ],
+              ),
+              Switch(
+                value: section.locked,
+                activeColor: accentColor,
+                onChanged: _lockSection,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Locked sections are protected from automatic formatting, auto-splitting, lyric arrangement changes, or AI rewrites.',
+            style: TextStyle(fontSize: 11, color: SacredColors.onSurfaceVariant),
+          ),
+          const SizedBox(height: 24),
+
+          Text(
+            'SECTION COLOR',
+            style: SacredTypography.labelLg(context).copyWith(
+              color: SacredColors.onSurfaceVariant,
+              letterSpacing: 1.0,
+            ),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.palette_outlined, size: 18),
+            label: const Text('Change Section Color'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: accentColor,
+              side: BorderSide(color: accentColor.withOpacity(0.5)),
+              minimumSize: const Size.fromHeight(40),
+            ),
+            onPressed: () => _showColorPicker(context, section),
+          ),
+          const SizedBox(height: 24),
+
+          Text(
+            'REHEARSAL NOTES',
+            style: SacredTypography.labelLg(context).copyWith(
+              color: SacredColors.onSurfaceVariant,
+              letterSpacing: 1.0,
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _notesController,
+            maxLines: 8,
+            style: TextStyle(color: SacredColors.onSurface, fontSize: 13),
+            decoration: InputDecoration(
+              hintText: 'Enter multiline rehearsal or delivery notes for this section...',
+              hintStyle: TextStyle(color: SacredColors.outline),
+              filled: true,
+              fillColor: SacredColors.surfaceContainerLow,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: SacredColors.outlineVariant),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: SacredColors.outlineVariant),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: SacredColors.primary),
+              ),
+            ),
+            onChanged: _saveNotes,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Notes are hidden on audience screens, but visible in Presenter View and Rehearsal mode.',
+            style: TextStyle(fontSize: 11, color: SacredColors.onSurfaceVariant),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatsTab() {
+    final totalSections = widget.sections.length;
+    final totalSlides = widget.slides.length;
+
+    int verses = 0;
+    int choruses = 0;
+    int bridges = 0;
+    int preChoruses = 0;
+    int medleys = 0;
+    int codas = 0;
+    int intros = 0;
+    int outros = 0;
+    int tags = 0;
+    int unknowns = 0;
+
+    for (final sec in widget.sections) {
+      final type = getSectionTypeFromName(sec.name);
+      switch (type) {
+        case SectionType.verse:
+          verses++;
+          break;
+        case SectionType.chorus:
+          choruses++;
+          break;
+        case SectionType.bridge:
+          bridges++;
+          break;
+        case SectionType.preChorus:
+          preChoruses++;
+          break;
+        case SectionType.medley:
+          medleys++;
+          break;
+        case SectionType.coda:
+          codas++;
+          break;
+        case SectionType.intro:
+          intros++;
+          break;
+        case SectionType.outro:
+          outros++;
+          break;
+        case SectionType.tag:
+          tags++;
+          break;
+        case SectionType.unknown:
+          unknowns++;
+          break;
+      }
+    }
+
+    SlideSection? longestSection;
+    int maxSlides = -1;
+    for (final sec in widget.sections) {
+      if (sec.slideIds.length > maxSlides) {
+        maxSlides = sec.slideIds.length;
+        longestSection = sec;
+      }
+    }
+
+    SlideSection? shortestSection;
+    int minSlides = 99999;
+    for (final sec in widget.sections) {
+      if (sec.slideIds.length < minSlides) {
+        minSlides = sec.slideIds.length;
+        shortestSection = sec;
+      }
+    }
+
+    double totalLines = 0;
+    for (final slide in widget.slides) {
+      final lines = slide.subtitle.split('\n').where((l) => l.trim().isNotEmpty).length;
+      totalLines += lines;
+    }
+    final avgLines = totalSlides > 0 ? (totalLines / totalSlides) : 0.0;
+
+    return ListenableBuilder(
+      listenable: AppSettings.instance,
+      builder: (context, _) {
+        final avgDuration = AppSettings.instance.averageSlideDuration;
+        const transitionDelay = 0.5; // seconds
+        
+        final totalSeconds = (totalSlides * avgDuration) + (totalSlides > 0 ? (totalSlides - 1) * transitionDelay : 0);
+        final minPart = (totalSeconds / 60).floor();
+        final secPart = (totalSeconds % 60).round();
+        final estTimeStr = '$minPart:${secPart.toString().padLeft(2, '0')}';
+
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'SONG STATISTICS',
+                style: SacredTypography.headlineMd(context).copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: SacredColors.onSurface,
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 16),
+
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildMetricCard('Total Sections', '$totalSections', Icons.folder_open),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildMetricCard('Total Slides', '$totalSlides', Icons.slideshow),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              Text(
+                'AVERAGE SLIDE DURATION',
+                style: SacredTypography.labelLg(context).copyWith(
+                  color: SacredColors.onSurfaceVariant,
+                  letterSpacing: 1.0,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Expanded(
+                    child: Slider(
+                      value: avgDuration,
+                      min: 2.0,
+                      max: 15.0,
+                      divisions: 13,
+                      activeColor: SacredColors.primary,
+                      inactiveColor: SacredColors.surfaceContainerHighest,
+                      onChanged: (val) {
+                        AppSettings.instance.averageSlideDuration = val;
+                      },
+                    ),
+                  ),
+                  SizedBox(
+                    width: 44,
+                    child: Text(
+                      '${avgDuration.toInt()}s',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: SacredColors.primary,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              _buildLargeMetric('Estimated Time', estTimeStr, Icons.access_time_outlined, accentColor: SacredColors.primary),
+              const SizedBox(height: 24),
+
+              Text(
+                'SECTION BREAKDOWN',
+                style: SacredTypography.labelLg(context).copyWith(
+                  color: SacredColors.onSurfaceVariant,
+                  letterSpacing: 1.0,
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (totalSections == 0)
+                const Text('No sections to analyze.', style: TextStyle(color: Colors.grey, fontSize: 12))
+              else
+                Column(
+                  children: [
+                    if (verses > 0) _buildBreakdownRow('Verses', verses, SectionType.verse),
+                    if (choruses > 0) _buildBreakdownRow('Choruses', choruses, SectionType.chorus),
+                    if (bridges > 0) _buildBreakdownRow('Bridges', bridges, SectionType.bridge),
+                    if (preChoruses > 0) _buildBreakdownRow('Pre-Choruses', preChoruses, SectionType.preChorus),
+                    if (intros > 0) _buildBreakdownRow('Intros', intros, SectionType.intro),
+                    if (outros > 0) _buildBreakdownRow('Outros', outros, SectionType.outro),
+                    if (codas > 0) _buildBreakdownRow('Codas', codas, SectionType.coda),
+                    if (medleys > 0) _buildBreakdownRow('Medleys', medleys, SectionType.medley),
+                    if (tags > 0) _buildBreakdownRow('Tags', tags, SectionType.tag),
+                    if (unknowns > 0) _buildBreakdownRow('Other / Unknown', unknowns, SectionType.unknown),
+                  ],
+                ),
+              const SizedBox(height: 24),
+
+              Text(
+                'METRICS ANALYSIS',
+                style: SacredTypography.labelLg(context).copyWith(
+                  color: SacredColors.onSurfaceVariant,
+                  letterSpacing: 1.0,
+                ),
+              ),
+              const SizedBox(height: 8),
+              _buildDetailMetric('Longest Section', longestSection != null ? '${longestSection.name} ($maxSlides slides)' : 'N/A'),
+              _buildDetailMetric('Shortest Section', shortestSection != null ? '${shortestSection.name} ($minSlides slide${minSlides == 1 ? '' : 's'})' : 'N/A'),
+              _buildDetailMetric('Average Lines / Slide', avgLines.toStringAsFixed(1)),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildMetricCard(String label, String value, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: SacredColors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: SacredColors.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 20, color: SacredColors.primary),
+          const SizedBox(height: 8),
+          Text(value, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 2),
+          Text(label, style: TextStyle(fontSize: 11, color: SacredColors.onSurfaceVariant)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLargeMetric(String label, String value, IconData icon, {required Color accentColor}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [accentColor.withOpacity(0.15), accentColor.withOpacity(0.02)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: accentColor.withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: accentColor, size: 24),
+          const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                value,
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: accentColor,
+                ),
+              ),
+              Text(
+                label,
+                style: TextStyle(fontSize: 10, color: SacredColors.onSurfaceVariant),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBreakdownRow(String label, int count, SectionType type) {
+    final color = getSectionColor(type, isDarkMode: Theme.of(context).brightness == Brightness.dark);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: color,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(label, style: const TextStyle(fontSize: 13)),
+            ],
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              '$count',
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: color),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailMetric(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: TextStyle(color: SacredColors.onSurfaceVariant, fontSize: 13)),
+          Text(
+            value,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
       width: 320,
       height: double.infinity,
       decoration: BoxDecoration(
-        color: SacredColors.surface.withValues(alpha: 0.7),
+        color: SacredColors.surface.withOpacity(0.7),
         border: Border(
           left: BorderSide(
             color: SacredColors.outlineVariant,
@@ -3120,463 +5076,36 @@ class _PropertiesSidebar extends StatelessWidget {
           ),
         ),
       ),
-      padding: EdgeInsets.all(24.0),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Properties',
-              style: SacredTypography.headlineMd(context).copyWith(
-                color: SacredColors.primary,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text(
-                    'Apply to all slides',
-                    style: SacredTypography.bodyMd(context).copyWith(
-                      color: SacredColors.onSurface,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                Switch(
-                  value: applyToAll,
-                  activeColor: SacredColors.primary,
-                  onChanged: onApplyToAllChanged,
-                ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 16.0, left: 16.0, right: 16.0),
+            child: TabBar(
+              controller: _tabController,
+              labelColor: SacredColors.primary,
+              unselectedLabelColor: SacredColors.onSurfaceVariant,
+              indicatorColor: SacredColors.primary,
+              indicatorSize: TabBarIndicatorSize.tab,
+              tabs: const [
+                Tab(icon: Icon(Icons.slideshow, size: 20), text: 'Slide'),
+                Tab(icon: Icon(Icons.sticky_note_2_outlined, size: 20), text: 'Section'),
+                Tab(icon: Icon(Icons.analytics_outlined, size: 20), text: 'Stats'),
               ],
             ),
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                icon: const Icon(Icons.copy_all, size: 18),
-                label: const Text('Apply current style to all'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: SacredColors.primary,
-                  side: BorderSide(color: SacredColors.primary.withValues(alpha: 0.5)),
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                onPressed: onApplyStylesToAllPressed,
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Divider(),
-            const SizedBox(height: 16),
-
-            // Text Inputs Editor
-            Text(
-              'SLIDE TITLE',
-              style: SacredTypography.labelLg(context).copyWith(
-                color: SacredColors.onSurfaceVariant,
-                letterSpacing: 1.0,
-              ),
-            ),
-            SizedBox(height: 8),
-            TextField(
-              controller: titleController,
-              onChanged: (text) {
-                activeSlide.title = text;
-                onSlideChanged();
-              },
-              style: SacredTypography.bodyLg(context).copyWith(
-                color: SacredColors.onSurface,
-              ),
-              decoration: InputDecoration(
-                enabledBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(color: SacredColors.outlineVariant),
-                ),
-                focusedBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(color: SacredColors.primary),
-                ),
-              ),
-            ),
-            SizedBox(height: 24),
-
-            Text(
-              'SLIDE QUOTE / SUBTITLE',
-              style: SacredTypography.labelLg(context).copyWith(
-                color: SacredColors.onSurfaceVariant,
-                letterSpacing: 1.0,
-              ),
-            ),
-            SizedBox(height: 8),
-            TextField(
-              controller: subtitleController,
-              onChanged: (text) {
-                activeSlide.subtitle = text;
-                onSlideChanged();
-              },
-              style: SacredTypography.bodyMd(context).copyWith(
-                color: SacredColors.onSurface,
-              ),
-              decoration: InputDecoration(
-                enabledBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(color: SacredColors.outlineVariant),
-                ),
-                focusedBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(color: SacredColors.primary),
-                ),
-              ),
-            ),
-            SizedBox(height: 16),
-
-            // ── Font Size Controls ──────────────────────────────
-            Text(
-              'TITLE FONT SIZE',
-              style: SacredTypography.labelLg(context).copyWith(
-                color: SacredColors.onSurfaceVariant,
-                letterSpacing: 1.0,
-              ),
-            ),
-            SizedBox(height: 6),
-            Row(
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
               children: [
-                Expanded(
-                  child: Slider(
-                    value: activeSlide.titleFontSize,
-                    min: 16.0,
-                    max: 96.0,
-                    divisions: 16,
-                    activeColor: SacredColors.primary,
-                    inactiveColor: SacredColors.surfaceContainerHighest,
-                    onChanged: (val) {
-                      activeSlide.titleFontSize = val;
-                      onSlideChanged();
-                    },
-                  ),
-                ),
-                SizedBox(
-                  width: 44,
-                  child: Text(
-                    '${activeSlide.titleFontSize.toInt()}pt',
-                    style: SacredTypography.labelSm(context).copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: SacredColors.primary,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
+                _buildSlideTab(),
+                _buildSectionTab(),
+                _buildStatsTab(),
               ],
             ),
-            SizedBox(height: 8),
-
-            Text(
-              'SUBTITLE FONT SIZE',
-              style: SacredTypography.labelLg(context).copyWith(
-                color: SacredColors.onSurfaceVariant,
-                letterSpacing: 1.0,
-              ),
-            ),
-            SizedBox(height: 6),
-            Row(
-              children: [
-                Expanded(
-                  child: Slider(
-                    value: activeSlide.subtitleFontSize,
-                    min: 10.0,
-                    max: 48.0,
-                    divisions: 19,
-                    activeColor: SacredColors.primary,
-                    inactiveColor: SacredColors.surfaceContainerHighest,
-                    onChanged: (val) {
-                      activeSlide.subtitleFontSize = val;
-                      onSlideChanged();
-                    },
-                  ),
-                ),
-                SizedBox(
-                  width: 44,
-                  child: Text(
-                    '${activeSlide.subtitleFontSize.toInt()}pt',
-                    style: SacredTypography.labelSm(context).copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: SacredColors.primary,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              ],
-            ),
-            SizedBox(height: 16),
-
-            // Typography formatting toggles
-            Row(
-              children: [
-                Expanded(
-                  child: _FormatToggleIcon(
-                    icon: Icons.format_bold,
-                    isSelected: activeSlide.isBold,
-                    onPressed: () {
-                      activeSlide.isBold = !activeSlide.isBold;
-                      onSlideChanged();
-                    },
-                  ),
-                ),
-                SizedBox(width: 8),
-                Expanded(
-                  child: _FormatToggleIcon(
-                    icon: Icons.format_italic,
-                    isSelected: activeSlide.isItalic,
-                    onPressed: () {
-                      activeSlide.isItalic = !activeSlide.isItalic;
-                      onSlideChanged();
-                    },
-                  ),
-                ),
-                SizedBox(width: 8),
-                Expanded(
-                  child: PopupMenuButton<TextAlign>(
-                    initialValue: activeSlide.alignment,
-                    onSelected: (alignment) {
-                      activeSlide.alignment = alignment;
-                      onSlideChanged();
-                    },
-                    itemBuilder: (context) => const [
-                      PopupMenuItem(
-                        value: TextAlign.left,
-                        child: Row(
-                          children: [
-                            Icon(Icons.format_align_left),
-                            SizedBox(width: 8),
-                            Text('Left'),
-                          ],
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: TextAlign.center,
-                        child: Row(
-                          children: [
-                            Icon(Icons.format_align_center),
-                            SizedBox(width: 8),
-                            Text('Center'),
-                          ],
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: TextAlign.right,
-                        child: Row(
-                          children: [
-                            Icon(Icons.format_align_right),
-                            SizedBox(width: 8),
-                            Text('Right'),
-                          ],
-                        ),
-                      ),
-                    ],
-                    child: Container(
-                      padding: EdgeInsets.symmetric(vertical: 10),
-                      decoration: BoxDecoration(
-                        color: SacredColors.surfaceContainer,
-                        borderRadius: BorderRadius.circular(4),
-                        border: Border.all(color: SacredColors.outlineVariant),
-                      ),
-                      child: Icon(
-                        activeSlide.alignment == TextAlign.left
-                            ? Icons.format_align_left
-                            : (activeSlide.alignment == TextAlign.right
-                                ? Icons.format_align_right
-                                : Icons.format_align_center),
-                        size: 20,
-                        color: SacredColors.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            SizedBox(height: 32),
-
-            Text(
-              'BACKGROUND COLOR',
-              style: SacredTypography.labelLg(context).copyWith(
-                color: SacredColors.onSurfaceVariant,
-                letterSpacing: 1.0,
-              ),
-            ),
-            SizedBox(height: 12),
-            _BackgroundColorSelector(
-              selectedColor: Color(activeSlide.bgColorValue),
-              onColorChanged: onBgColorChanged,
-            ),
-            SizedBox(height: 24),
-
-            Text(
-              'BACKGROUND IMAGE',
-              style: SacredTypography.labelLg(context).copyWith(
-                color: SacredColors.onSurfaceVariant,
-                letterSpacing: 1.0,
-              ),
-            ),
-            SizedBox(height: 12),
-            _BackgroundImageEditorCard(
-              imageUrl: activeSlide.imageUrl,
-              onImageChanged: onAllSlidesImageChanged,
-            ),
-            SizedBox(height: 24),
-
-            // Logo controls
-            Text(
-              'SLIDE LOGO',
-              style: SacredTypography.labelLg(context).copyWith(
-                color: SacredColors.onSurfaceVariant,
-                letterSpacing: 1.0,
-              ),
-            ),
-            SizedBox(height: 12),
-            _LogoImageEditorCard(
-              logoUrl: activeSlide.logoUrl,
-              onLogoChanged: onLogoChanged,
-            ),
-            if (activeSlide.logoUrl != null && activeSlide.logoUrl!.isNotEmpty) ...[
-              SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Logo Size', style: SacredTypography.labelSm(context)),
-                  Text(
-                    '${activeSlide.logoSize.toInt()}px',
-                    style: SacredTypography.labelSm(context).copyWith(fontWeight: FontWeight.bold),
-                  ),
-                ],
-              ),
-              Slider(
-                value: activeSlide.logoSize,
-                min: 40.0,
-                max: 200.0,
-                activeColor: SacredColors.primary,
-                inactiveColor: SacredColors.surfaceContainerHighest,
-                onChanged: onLogoSizeChanged,
-              ),
-            ],
-            SizedBox(height: 24),
-
-            // Opacity slider
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('Opacity', style: SacredTypography.labelSm(context)),
-                Text(
-                  '${(activeSlide.opacity * 100).toInt()}%',
-                  style: SacredTypography.labelSm(context).copyWith(fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-            Slider(
-              value: activeSlide.opacity,
-              min: 0.0,
-              max: 1.0,
-              activeColor: SacredColors.primary,
-              inactiveColor: SacredColors.surfaceContainerHighest,
-              onChanged: (val) {
-                activeSlide.opacity = val;
-                onSlideChanged();
-              },
-            ),
-            SizedBox(height: 16),
-
-            // Blur slider
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('Blur', style: SacredTypography.labelSm(context)),
-                Text(
-                  '${activeSlide.blur.toInt()}px',
-                  style: SacredTypography.labelSm(context).copyWith(fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-            Slider(
-              value: activeSlide.blur,
-              min: 0.0,
-              max: 30.0,
-              activeColor: SacredColors.primary,
-              inactiveColor: SacredColors.surfaceContainerHighest,
-              onChanged: (val) {
-                activeSlide.blur = val;
-                onSlideChanged();
-              },
-            ),
-            SizedBox(height: 32),
-
-            // Transition selector dropdown
-            Text(
-              'TRANSITION',
-              style: SacredTypography.labelLg(context).copyWith(
-                color: SacredColors.onSurfaceVariant,
-                letterSpacing: 1.0,
-              ),
-            ),
-            SizedBox(height: 8),
-            Container(
-              padding: EdgeInsets.symmetric(horizontal: 12),
-              decoration: BoxDecoration(
-                color: SacredColors.surfaceContainer,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: SacredColors.outlineVariant),
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  value: activeSlide.transition,
-                  isExpanded: true,
-                  icon: Icon(Icons.arrow_drop_down),
-                  onChanged: (val) {
-                    if (val != null) {
-                      activeSlide.transition = val;
-                      onSlideChanged();
-                    }
-                  },
-                  items: const [
-                    DropdownMenuItem(value: 'Cross Dissolve', child: Text('Cross Dissolve')),
-                    DropdownMenuItem(value: 'Wipe Down', child: Text('Wipe Down')),
-                    DropdownMenuItem(value: 'Sacred Bloom', child: Text('Sacred Bloom')),
-                    DropdownMenuItem(value: 'Soft Fade', child: Text('Soft Fade')),
-                  ],
-                ),
-              ),
-            ),
-            SizedBox(height: 32),
-
-            // Quick actions duplicated/removed
-            ElevatedButton.icon(
-              onPressed: onDuplicate,
-              icon: Icon(Icons.content_copy, size: 18),
-              label: const Text('Duplicate Slide'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: SacredColors.surfaceContainerHighest,
-                foregroundColor: SacredColors.primary,
-                minimumSize: const Size.fromHeight(48),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                elevation: 0,
-              ),
-            ),
-            SizedBox(height: 12),
-            ElevatedButton.icon(
-              onPressed: onDelete,
-              icon: Icon(Icons.delete_outline, size: 18),
-              label: const Text('Remove Slide'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: SacredColors.errorContainer,
-                foregroundColor: SacredColors.onErrorContainer,
-                minimumSize: const Size.fromHeight(48),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                elevation: 0,
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
-        );
-      },
     );
   }
 }

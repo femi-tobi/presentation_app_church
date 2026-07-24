@@ -437,6 +437,88 @@ class _FullscreenPresenterPageState extends State<FullscreenPresenterPage> with 
                   ignoring: !_showControls,
                   child: Stack(
                     children: [
+                      // Floating Section Notes Card on the left
+                      Positioned(
+                        left: 24,
+                        top: 24,
+                        bottom: 120, // leave space for bottom controls
+                        width: 280,
+                        child: ListenableBuilder(
+                          listenable: AppSettings.instance,
+                          builder: (context, _) {
+                            if (slides.isEmpty || _currentIndex >= slides.length) return const SizedBox.shrink();
+                            final currentSlide = slides[_currentIndex];
+                            final sectionId = currentSlide.sectionId;
+                            
+                            // Find the section this slide belongs to
+                            final sections = AppSettings.instance.activeSections;
+                            final sectionIdx = sections.indexWhere(
+                              (s) => s.id == sectionId || s.slideIds.contains(currentSlide.id),
+                            );
+                            final section = sectionIdx >= 0 ? sections[sectionIdx] : null;
+
+                            final notes = section?.notes ?? '';
+                            if (notes.isEmpty) return const SizedBox.shrink();
+
+                            final accentColor = section != null ? getSectionColor(getSectionTypeFromName(section.name), isDarkMode: true) : Colors.blue;
+
+                            return ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: BackdropFilter(
+                                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                                child: Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withOpacity(0.55),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: accentColor.withOpacity(0.4),
+                                      width: 1.5,
+                                    ),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Icon(Icons.notes, color: accentColor, size: 18),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              '${section!.name.toUpperCase()} NOTES',
+                                              style: GoogleFonts.inter(
+                                                color: accentColor,
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 11,
+                                                letterSpacing: 1.0,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 8),
+                                      const Divider(color: Colors.white24, height: 1),
+                                      const SizedBox(height: 12),
+                                      Expanded(
+                                        child: SingleChildScrollView(
+                                          child: Text(
+                                            notes,
+                                            style: GoogleFonts.inter(
+                                              color: Colors.white.withOpacity(0.9),
+                                              fontSize: 13,
+                                              height: 1.5,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
                       // Exit Fullscreen Button in top right
                       Positioned(
                         top: 24,
