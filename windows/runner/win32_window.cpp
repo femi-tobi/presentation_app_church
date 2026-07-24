@@ -122,7 +122,8 @@ Win32Window::~Win32Window() {
 
 bool Win32Window::Create(const std::wstring& title,
                          const Point& origin,
-                         const Size& size) {
+                         const Size& size,
+                         bool is_audience) {
   Destroy();
 
   const wchar_t* window_class =
@@ -134,14 +135,34 @@ bool Win32Window::Create(const std::wstring& title,
   UINT dpi = FlutterDesktopGetDpiForMonitor(monitor);
   double scale_factor = dpi / 96.0;
 
+  DWORD dwStyle = WS_OVERLAPPEDWINDOW;
+  int x = Scale(origin.x, scale_factor);
+  int y = Scale(origin.y, scale_factor);
+  int w = Scale(size.width, scale_factor);
+  int h = Scale(size.height, scale_factor);
+
+  if (is_audience) {
+    dwStyle = WS_POPUP | WS_VISIBLE;
+    MONITORINFO mi = { sizeof(mi) };
+    if (GetMonitorInfo(monitor, &mi)) {
+      x = mi.rcMonitor.left;
+      y = mi.rcMonitor.top;
+      w = mi.rcMonitor.right - mi.rcMonitor.left;
+      h = mi.rcMonitor.bottom - mi.rcMonitor.top;
+    }
+  }
+
   HWND window = CreateWindow(
-      window_class, title.c_str(), WS_OVERLAPPEDWINDOW,
-      Scale(origin.x, scale_factor), Scale(origin.y, scale_factor),
-      Scale(size.width, scale_factor), Scale(size.height, scale_factor),
+      window_class, title.c_str(), dwStyle,
+      x, y, w, h,
       nullptr, nullptr, GetModuleHandle(nullptr), this);
 
   if (!window) {
     return false;
+  }
+
+  if (is_audience) {
+    SetWindowPos(window, HWND_TOPMOST, x, y, w, h, SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
   }
 
   UpdateTheme(window);

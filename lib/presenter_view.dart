@@ -416,10 +416,7 @@ class _ProfessionalPresenterViewState extends State<ProfessionalPresenterView> {
               textStyle: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold),
             ),
             onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const AudienceWindow()),
-              );
+              PresentationController.instance.spawnAudienceWindow();
             },
             icon: const Icon(Icons.play_arrow, size: 14),
             label: const Text('Start Presentation'),

@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'settings_state.dart';
 
@@ -17,9 +19,6 @@ class PresentationController extends ChangeNotifier {
   List<SlideData> get slides => _slides;
   List<SlideSection> get sections => _sections;
 
-  // Track two slide indices:
-  // - _liveIndex: what the audience sees (frozen during Rehearsal)
-  // - _presenterIndex: what the presenter sees
   int _liveIndex = 0;
   int _presenterIndex = 0;
 
@@ -40,7 +39,14 @@ class PresentationController extends ChangeNotifier {
   int get autoplayIntervalSeconds => _autoplayIntervalSeconds;
   Duration get elapsedTime => _elapsedTime;
 
-  void initialize(List<SlideData> slidesList, List<SlideSection> sectionsList, int startIndex) {
+  // TCP Sync Server (Presenter) / Client (Audience) fields
+  ServerSocket? _serverSocket;
+  final List<Socket> _connectedClients = [];
+  Socket? _audienceClientSocket;
+  bool _isAudienceProcess = false;
+  bool get isAudienceProcess => _isAudienceProcess;
+
+  void initialize(List<SlideData> slidesList, List<SlideSection> sectionsList, int startIndex, {bool isAudience = false}) {
     _slides = slidesList;
     _sections = sectionsList;
     _liveIndex = startIndex;
@@ -48,8 +54,128 @@ class PresentationController extends ChangeNotifier {
     _startTime = DateTime.now();
     _elapsedTime = Duration.zero;
     _mode = PresentationMode.live;
+    _isAudienceProcess = isAudience;
+
     _stopAutoplayTimer();
+
+    if (_isAudienceProcess) {
+      _connectToPresenterServer();
+    } else {
+      _startPresenterServer();
+    }
+
     notifyListeners();
+  }
+
+  // --- Presenter Server Logic ---
+  void _startPresenterServer() async {
+    _closePresenterServer();
+    try {
+      _serverSocket = await ServerSocket.bind('127.0.0.1', 4321);
+      _serverSocket!.listen((socket) {
+        _connectedClients.add(socket);
+        // Send initial handshake with all slides data
+        _sendHandshakeToSocket(socket);
+
+        socket.done.then((_) {
+          _connectedClients.remove(socket);
+        });
+        socket.handleError((_) {
+          _connectedClients.remove(socket);
+        });
+      });
+    } catch (_) {
+      // Server already running or port in use
+    }
+  }
+
+  void _closePresenterServer() {
+    for (final client in _connectedClients) {
+      client.destroy();
+    }
+    _connectedClients.clear();
+    _serverSocket?.close();
+    _serverSocket = null;
+  }
+
+  void _broadcastState() {
+    if (_isAudienceProcess) return; // Only parent broadcasts
+    for (final client in _connectedClients) {
+      _sendStateToSocket(client);
+    }
+  }
+
+  void _sendHandshakeToSocket(Socket socket) {
+    try {
+      final data = {
+        'type': 'handshake',
+        'liveIndex': _liveIndex,
+        'presenterIndex': _presenterIndex,
+        'mode': _mode.index,
+        'slides': _slides.map((s) => s.toJson()).toList(),
+      };
+      socket.write(json.encode(data) + '\n');
+    } catch (_) {}
+  }
+
+  void _sendStateToSocket(Socket socket) {
+    try {
+      final data = {
+        'type': 'sync',
+        'liveIndex': _liveIndex,
+        'presenterIndex': _presenterIndex,
+        'mode': _mode.index,
+      };
+      socket.write(json.encode(data) + '\n');
+    } catch (_) {}
+  }
+
+  // --- Audience Client Logic ---
+  void _connectToPresenterServer() async {
+    _disconnectFromPresenterServer();
+    try {
+      _audienceClientSocket = await Socket.connect('127.0.0.1', 4321);
+      utf8.decoder
+          .bind(_audienceClientSocket!)
+          .transform(const LineSplitter())
+          .listen((line) {
+        try {
+          final data = json.decode(line) as Map<String, dynamic>;
+          if (data['type'] == 'handshake') {
+            final slidesList = (data['slides'] as List)
+                .map((s) => SlideData.fromJson(s as Map<String, dynamic>))
+                .toList();
+            _slides = slidesList;
+          }
+          _liveIndex = data['liveIndex'] as int;
+          _presenterIndex = data['presenterIndex'] as int;
+          _mode = PresentationMode.values[data['mode'] as int];
+          notifyListeners();
+        } catch (_) {}
+      });
+    } catch (_) {
+      // Retry connection after a short delay
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (_isAudienceProcess && _audienceClientSocket == null) {
+          _connectToPresenterServer();
+        }
+      });
+    }
+  }
+
+  void _disconnectFromPresenterServer() {
+    _audienceClientSocket?.destroy();
+    _audienceClientSocket = null;
+  }
+
+  // Spawns a completely separate borderless fullscreen native window (process)
+  void spawnAudienceWindow() {
+    if (_isAudienceProcess) return;
+    Process.start(Platform.executable, ['--audience']).then((process) {
+      // Successfully launched independent process
+    }).catchError((_) {
+      // Fallback/Log launch error
+    });
   }
 
   void setMode(PresentationMode newMode) {
@@ -57,7 +183,6 @@ class PresentationController extends ChangeNotifier {
     _mode = newMode;
 
     if (_mode == PresentationMode.live) {
-      // Sync live view with current presenter state when switching back to live
       _liveIndex = _presenterIndex;
     }
 
@@ -67,6 +192,7 @@ class PresentationController extends ChangeNotifier {
       _stopAutoplayTimer();
     }
 
+    _broadcastState();
     notifyListeners();
   }
 
@@ -108,10 +234,10 @@ class PresentationController extends ChangeNotifier {
 
     _presenterIndex = index;
     if (_mode != PresentationMode.rehearsal) {
-      // Rehearsal mode keeps audience frozen on the live index
       _liveIndex = index;
     }
 
+    _broadcastState();
     notifyListeners();
   }
 
@@ -129,7 +255,6 @@ class PresentationController extends ChangeNotifier {
       if (_presenterIndex + 1 < _slides.length) {
         next();
       } else {
-        // Loop back or stop
         goTo(0);
       }
     });
@@ -144,6 +269,8 @@ class PresentationController extends ChangeNotifier {
   void dispose() {
     _elapsedTimer?.cancel();
     _autoplayTimer?.cancel();
+    _closePresenterServer();
+    _disconnectFromPresenterServer();
     super.dispose();
   }
 }

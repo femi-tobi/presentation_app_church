@@ -2,19 +2,29 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dashboard_page.dart';
 import 'settings_state.dart';
+import 'presentation_controller.dart';
+import 'audience_window.dart';
 
-void main() async {
+void main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
   
   // Enable runtime fetching of Google Fonts to load fonts dynamically when online
   GoogleFonts.config.allowRuntimeFetching = true;
   
   await AppSettings.instance.loadSettings();
-  runApp(const MyApp());
+
+  final bool isAudience = args.contains('--audience');
+  if (isAudience) {
+    // Initialize presentation controller as audience client process
+    PresentationController.instance.initialize([], [], 0, isAudience: true);
+  }
+
+  runApp(MyApp(isAudience: isAudience));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final bool isAudience;
+  const MyApp({super.key, this.isAudience = false});
 
   @override
   Widget build(BuildContext context) {
@@ -23,7 +33,7 @@ class MyApp extends StatelessWidget {
       builder: (context, child) {
         final settings = AppSettings.instance;
         return MaterialApp(
-          title: 'LiveDeck',
+          title: isAudience ? 'LiveDeck - Presentation View' : 'LiveDeck',
           debugShowCheckedModeBanner: false,
           themeMode: settings.isDarkMode ? ThemeMode.dark : ThemeMode.light,
           theme: ThemeData(
@@ -40,7 +50,7 @@ class MyApp extends StatelessWidget {
               brightness: Brightness.dark,
             ),
           ),
-          home: const DashboardPage(),
+          home: isAudience ? const AudienceWindow() : const DashboardPage(),
         );
       },
     );
