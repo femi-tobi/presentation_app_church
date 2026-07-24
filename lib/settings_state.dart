@@ -6,6 +6,42 @@ import 'dart:async';
 
 
 /// Stores a single entry in the recent presentations list.
+class SlideSection {
+  final String id;
+  String name;
+  List<String> slideIds;
+  bool isCollapsed;
+  int? colorValue;
+
+  SlideSection({
+    required this.id,
+    required this.name,
+    required this.slideIds,
+    this.isCollapsed = false,
+    this.colorValue,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'slideIds': slideIds,
+      'isCollapsed': isCollapsed,
+      'colorValue': colorValue,
+    };
+  }
+
+  factory SlideSection.fromJson(Map<String, dynamic> json) {
+    return SlideSection(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      slideIds: List<String>.from(json['slideIds'] as List<dynamic>),
+      isCollapsed: json['isCollapsed'] as bool? ?? false,
+      colorValue: json['colorValue'] as int?,
+    );
+  }
+}
+
 class PresentationRecord {
   final String id;
   final String title;
@@ -14,6 +50,7 @@ class PresentationRecord {
   final DateTime createdAt;
   final List<SlideData> slides;
   final String outlineText;
+  final List<SlideSection>? sections;
 
   PresentationRecord({
     required this.id,
@@ -23,6 +60,7 @@ class PresentationRecord {
     required this.createdAt,
     required this.slides,
     required this.outlineText,
+    this.sections,
   });
 
   Map<String, dynamic> toJson() {
@@ -34,6 +72,7 @@ class PresentationRecord {
       'createdAt': createdAt.toIso8601String(),
       'slides': slides.map((s) => s.toJson()).toList(),
       'outlineText': outlineText,
+      'sections': sections?.map((s) => s.toJson()).toList(),
     };
   }
 
@@ -48,6 +87,11 @@ class PresentationRecord {
           .map((s) => SlideData.fromJson(s as Map<String, dynamic>))
           .toList(),
       outlineText: json['outlineText'] as String? ?? '',
+      sections: json['sections'] != null
+          ? (json['sections'] as List<dynamic>)
+              .map((s) => SlideSection.fromJson(s as Map<String, dynamic>))
+              .toList()
+          : null,
     );
   }
 

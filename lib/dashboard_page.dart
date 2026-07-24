@@ -1896,6 +1896,7 @@ class _PresentationCardState extends State<PresentationCard> {
               builder: (context) => PreviewPage(
                 presentationId: widget.record.id,
                 initialSlides: widget.record.slides,
+                initialSections: widget.record.sections,
                 outlineText: widget.record.outlineText,
               ),
             ),

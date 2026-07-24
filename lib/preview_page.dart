@@ -1,3 +1,5 @@
+import 'package:flutter/services.dart';
+import 'dart:async';
 import 'dart:ui';
 import 'dart:convert';
 import 'dart:io';
@@ -24,6 +26,7 @@ class PreviewPage extends StatefulWidget {
   final String outlineText;
   final String selectedTheme;
   final List<SlideData>? initialSlides;
+  final List<SlideSection>? initialSections;
 
   const PreviewPage({
     super.key,
@@ -31,6 +34,7 @@ class PreviewPage extends StatefulWidget {
     this.outlineText = '',
     this.selectedTheme = 'Minimal',
     this.initialSlides,
+    this.initialSections,
   });
 
   @override
@@ -38,6 +42,7 @@ class PreviewPage extends StatefulWidget {
 }
 
 class _PreviewPageState extends State<PreviewPage> {
+  late List<SlideSection> _sections;
   late List<SlideData> _slides;
   int _activeSlideIndex = 0;
   int _mobileSelectedTab = 1; // 0: Slides Outline, 1: Live Canvas, 2: Properties
@@ -98,6 +103,24 @@ class _PreviewPageState extends State<PreviewPage> {
     } else {
       _slides = _defaultSlides();
     }
+    
+    if (widget.initialSections != null && widget.initialSections!.isNotEmpty) {
+      _sections = List.from(widget.initialSections!.map((s) => SlideSection(
+        id: s.id,
+        name: s.name,
+        slideIds: List.from(s.slideIds),
+        isCollapsed: s.isCollapsed,
+        colorValue: s.colorValue,
+      )));
+    } else {
+      _sections = [
+        SlideSection(
+          id: 'section_01',
+          name: 'Section 1',
+          slideIds: _slides.map((s) => s.id).toList(),
+        )
+      ];
+    }
 
     _titleController = TextEditingController(text: _slides[0].title);
     _subtitleController = TextEditingController(text: _slides[0].subtitle);
@@ -121,6 +144,7 @@ class _PreviewPageState extends State<PreviewPage> {
       createdAt: DateTime.now(),
       slides: _slides,
       outlineText: widget.outlineText,
+      sections: _sections,
     ));
   }
 
@@ -536,10 +560,264 @@ class _PreviewPageState extends State<PreviewPage> {
     AppSettings.instance.activeSlideIndex = index;
   }
 
+  void _syncSlidesFromSections() {
+    final activeSlideId = _slides.isNotEmpty ? _slides[_activeSlideIndex].id : null;
+    final List<SlideData> ordered = [];
+    for (final section in _sections) {
+      for (final slideId in section.slideIds) {
+        final slide = _slides.firstWhere((s) => s.id == slideId, orElse: () => null as dynamic);
+        if (slide != null) {
+          ordered.add(slide);
+        }
+      }
+    }
+    for (final slide in _slides) {
+      if (!ordered.any((s) => s.id == slide.id)) {
+        ordered.add(slide);
+        if (_sections.isNotEmpty) {
+          _sections.last.slideIds.add(slide.id);
+        } else {
+          _sections.add(SlideSection(id: 'section_fallback', name: 'Section 1', slideIds: [slide.id]));
+        }
+      }
+    }
+    _slides = ordered;
+    if (activeSlideId != null) {
+      final newIdx = _slides.indexWhere((s) => s.id == activeSlideId);
+      if (newIdx != -1) {
+        _activeSlideIndex = newIdx;
+        AppSettings.instance.activeSlideIndex = newIdx;
+      }
+    }
+    AppSettings.instance.updateActiveSlides(_slides);
+    _saveToRecentList();
+    setState(() {});
+  }
+
+  void _addSection(String name, {int? index, List<String>? slideIds}) {
+    final newSection = SlideSection(
+      id: 'section_${DateTime.now().millisecondsSinceEpoch}',
+      name: name,
+      slideIds: slideIds ?? [],
+    );
+    setState(() {
+      if (index != null) {
+        _sections.insert(index, newSection);
+      } else {
+        _sections.add(newSection);
+      }
+    });
+    _syncSlidesFromSections();
+  }
+
+  void _addSectionBeforeSlide(String slideId, String name) {
+    int sectionIdx = -1;
+    int slideIdxInSection = -1;
+    for (int i = 0; i < _sections.length; i++) {
+      final idx = _sections[i].slideIds.indexOf(slideId);
+      if (idx != -1) {
+        sectionIdx = i;
+        slideIdxInSection = idx;
+        break;
+      }
+    }
+    if (sectionIdx != -1) {
+      final existingSection = _sections[sectionIdx];
+      final List<String> beforeSlides = existingSection.slideIds.sublist(0, slideIdxInSection);
+      final List<String> afterSlides = existingSection.slideIds.sublist(slideIdxInSection);
+      
+      setState(() {
+        existingSection.slideIds = beforeSlides;
+        final newSection = SlideSection(
+          id: 'section_${DateTime.now().millisecondsSinceEpoch}',
+          name: name,
+          slideIds: afterSlides,
+        );
+        _sections.insert(sectionIdx + 1, newSection);
+      });
+      _syncSlidesFromSections();
+    }
+  }
+
+  void _deleteSection(String id) {
+    if (_sections.length <= 1) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cannot delete the last remaining section.')),
+      );
+      return;
+    }
+    final sectionIdx = _sections.indexWhere((s) => s.id == id);
+    if (sectionIdx != -1) {
+      final sectionToDelete = _sections[sectionIdx];
+      setState(() {
+        final targetSectionIdx = sectionIdx > 0 ? sectionIdx - 1 : 0;
+        final targetSection = _sections[targetSectionIdx == sectionIdx ? 1 : targetSectionIdx];
+        targetSection.slideIds.addAll(sectionToDelete.slideIds);
+        _sections.removeAt(sectionIdx);
+      });
+      _syncSlidesFromSections();
+    }
+  }
+
+  void _renameSection(String id, String newName) {
+    final idx = _sections.indexWhere((s) => s.id == id);
+    if (idx != -1) {
+      setState(() {
+        _sections[idx].name = newName;
+      });
+      _saveToRecentList();
+    }
+  }
+
+  void _moveSection(int fromIndex, int toIndex) {
+    if (toIndex < 0 || toIndex >= _sections.length) return;
+    setState(() {
+      final sec = _sections.removeAt(fromIndex);
+      _sections.insert(toIndex, sec);
+    });
+    _syncSlidesFromSections();
+  }
+
+  void _moveSlideToSection(String slideId, String targetSectionId, int targetIndex) {
+    setState(() {
+      for (final section in _sections) {
+        section.slideIds.remove(slideId);
+      }
+      final targetSection = _sections.firstWhere((s) => s.id == targetSectionId);
+      if (targetIndex >= 0 && targetIndex <= targetSection.slideIds.length) {
+        targetSection.slideIds.insert(targetIndex, slideId);
+      } else {
+        targetSection.slideIds.add(slideId);
+      }
+    });
+    _syncSlidesFromSections();
+  }
+
+  void _moveSlideInOutline(int from, int to) {
+    if (to < 0 || to >= _slides.length) return;
+    final slideId = _slides[from].id;
+    final targetSlideId = _slides[to].id;
+    
+    setState(() {
+      String? fromSectionId;
+      String? toSectionId;
+      for (final sec in _sections) {
+        if (sec.slideIds.contains(slideId)) fromSectionId = sec.id;
+        if (sec.slideIds.contains(targetSlideId)) toSectionId = sec.id;
+      }
+      
+      if (fromSectionId != null && toSectionId != null) {
+        final fromSec = _sections.firstWhere((s) => s.id == fromSectionId);
+        final toSec = _sections.firstWhere((s) => s.id == toSectionId);
+        
+        fromSec.slideIds.remove(slideId);
+        final targetIdx = toSec.slideIds.indexOf(targetSlideId);
+        final insertIdx = to > from ? targetIdx + 1 : targetIdx;
+        toSec.slideIds.insert(insertIdx.clamp(0, toSec.slideIds.length), slideId);
+      }
+    });
+    _syncSlidesFromSections();
+  }
+
+  void _showSlideRenameDialog(BuildContext context, SlideData slide) {
+    final titleController = TextEditingController(text: slide.title);
+    final subtitleController = TextEditingController(text: slide.subtitle);
+    showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Edit Slide Content'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: titleController,
+                decoration: const InputDecoration(labelText: 'Title'),
+                maxLines: 2,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: subtitleController,
+                decoration: const InputDecoration(labelText: 'Subtitle'),
+                maxLines: 4,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  slide.title = titleController.text.trim();
+                  slide.subtitle = subtitleController.text.trim();
+                });
+                slide.update();
+                _saveToRecentList();
+                Navigator.of(context).pop();
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _duplicateSection(String sectionId) {
+    final sectionIdx = _sections.indexWhere((s) => s.id == sectionId);
+    if (sectionIdx != -1) {
+      final sourceSection = _sections[sectionIdx];
+      final List<String> duplicatedSlideIds = [];
+      
+      for (final slideId in sourceSection.slideIds) {
+        final slideIdx = _slides.indexWhere((s) => s.id == slideId);
+        if (slideIdx != -1) {
+          final original = _slides[slideIdx];
+          final String newSlideId = 'slide_${DateTime.now().millisecondsSinceEpoch}_${slideId}';
+          final copy = SlideData(
+            id: newSlideId,
+            title: original.title,
+            subtitle: original.subtitle,
+            imageUrl: original.imageUrl,
+            opacity: original.opacity,
+            blur: original.blur,
+            isBold: original.isBold,
+            isItalic: original.isItalic,
+            alignment: original.alignment,
+            transition: original.transition,
+            titleFontSize: original.titleFontSize,
+            subtitleFontSize: original.subtitleFontSize,
+            logoUrl: original.logoUrl,
+            logoX: original.logoX,
+            logoY: original.logoY,
+            logoSize: original.logoSize,
+          );
+          _slides.add(copy);
+          duplicatedSlideIds.add(newSlideId);
+        }
+      }
+      
+      final String newSectionId = 'section_${DateTime.now().millisecondsSinceEpoch}';
+      final duplicateSection = SlideSection(
+        id: newSectionId,
+        name: '${sourceSection.name} (Copy)',
+        slideIds: duplicatedSlideIds,
+        colorValue: sourceSection.colorValue,
+      );
+      
+      setState(() {
+        _sections.insert(sectionIdx + 1, duplicateSection);
+      });
+      _syncSlidesFromSections();
+    }
+  }
+
   void _addSlide() {
     setState(() {
-      final String nextId = '${_slides.length + 1}'.padLeft(2, '0');
-      // Inherit the current slide's background so all slides stay consistent
+      final String nextId = 'slide_${DateTime.now().millisecondsSinceEpoch}';
       final String inheritedBg = _slides[_activeSlideIndex].imageUrl;
       final newSlide = SlideData(
         id: nextId,
@@ -553,11 +831,15 @@ class _PreviewPageState extends State<PreviewPage> {
         logoY: _slides[_activeSlideIndex].logoY,
         logoSize: _slides[_activeSlideIndex].logoSize,
       );
+      
+      final activeSlideId = _slides[_activeSlideIndex].id;
+      final section = _sections.firstWhere((s) => s.slideIds.contains(activeSlideId));
+      final idx = section.slideIds.indexOf(activeSlideId);
+      section.slideIds.insert(idx + 1, nextId);
       _slides.add(newSlide);
-      _setActiveSlide(_slides.length - 1);
     });
-    AppSettings.instance.updateActiveSlides(_slides);
-    _saveToRecentList();
+    _syncSlidesFromSections();
+    _setActiveSlide(_activeSlideIndex + 1);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Added new slide with the same background.'),
@@ -569,7 +851,7 @@ class _PreviewPageState extends State<PreviewPage> {
   void _duplicateSlide() {
     setState(() {
       final active = _slides[_activeSlideIndex];
-      final String nextId = '${_slides.length + 1}'.padLeft(2, '0');
+      final String nextId = 'slide_${DateTime.now().millisecondsSinceEpoch}';
       final duplicate = SlideData(
         id: nextId,
         title: '${active.title} (Copy)',
@@ -588,11 +870,15 @@ class _PreviewPageState extends State<PreviewPage> {
         logoY: active.logoY,
         logoSize: active.logoSize,
       );
-      _slides.insert(_activeSlideIndex + 1, duplicate);
-      _setActiveSlide(_activeSlideIndex + 1);
+      
+      final activeSlideId = active.id;
+      final section = _sections.firstWhere((s) => s.slideIds.contains(activeSlideId));
+      final idx = section.slideIds.indexOf(activeSlideId);
+      section.slideIds.insert(idx + 1, nextId);
+      _slides.add(duplicate);
     });
-    AppSettings.instance.updateActiveSlides(_slides);
-    _saveToRecentList();
+    _syncSlidesFromSections();
+    _setActiveSlide(_activeSlideIndex + 1);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Slide duplicated successfully.'),
@@ -612,14 +898,17 @@ class _PreviewPageState extends State<PreviewPage> {
       return;
     }
     setState(() {
+      final slideId = _slides[_activeSlideIndex].id;
+      for (final section in _sections) {
+        section.slideIds.remove(slideId);
+      }
       _slides.removeAt(_activeSlideIndex);
       if (_activeSlideIndex >= _slides.length) {
         _activeSlideIndex = _slides.length - 1;
       }
       _setActiveSlide(_activeSlideIndex);
     });
-    AppSettings.instance.updateActiveSlides(_slides);
-    _saveToRecentList();
+    _syncSlidesFromSections();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Removed slide.'),
@@ -628,7 +917,6 @@ class _PreviewPageState extends State<PreviewPage> {
     );
   }
 
-  @override
   Widget build(BuildContext context) {
     final double screenWidth = MediaQuery.of(context).size.width;
     final bool isDesktop = screenWidth >= 1024;
@@ -684,10 +972,28 @@ class _PreviewPageState extends State<PreviewPage> {
             // Left Panel (Outline)
             if (isDesktop)
               _SlidesOutlineSidebar(
+                sections: _sections,
                 slides: _slides,
                 activeIndex: _activeSlideIndex,
                 onSlideSelected: _setActiveSlide,
                 onAddSlide: _addSlide,
+                onAddSection: (name) => _addSection(name),
+                onRenameSection: _renameSection,
+                onDeleteSection: _deleteSection,
+                onMoveSection: _moveSection,
+                onMoveSlideToSection: _moveSlideToSection,
+                onAddSectionBeforeSlide: _addSectionBeforeSlide,
+                onDuplicateSlide: (idx) {
+                  _setActiveSlide(idx);
+                  _duplicateSlide();
+                },
+                onDeleteSlide: (idx) {
+                  _setActiveSlide(idx);
+                  _removeSlide();
+                },
+                onMoveSlideInOutline: _moveSlideInOutline,
+                onRenameSlide: (slide) => _showSlideRenameDialog(context, slide),
+                onDuplicateSection: _duplicateSection,
               ),
 
             // Middle Workspace (Canvas)
@@ -695,10 +1001,28 @@ class _PreviewPageState extends State<PreviewPage> {
               child: (!isDesktop && _mobileSelectedTab != 1)
                   ? (_mobileSelectedTab == 0
                       ? _SlidesOutlineSidebar(
+                          sections: _sections,
                           slides: _slides,
                           activeIndex: _activeSlideIndex,
                           onSlideSelected: _setActiveSlide,
                           onAddSlide: _addSlide,
+                          onAddSection: (name) => _addSection(name),
+                          onRenameSection: _renameSection,
+                          onDeleteSection: _deleteSection,
+                          onMoveSection: _moveSection,
+                          onMoveSlideToSection: _moveSlideToSection,
+                          onAddSectionBeforeSlide: _addSectionBeforeSlide,
+                          onDuplicateSlide: (idx) {
+                            _setActiveSlide(idx);
+                            _duplicateSlide();
+                          },
+                          onDeleteSlide: (idx) {
+                            _setActiveSlide(idx);
+                            _removeSlide();
+                          },
+                          onMoveSlideInOutline: _moveSlideInOutline,
+                          onRenameSlide: (slide) => _showSlideRenameDialog(context, slide),
+                          onDuplicateSection: _duplicateSection,
                         )
                       : _PropertiesSidebar(
                           activeSlide: activeSlide,
@@ -991,21 +1315,468 @@ class _EditorNavBar extends StatelessWidget {
 }
 
 /// Outline Navigation Sidebar (Slide list builder)
-class _SlidesOutlineSidebar extends StatelessWidget {
+// ─────────────────────────────────────────────────────────────────────────────
+// PowerPoint Section Sidebar Classes
+// ─────────────────────────────────────────────────────────────────────────────
+
+abstract class SidebarItem {}
+
+class SectionHeaderItem extends SidebarItem {
+  final SlideSection section;
+  final int sectionIndex;
+  SectionHeaderItem(this.section, this.sectionIndex);
+}
+
+class SlideItem extends SidebarItem {
+  final SlideData slide;
+  final int slideIndex; // index in flat slides list
+  final int slideIndexInSection;
+  final String sectionId;
+  SlideItem(this.slide, this.slideIndex, this.slideIndexInSection, this.sectionId);
+}
+
+class DropTargetItem extends SidebarItem {
+  final String sectionId;
+  final int indexInSection;
+  final bool isBetweenSections;
+  DropTargetItem(this.sectionId, this.indexInSection, {this.isBetweenSections = false});
+}
+
+class _SidebarDropTarget extends StatefulWidget {
+  final String sectionId;
+  final int index;
+  final bool isSectionTarget;
+  final Function(String draggedId, String targetSectionId, int targetIndex) onDrop;
+
+  const _SidebarDropTarget({
+    required this.sectionId,
+    required this.index,
+    required this.isSectionTarget,
+    required this.onDrop,
+  });
+
+  @override
+  State<_SidebarDropTarget> createState() => _SidebarDropTargetState();
+}
+
+class _SidebarDropTargetState extends State<_SidebarDropTarget> {
+  bool _isOver = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return DragTarget<String>(
+      onWillAcceptWithDetails: (details) {
+        final draggedId = details.data;
+        if (widget.isSectionTarget) {
+          return draggedId.startsWith('section_');
+        } else {
+          return !draggedId.startsWith('section_');
+        }
+      },
+      onAcceptWithDetails: (details) {
+        widget.onDrop(details.data, widget.sectionId, widget.index);
+        setState(() {
+          _isOver = false;
+        });
+      },
+      onLeave: (_) {
+        setState(() {
+          _isOver = false;
+        });
+      },
+      builder: (context, candidateData, rejectedData) {
+        if (candidateData.isNotEmpty) {
+          _isOver = true;
+        }
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          height: _isOver ? (widget.isSectionTarget ? 24.0 : 16.0) : 6.0,
+          width: double.infinity,
+          alignment: Alignment.center,
+          child: _isOver
+              ? Container(
+                  height: widget.isSectionTarget ? 6.0 : 4.0,
+                  margin: const EdgeInsets.symmetric(horizontal: 12.0),
+                  decoration: BoxDecoration(
+                    color: SacredColors.primary,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                )
+              : const SizedBox.shrink(),
+        );
+      },
+    );
+  }
+}
+
+class _SectionHeader extends StatefulWidget {
+  final SlideSection section;
+  final int slideCount;
+  final bool isActive;
+  final VoidCallback onToggleCollapse;
+  final VoidCallback onAddSlide;
+  final Function(String) onRename;
+  final VoidCallback onDelete;
+  final VoidCallback? onMoveUp;
+  final VoidCallback? onMoveDown;
+  final Function(int)? onColorChange;
+  final VoidCallback? onDuplicate;
+  final VoidCallback? onAutoExpand;
+
+  const _SectionHeader({
+    required this.section,
+    required this.slideCount,
+    required this.isActive,
+    required this.onToggleCollapse,
+    required this.onAddSlide,
+    required this.onRename,
+    required this.onDelete,
+    this.onMoveUp,
+    this.onMoveDown,
+    this.onColorChange,
+    this.onDuplicate,
+    this.onAutoExpand,
+  });
+
+  @override
+  State<_SectionHeader> createState() => _SectionHeaderState();
+}
+
+class _SectionHeaderState extends State<_SectionHeader> {
+  bool _isHovered = false;
+  Timer? _autoExpandTimer;
+
+  @override
+  void dispose() {
+    _autoExpandTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Widget header = MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: GestureDetector(
+        onDoubleTap: () {
+          _showRenameDialog(context, widget.section.name, 'Rename Section', widget.onRename);
+        },
+        onSecondaryTapUp: (details) {
+          _showSectionContextMenu(context, details.globalPosition);
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+          decoration: BoxDecoration(
+            color: widget.section.colorValue != null
+                ? Color(widget.section.colorValue!).withValues(alpha: _isHovered ? 0.25 : 0.15)
+                : (_isHovered
+                    ? SacredColors.surfaceContainerHigh.withValues(alpha: 0.95)
+                    : SacredColors.surfaceContainerHigh.withValues(alpha: 0.8)),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: widget.isActive ? SacredColors.primary : Colors.transparent,
+              width: 1.5,
+            ),
+          ),
+          child: Row(
+            children: [
+              IconButton(
+                icon: Icon(
+                  widget.section.isCollapsed ? Icons.chevron_right : Icons.expand_more,
+                  size: 18,
+                  color: SacredColors.onSurfaceVariant,
+                ),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                onPressed: widget.onToggleCollapse,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  widget.section.name,
+                  style: SacredTypography.labelLg(context).copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: widget.section.colorValue != null
+                        ? Color(widget.section.colorValue!)
+                        : SacredColors.onSurface,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Text(
+                '${widget.slideCount} slide${widget.slideCount == 1 ? '' : 's'}',
+                style: SacredTypography.labelSm(context).copyWith(
+                  color: SacredColors.outline,
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                icon: const Icon(Icons.add, size: 16),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                onPressed: widget.onAddSlide,
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                icon: const Icon(Icons.more_vert, size: 16),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                onPressed: () {
+                  final renderBox = context.findRenderObject() as RenderBox;
+                  final offset = renderBox.localToGlobal(Offset.zero);
+                  _showSectionContextMenu(context, offset + Offset(renderBox.size.width - 100, 24));
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    return DragTarget<String>(
+      onWillAcceptWithDetails: (details) => !details.data.startsWith('section_'),
+      onMove: (_) {
+        if (widget.section.isCollapsed) {
+          _autoExpandTimer ??= Timer(const Duration(milliseconds: 600), () {
+            widget.onAutoExpand?.call();
+          });
+        }
+      },
+      onLeave: (_) {
+        _autoExpandTimer?.cancel();
+        _autoExpandTimer = null;
+      },
+      onAcceptWithDetails: (_) {
+        _autoExpandTimer?.cancel();
+        _autoExpandTimer = null;
+      },
+      builder: (context, candidateData, rejectedData) {
+        return Draggable<String>(
+          data: widget.section.id,
+          feedback: Material(
+            elevation: 8,
+            borderRadius: BorderRadius.circular(6),
+            child: Container(
+              width: 240,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              color: SacredColors.primary.withValues(alpha: 0.9),
+              child: Text(
+                widget.section.name,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+          childWhenDragging: Opacity(
+            opacity: 0.4,
+            child: header,
+          ),
+          child: header,
+        );
+      },
+    );
+  }
+
+  void _showSectionContextMenu(BuildContext context, Offset position) {
+    showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(position.dx, position.dy, position.dx + 1, position.dy + 1),
+      items: [
+        const PopupMenuItem(
+          value: 'rename',
+          child: ListTile(
+            leading: Icon(Icons.edit, size: 18),
+            title: Text('Rename Section'),
+            dense: true,
+          ),
+        ),
+        PopupMenuItem(
+          value: 'move_up',
+          enabled: widget.onMoveUp != null,
+          child: const ListTile(
+            leading: Icon(Icons.arrow_upward, size: 18),
+            title: Text('Move Section Up'),
+            dense: true,
+          ),
+        ),
+        PopupMenuItem(
+          value: 'move_down',
+          enabled: widget.onMoveDown != null,
+          child: const ListTile(
+            leading: Icon(Icons.arrow_downward, size: 18),
+            title: Text('Move Section Down'),
+            dense: true,
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'color',
+          child: ListTile(
+            leading: Icon(Icons.palette_outlined, size: 18),
+            title: Text('Choose Color'),
+            dense: true,
+          ),
+        ),
+        if (widget.onDuplicate != null)
+          const PopupMenuItem(
+            value: 'duplicate',
+            child: ListTile(
+              leading: Icon(Icons.content_copy, size: 18),
+              title: Text('Duplicate Section'),
+              dense: true,
+            ),
+          ),
+        const PopupMenuDivider(),
+        const PopupMenuItem(
+          value: 'delete',
+          child: ListTile(
+            leading: Icon(Icons.delete_outline, color: Colors.red, size: 18),
+            title: Text('Delete Section', style: TextStyle(color: Colors.red)),
+            dense: true,
+          ),
+        ),
+      ],
+    ).then((value) {
+      if (value == 'rename') {
+        _showRenameDialog(context, widget.section.name, 'Rename Section', widget.onRename);
+      } else if (value == 'move_up') {
+        widget.onMoveUp?.call();
+      } else if (value == 'move_down') {
+        widget.onMoveDown?.call();
+      } else if (value == 'delete') {
+        widget.onDelete();
+      } else if (value == 'duplicate') {
+        widget.onDuplicate?.call();
+      } else if (value == 'color') {
+        _showColorPicker(context);
+      }
+    });
+  }
+
+  void _showColorPicker(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (context) {
+        final colors = [
+          null,
+          Colors.blue.value,
+          Colors.green.value,
+          Colors.orange.value,
+          Colors.red.value,
+          Colors.purple.value,
+          Colors.teal.value,
+        ];
+        return AlertDialog(
+          title: const Text('Choose Section Color'),
+          content: Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: colors.map((cValue) {
+              return GestureDetector(
+                onTap: () {
+                  widget.onColorChange?.call(cValue ?? 0);
+                  Navigator.of(context).pop();
+                },
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: cValue != null ? Color(cValue) : Colors.grey[300],
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: widget.section.colorValue == cValue ? Colors.black : Colors.transparent,
+                      width: 2.5,
+                    ),
+                  ),
+                  child: cValue == null
+                      ? const Icon(Icons.block, size: 20, color: Colors.grey)
+                      : null,
+                ),
+              );
+            }).toList(),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SlidesOutlineSidebar extends StatefulWidget {
+  final List<SlideSection> sections;
   final List<SlideData> slides;
   final int activeIndex;
   final ValueChanged<int> onSlideSelected;
   final VoidCallback onAddSlide;
+  final Function(String name) onAddSection;
+  final Function(String id, String newName) onRenameSection;
+  final Function(String id) onDeleteSection;
+  final Function(int fromIndex, int toIndex) onMoveSection;
+  final Function(String slideId, String targetSectionId, int targetIndex) onMoveSlideToSection;
+  final Function(String slideId, String name) onAddSectionBeforeSlide;
+  final Function(int slideIndex) onDuplicateSlide;
+  final Function(int slideIndex) onDeleteSlide;
+  final Function(int fromIndex, int toIndex) onMoveSlideInOutline;
+  final Function(SlideData slide) onRenameSlide;
+  final Function(String id)? onDuplicateSection;
 
   const _SlidesOutlineSidebar({
+    required this.sections,
     required this.slides,
     required this.activeIndex,
     required this.onSlideSelected,
     required this.onAddSlide,
+    required this.onAddSection,
+    required this.onRenameSection,
+    required this.onDeleteSection,
+    required this.onMoveSection,
+    required this.onMoveSlideToSection,
+    required this.onAddSectionBeforeSlide,
+    required this.onDuplicateSlide,
+    required this.onDeleteSlide,
+    required this.onMoveSlideInOutline,
+    required this.onRenameSlide,
+    this.onDuplicateSection,
   });
 
   @override
+  State<_SlidesOutlineSidebar> createState() => _SlidesOutlineSidebarState();
+}
+
+class _SlidesOutlineSidebarState extends State<_SlidesOutlineSidebar> {
+  final FocusNode _sidebarFocusNode = FocusNode();
+
+  @override
+  void dispose() {
+    _sidebarFocusNode.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final List<SidebarItem> items = [];
+    
+    for (int sIdx = 0; sIdx < widget.sections.length; sIdx++) {
+      final section = widget.sections[sIdx];
+      items.add(DropTargetItem(section.id, sIdx, isBetweenSections: true));
+      items.add(SectionHeaderItem(section, sIdx));
+      
+      if (!section.isCollapsed) {
+        items.add(DropTargetItem(section.id, 0));
+        
+        for (int i = 0; i < section.slideIds.length; i++) {
+          final slideId = section.slideIds[i];
+          final slideIdx = widget.slides.indexWhere((s) => s.id == slideId);
+          if (slideIdx != -1) {
+            items.add(SlideItem(widget.slides[slideIdx], slideIdx, i, section.id));
+            items.add(DropTargetItem(section.id, i + 1));
+          }
+        }
+      }
+    }
+    
+    if (widget.sections.isNotEmpty) {
+      items.add(DropTargetItem(widget.sections.last.id, widget.sections.length, isBetweenSections: true));
+    }
+
     return Container(
       width: 280,
       height: double.infinity,
@@ -1020,9 +1791,8 @@ class _SlidesOutlineSidebar extends StatelessWidget {
       ),
       child: Column(
         children: [
-          // Sidebar title section
           Padding(
-            padding: EdgeInsets.fromLTRB(24, 24, 24, 16),
+            padding: const EdgeInsets.fromLTRB(24, 24, 16, 16),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -1034,41 +1804,222 @@ class _SlidesOutlineSidebar extends StatelessWidget {
                     color: SacredColors.onSurfaceVariant,
                   ),
                 ),
-                Text(
-                  '${slides.length} Total',
-                  style: SacredTypography.labelSm(context).copyWith(
-                    color: SacredColors.onSurfaceVariant,
-                  ),
+                Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.create_new_folder_outlined, size: 20),
+                      tooltip: 'Add Section',
+                      onPressed: () {
+                        _showRenameDialog(context, '', 'New Section Name', (name) {
+                          widget.onAddSection(name);
+                        });
+                      },
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${widget.slides.length} Total',
+                      style: SacredTypography.labelSm(context).copyWith(
+                        color: SacredColors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
 
-          // Scrollable thumbnail cards
           Expanded(
-            child: ListView.builder(
-              padding: EdgeInsets.symmetric(horizontal: 16.0),
-              itemCount: slides.length,
-              itemBuilder: (context, index) {
-                final slide = slides[index];
-                final bool isActive = index == activeIndex;
+            child: Focus(
+              focusNode: _sidebarFocusNode,
+              autofocus: true,
+              onKeyEvent: (node, event) {
+                if (event is KeyDownEvent) {
+                  if (widget.slides.isEmpty || widget.activeIndex >= widget.slides.length) {
+                    return KeyEventResult.ignored;
+                  }
+                  final activeSlideId = widget.slides[widget.activeIndex].id;
+                  final activeSection = widget.sections.firstWhere(
+                    (s) => s.slideIds.contains(activeSlideId),
+                    orElse: () => null as dynamic,
+                  );
 
-                return Padding(
-                  padding: EdgeInsets.only(bottom: 16.0),
-                  child: _SlideThumbnailCard(
-                    slide: slide,
-                    isActive: isActive,
-                    indexText: '${index + 1}'.padLeft(2, '0'),
-                    onTap: () => onSlideSelected(index),
-                  ),
-                );
+                  if (event.logicalKey == LogicalKeyboardKey.f2) {
+                    if (activeSection != null) {
+                      _showRenameDialog(context, activeSection.name, 'Rename Section', (val) {
+                        widget.onRenameSection(activeSection.id, val);
+                      });
+                      return KeyEventResult.handled;
+                    }
+                  } else if (event.logicalKey == LogicalKeyboardKey.delete) {
+                    if (activeSection != null) {
+                      widget.onDeleteSection(activeSection.id);
+                      return KeyEventResult.handled;
+                    }
+                  } else if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+                    if (activeSection != null && !activeSection.isCollapsed) {
+                      setState(() {
+                        activeSection.isCollapsed = true;
+                      });
+                      return KeyEventResult.handled;
+                    }
+                  } else if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+                    if (activeSection != null && activeSection.isCollapsed) {
+                      setState(() {
+                        activeSection.isCollapsed = false;
+                      });
+                      return KeyEventResult.handled;
+                    }
+                  }
+                }
+                return KeyEventResult.ignored;
               },
+              child: ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                itemCount: items.length,
+                itemBuilder: (context, idx) {
+                  final item = items[idx];
+                  
+                  if (item is SectionHeaderItem) {
+                    final activeSlideId = widget.slides.isNotEmpty && widget.activeIndex < widget.slides.length
+                        ? widget.slides[widget.activeIndex].id
+                        : '';
+                    final bool isSectionActive = item.section.slideIds.contains(activeSlideId);
+
+                    return Semantics(
+                      label: '${item.section.name} section, ${item.section.slideIds.length} slides',
+                      header: true,
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 8.0, bottom: 4.0),
+                        child: _SectionHeader(
+                          section: item.section,
+                          slideCount: item.section.slideIds.length,
+                          isActive: isSectionActive,
+                          onToggleCollapse: () {
+                            setState(() {
+                              item.section.isCollapsed = !item.section.isCollapsed;
+                            });
+                            widget.onRenameSection(item.section.id, item.section.name);
+                          },
+                          onAddSlide: () {
+                            if (item.section.slideIds.isNotEmpty) {
+                              final lastSlideId = item.section.slideIds.last;
+                              final lastSlideIdx = widget.slides.indexWhere((s) => s.id == lastSlideId);
+                              if (lastSlideIdx != -1) {
+                                widget.onSlideSelected(lastSlideIdx);
+                              }
+                            }
+                            widget.onAddSlide();
+                          },
+                          onRename: (newName) => widget.onRenameSection(item.section.id, newName),
+                          onDelete: () => widget.onDeleteSection(item.section.id),
+                          onMoveUp: item.sectionIndex > 0
+                              ? () => widget.onMoveSection(item.sectionIndex, item.sectionIndex - 1)
+                              : null,
+                          onMoveDown: item.sectionIndex < widget.sections.length - 1
+                              ? () => widget.onMoveSection(item.sectionIndex, item.sectionIndex + 1)
+                              : null,
+                          onColorChange: (colorVal) {
+                            setState(() {
+                              item.section.colorValue = colorVal == 0 ? null : colorVal;
+                            });
+                            widget.onRenameSection(item.section.id, item.section.name);
+                          },
+                          onDuplicate: widget.onDuplicateSection != null
+                              ? () => widget.onDuplicateSection!(item.section.id)
+                              : null,
+                          onAutoExpand: () {
+                            setState(() {
+                              item.section.isCollapsed = false;
+                            });
+                          },
+                        ),
+                      ),
+                    );
+                  } else if (item is SlideItem) {
+                    final bool isActive = item.slideIndex == widget.activeIndex;
+                    
+                    return Semantics(
+                      label: 'Slide ${item.slideIndex + 1}, title: ${item.slide.title}',
+                      selected: isActive,
+                      child: Draggable<String>(
+                        data: item.slide.id,
+                        feedback: Material(
+                          elevation: 12,
+                          borderRadius: BorderRadius.circular(8),
+                          child: SizedBox(
+                            width: 180,
+                            child: AspectRatio(
+                              aspectRatio: 16 / 9,
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Container(
+                                  color: Color(item.slide.bgColorValue),
+                                  alignment: Alignment.center,
+                                  child: Text(
+                                    item.slide.title,
+                                    style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                                    textAlign: TextAlign.center,
+                                    maxLines: 1,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        childWhenDragging: Opacity(
+                          opacity: 0.3,
+                          child: Padding(
+                            padding: const EdgeInsets.only(left: 12.0, bottom: 8.0),
+                            child: _SlideThumbnailCard(
+                              slide: item.slide,
+                              isActive: isActive,
+                              indexText: '${item.slideIndex + 1}'.padLeft(2, '0'),
+                              onTap: () => widget.onSlideSelected(item.slideIndex),
+                            ),
+                          ),
+                        ),
+                        child: GestureDetector(
+                          onSecondaryTapUp: (details) {
+                            _showSlideContextMenu(context, details.globalPosition, item.slideIndex, item.slide.id);
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.only(left: 12.0, bottom: 8.0),
+                            child: _SlideThumbnailCard(
+                              slide: item.slide,
+                              isActive: isActive,
+                              indexText: '${item.slideIndex + 1}'.padLeft(2, '0'),
+                              onTap: () => widget.onSlideSelected(item.slideIndex),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  } else if (item is DropTargetItem) {
+                    return _SidebarDropTarget(
+                      sectionId: item.sectionId,
+                      index: item.indexInSection,
+                      isSectionTarget: item.isBetweenSections,
+                      onDrop: (draggedId, targetSectionId, targetIndex) {
+                        if (item.isBetweenSections) {
+                          final fromIdx = widget.sections.indexWhere((s) => s.id == draggedId);
+                          if (fromIdx != -1) {
+                            widget.onMoveSection(fromIdx, targetIndex);
+                          }
+                        } else {
+                          widget.onMoveSlideToSection(draggedId, targetSectionId, targetIndex);
+                        }
+                      },
+                    );
+                  }
+                  
+                  return const SizedBox.shrink();
+                },
+              ),
             ),
           ),
 
-          // Add Slide Dashed CTA Button
           Padding(
-            padding: EdgeInsets.all(16.0),
+            padding: const EdgeInsets.all(16.0),
             child: CustomPaint(
               painter: DashedBorderPainter(
                 color: SacredColors.outlineVariant,
@@ -1076,17 +2027,17 @@ class _SlidesOutlineSidebar extends StatelessWidget {
                 radius: 12.0,
               ),
               child: InkWell(
-                onTap: onAddSlide,
+                onTap: widget.onAddSlide,
                 borderRadius: BorderRadius.circular(12),
                 child: Container(
                   width: double.infinity,
-                  padding: EdgeInsets.symmetric(vertical: 14),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
                   alignment: Alignment.center,
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(Icons.add, color: SacredColors.onSurfaceVariant),
-                      SizedBox(width: 8),
+                      const SizedBox(width: 8),
                       Text(
                         'Add Slide',
                         style: SacredTypography.labelLg(context).copyWith(
@@ -1103,9 +2054,142 @@ class _SlidesOutlineSidebar extends StatelessWidget {
       ),
     );
   }
+
+  void _showSlideContextMenu(BuildContext context, Offset position, int slideIndex, String slideId) {
+    showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(position.dx, position.dy, position.dx + 1, position.dy + 1),
+      items: [
+        const PopupMenuItem(
+          value: 'rename',
+          child: ListTile(
+            leading: Icon(Icons.edit, size: 18),
+            title: Text('Edit Text Content'),
+            dense: true,
+          ),
+        ),
+        PopupMenuItem(
+          value: 'move_up',
+          enabled: slideIndex > 0,
+          child: const ListTile(
+            leading: Icon(Icons.arrow_upward, size: 18),
+            title: Text('Move Slide Up'),
+            dense: true,
+          ),
+        ),
+        PopupMenuItem(
+          value: 'move_down',
+          enabled: slideIndex < widget.slides.length - 1,
+          child: const ListTile(
+            leading: Icon(Icons.arrow_downward, size: 18),
+            title: Text('Move Slide Down'),
+            dense: true,
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'duplicate',
+          child: ListTile(
+            leading: Icon(Icons.content_copy, size: 18),
+            title: Text('Duplicate Slide'),
+            dense: true,
+          ),
+        ),
+        const PopupMenuDivider(),
+        const PopupMenuItem(
+          value: 'add_section_before',
+          child: ListTile(
+            leading: Icon(Icons.add_box_outlined, size: 18),
+            title: Text('Add Section Before'),
+            dense: true,
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'add_section_after',
+          child: ListTile(
+            leading: Icon(Icons.add_box_outlined, size: 18),
+            title: Text('Add Section After'),
+            dense: true,
+          ),
+        ),
+        const PopupMenuDivider(),
+        const PopupMenuItem(
+          value: 'delete',
+          child: ListTile(
+            leading: Icon(Icons.delete_outline, color: Colors.red, size: 18),
+            title: Text('Delete Slide', style: TextStyle(color: Colors.red)),
+            dense: true,
+          ),
+        ),
+      ],
+    ).then((value) {
+      if (value == 'rename') {
+        widget.onRenameSlide(widget.slides[slideIndex]);
+      } else if (value == 'move_up') {
+        widget.onMoveSlideInOutline(slideIndex, slideIndex - 1);
+      } else if (value == 'move_down') {
+        widget.onMoveSlideInOutline(slideIndex, slideIndex + 1);
+      } else if (value == 'duplicate') {
+        widget.onDuplicateSlide(slideIndex);
+      } else if (value == 'add_section_before') {
+        _showRenameDialog(context, '', 'New Section Name', (name) {
+          widget.onAddSectionBeforeSlide(slideId, name);
+        });
+      } else if (value == 'add_section_after') {
+        _showRenameDialog(context, '', 'New Section Name', (name) {
+          final section = widget.sections.firstWhere((s) => s.slideIds.contains(slideId));
+          final idx = section.slideIds.indexOf(slideId);
+          if (idx < section.slideIds.length - 1) {
+            final nextSlideId = section.slideIds[idx + 1];
+            widget.onAddSectionBeforeSlide(nextSlideId, name);
+          } else {
+            widget.onAddSection(name);
+          }
+        });
+      } else if (value == 'delete') {
+        widget.onDeleteSlide(slideIndex);
+      }
+    });
+  }
 }
 
-/// Dynamic thumbnail representation containing saturation grayscale transition.
+Future<void> _showRenameDialog(BuildContext context, String initialValue, String title, ValueChanged<String> onRename) async {
+  final controller = TextEditingController(text: initialValue);
+  return showDialog<void>(
+    context: context,
+    builder: (context) {
+      return AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Name'),
+          onSubmitted: (val) {
+            if (val.trim().isNotEmpty) {
+              onRename(val.trim());
+              Navigator.of(context).pop();
+            }
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              if (controller.text.trim().isNotEmpty) {
+                onRename(controller.text.trim());
+                Navigator.of(context).pop();
+              }
+            },
+            child: const Text('Rename'),
+          ),
+        ],
+      );
+    },
+  );
+}
+
 class _SlideThumbnailCard extends StatefulWidget {
   final SlideData slide;
   final bool isActive;
@@ -1128,12 +2212,11 @@ class _SlideThumbnailCardState extends State<_SlideThumbnailCard> {
 
   @override
   Widget build(BuildContext context) {
-    // Pure saturation matrix values
     const grayscaleMatrix = <double>[
-      0.2126, 0.7152, 0.0722, 0, 0, // Red
-      0.2126, 0.7152, 0.0722, 0, 0, // Green
-      0.2126, 0.7152, 0.0722, 0, 0, // Blue
-      0, 0, 0, 1, 0, // Alpha
+      0.2126, 0.7152, 0.0722, 0, 0,
+      0.2126, 0.7152, 0.0722, 0, 0,
+      0.2126, 0.7152, 0.0722, 0, 0,
+      0, 0, 0, 1, 0,
     ];
 
     return ListenableBuilder(
@@ -1167,67 +2250,166 @@ class _SlideThumbnailCardState extends State<_SlideThumbnailCard> {
                     borderRadius: BorderRadius.circular(6),
                     child: AspectRatio(
                       aspectRatio: 16 / 9,
-                      child: Stack(
-                        children: [
-                          // Grayscale ColorFilter Transition Layer
-                          Positioned.fill(
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 300),
-                              child: ColorFiltered(
-                                colorFilter: renderFullColor
-                                    ? const ColorFilter.mode(Colors.transparent, BlendMode.multiply)
-                                    : const ColorFilter.matrix(grayscaleMatrix),
-                                child: widget.slide.imageUrl.isEmpty
-                                    ? Container(color: Colors.black)
-                                    : widget.slide.imageUrl.startsWith('data:')
-                                        ? Image.memory(
-                                            _decodeDataUrl(widget.slide.imageUrl),
-                                            fit: BoxFit.cover,
-                                            errorBuilder: (context, e, s) => Container(
-                                              color: SacredColors.surfaceContainerHigh,
-                                              child: Icon(Icons.image, color: SacredColors.primary),
-                                            ),
-                                          )
-                                        : Image.network(
-                                            widget.slide.imageUrl,
-                                            fit: BoxFit.cover,
-                                            errorBuilder: (context, e, s) => Container(
-                                              color: SacredColors.surfaceContainerHigh,
-                                              child: Icon(Icons.image, color: SacredColors.primary),
-                                            ),
-                                          ),
-                              ),
-                            ),
-                          ),
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final double thumbnailWidth = constraints.maxWidth;
+                          final double thumbnailHeight = constraints.maxHeight;
+                          final double scale = thumbnailWidth / 960.0;
 
-                          // Index Slide Badge
-                          Positioned(
-                            bottom: 4,
-                            right: 4,
-                            child: Container(
-                              padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: widget.isActive ? SacredColors.primary : SacredColors.surfaceContainerHighest,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                widget.indexText,
-                                style: SacredTypography.labelSm(context).copyWith(
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.bold,
-                                  color: widget.isActive ? Colors.white : SacredColors.onSurface,
+                          return Stack(
+                            children: [
+                              Positioned.fill(
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 300),
+                                  child: ColorFiltered(
+                                    colorFilter: renderFullColor
+                                        ? const ColorFilter.mode(Colors.transparent, BlendMode.multiply)
+                                        : const ColorFilter.matrix(grayscaleMatrix),
+                                    child: Stack(
+                                      children: [
+                                        Positioned.fill(
+                                          child: Container(
+                                            color: Color(widget.slide.bgColorValue),
+                                          ),
+                                        ),
+                                        if (widget.slide.imageUrl.isNotEmpty)
+                                          Positioned.fill(
+                                            child: widget.slide.imageUrl.startsWith('data:')
+                                                ? Image.memory(
+                                                    _decodeDataUrl(widget.slide.imageUrl),
+                                                    fit: BoxFit.cover,
+                                                    errorBuilder: (context, e, s) => const SizedBox(),
+                                                  )
+                                                : Image.network(
+                                                    widget.slide.imageUrl,
+                                                    fit: BoxFit.cover,
+                                                    errorBuilder: (context, e, s) => const SizedBox(),
+                                                  ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
-                          ),
-                        ],
+
+                              if (widget.slide.logoUrl != null && widget.slide.logoUrl!.isNotEmpty)
+                                Positioned(
+                                  left: widget.slide.logoX * thumbnailWidth,
+                                  top: widget.slide.logoY * thumbnailHeight,
+                                  width: widget.slide.logoSize * scale,
+                                  height: widget.slide.logoSize * scale,
+                                  child: IgnorePointer(
+                                    child: widget.slide.logoUrl!.startsWith('data:')
+                                        ? Image.memory(
+                                            _decodeDataUrl(widget.slide.logoUrl!),
+                                            fit: BoxFit.contain,
+                                            errorBuilder: (context, e, s) => const SizedBox(),
+                                          )
+                                        : Image.network(
+                                            widget.slide.logoUrl!,
+                                            fit: BoxFit.contain,
+                                            errorBuilder: (context, e, s) => const SizedBox(),
+                                          ),
+                                  ),
+                                ),
+
+                              Positioned(
+                                left: (widget.slide.textX * thumbnailWidth) + (48.0 * scale),
+                                top: (widget.slide.textY * thumbnailHeight) + (32.0 * scale),
+                                width: thumbnailWidth - (96.0 * scale),
+                                height: thumbnailHeight - (64.0 * scale),
+                                child: IgnorePointer(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.center,
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Text(
+                                        widget.slide.title,
+                                        textAlign: widget.slide.alignment,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: GoogleFonts.getFont(
+                                          AppSettings.instance.fontFamily,
+                                          textStyle: TextStyle(
+                                            fontSize: (widget.slide.titleFontSize * scale).clamp(4.0, 40.0),
+                                            color: Colors.white,
+                                            fontWeight: widget.slide.isBold ? FontWeight.bold : FontWeight.normal,
+                                            fontStyle: widget.slide.isItalic ? FontStyle.italic : FontStyle.normal,
+                                            shadows: const [
+                                              Shadow(
+                                                color: Colors.black45,
+                                                offset: Offset(0, 1),
+                                                blurRadius: 2,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                      if (widget.slide.subtitle.trim().isNotEmpty) ...[
+                                        SizedBox(height: 4.0 * scale),
+                                        Container(
+                                          width: 24.0 * scale,
+                                          height: (1.0 * scale).clamp(0.5, 4.0),
+                                          color: SacredColors.secondaryContainer,
+                                        ),
+                                        SizedBox(height: 4.0 * scale),
+                                        Expanded(
+                                          child: Text(
+                                            widget.slide.subtitle,
+                                            textAlign: widget.slide.alignment,
+                                            maxLines: 3,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: GoogleFonts.inter(
+                                              textStyle: TextStyle(
+                                                fontSize: (widget.slide.subtitleFontSize * scale).clamp(3.0, 30.0),
+                                                color: Colors.white.withValues(alpha: 0.9),
+                                                fontStyle: FontStyle.italic,
+                                                shadows: const [
+                                                  Shadow(
+                                                    color: Colors.black45,
+                                                    offset: Offset(0, 0.5),
+                                                    blurRadius: 1.5,
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ),
+
+                              Positioned(
+                                bottom: 4,
+                                right: 4,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: widget.isActive ? SacredColors.primary : SacredColors.surfaceContainerHighest,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    widget.indexText,
+                                    style: SacredTypography.labelSm(context).copyWith(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.bold,
+                                      color: widget.isActive ? Colors.white : SacredColors.onSurface,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
                       ),
                     ),
                   ),
                 ),
-                SizedBox(height: 6),
+                const SizedBox(height: 6),
                 Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 4.0),
+                  padding: const EdgeInsets.symmetric(horizontal: 4.0),
                   child: Text(
                     widget.slide.title,
                     maxLines: 1,
@@ -1247,7 +2429,6 @@ class _SlideThumbnailCardState extends State<_SlideThumbnailCard> {
   }
 }
 
-/// Central Preview Canvas workspace featuring real-time state mirroring.
 class _LiveWorkspaceCanvas extends StatelessWidget {
   final SlideData activeSlide;
   final int slideCount;

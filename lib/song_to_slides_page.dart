@@ -45,10 +45,12 @@ class _SongToSlidesPageState extends State<SongToSlidesPage>
   }
 
   int get _estimatedSlideCount {
-    final text = _lyricsController.text;
-    if (text.trim().isEmpty) return 0;
-    final lines = text.split('\n').where((l) => l.trim().isNotEmpty).toList();
-    return (lines.length / _linesPerSlide).ceil();
+    final text = _lyricsController.text.trim();
+    if (text.isEmpty) return 0;
+    final songTitle = _titleController.text.trim().isEmpty
+        ? 'Choir Song'
+        : _titleController.text.trim();
+    return parseSongToSlides(text, songTitle, _linesPerSlide).length;
   }
 
   Future<void> _pickFile() async {
@@ -631,6 +633,63 @@ class _SongToSlidesPageState extends State<SongToSlidesPage>
   }
 }
 
+class _SongSection {
+  final String name;
+  final List<String> lines;
+  _SongSection(this.name, this.lines);
+}
+
+class _ArrangementItem {
+  final String sectionName;
+  final int count;
+  _ArrangementItem(this.sectionName, this.count);
+}
+
+_ArrangementItem _parseArrangementToken(String token) {
+  final match = RegExp(r'^(.+?)(?:X|\*)(\d+)$', caseSensitive: false).firstMatch(token);
+  if (match != null) {
+    final name = match.group(1)!.trim().toUpperCase();
+    final count = int.tryParse(match.group(2)!) ?? 1;
+    return _ArrangementItem(name, count);
+  } else {
+    return _ArrangementItem(token.trim().toUpperCase(), 1);
+  }
+}
+
+String _normalizeForMatching(String name) {
+  var clean = name.trim().toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
+  if (clean == 'CHR' || clean == 'CHO' || clean == 'CH') {
+    return 'CHORUS';
+  }
+  if (clean == 'BR') {
+    return 'BRIDGE';
+  }
+  if (clean == 'COD') {
+    return 'CODA';
+  }
+  final vMatch = RegExp(r'^(?:VERSE|VS|V)(\d+)$').firstMatch(clean);
+  if (vMatch != null) {
+    return 'VS${vMatch.group(1)}';
+  }
+  return clean;
+}
+
+_SongSection? _findMatchingSection(String arrName, List<_SongSection> sections) {
+  final normArr = _normalizeForMatching(arrName);
+  for (final sec in sections) {
+    if (_normalizeForMatching(sec.name) == normArr) {
+      return sec;
+    }
+  }
+  for (final sec in sections) {
+    final normSec = _normalizeForMatching(sec.name);
+    if (normSec.startsWith(normArr) || normArr.startsWith(normSec)) {
+      return sec;
+    }
+  }
+  return null;
+}
+
 /// Top-level song-to-slides parser used by both the full page and sidebar pane.
 List<SlideData> parseSongToSlides(
     String lyrics, String title, int linesPerSlide) {
@@ -653,47 +712,23 @@ List<SlideData> parseSongToSlides(
 
   final rawLines = lyrics.split('\n');
 
-  // Helper to identify if a line is a section marker (e.g. Chorus, VS1, Verse 2, Bridge)
-  bool isMarker(String line) {
-    final clean = line.trim().toUpperCase()
-        .replaceAll(RegExp(r'[\[\]\(\):\.\-]'), ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-        
-    if (clean.isEmpty) return false;
+  final headerRegex = RegExp(
+    r'^[\[\(\s]*((?:VERSE|CHORUS|BRIDGE|CODA|MEDLEY|INTRO|OUTRO|REFRAIN|TAG|VS|V|ARRANGEMENTS|ARRANGEMENT)(?:\s*\d+)?)(?::|\]|\)|\-|\s|$)',
+    caseSensitive: false,
+  );
 
-    final exactWords = {
-      'CHORUS', 'VERSE', 'VS', 'MEDLEY', 'CODA', 'BRIDGE', 'INTRO', 'OUTRO', 'TAG', 'REFRAIN'
-    };
-    if (exactWords.contains(clean)) {
-      return true;
-    }
+  final List<_SongSection> sections = [];
+  String currentSectionName = "";
+  List<String> currentSectionLines = [];
 
-    if (RegExp(r'^(VERSE|CHORUS|BRIDGE|CODA|MEDLEY|INTRO|OUTRO|REFRAIN|TAG|VS|V)\s*\d+$').hasMatch(clean)) {
-      return true;
-    }
-
-    return false;
-  }
-
-  // Pre-process lines into sections (separated by blank lines or markers)
-  final List<List<String>> sections = [];
-  List<String> currentSection = [];
-
+  bool inArrangement = false;
+  final List<String> arrangementTokens = [];
   bool isFirstNonEmpty = true;
+
   for (final rawLine in rawLines) {
     final trimmed = rawLine.trim();
-    
-    // Treat blank lines as section boundaries
-    if (trimmed.isEmpty) {
-      if (currentSection.isNotEmpty) {
-        sections.add(List.from(currentSection));
-        currentSection.clear();
-      }
-      continue;
-    }
+    if (trimmed.isEmpty) continue;
 
-    // Skip the first non-empty line if it is exactly the song title (case-insensitive)
     if (isFirstNonEmpty) {
       isFirstNonEmpty = false;
       if (trimmed.toLowerCase() == title.toLowerCase()) {
@@ -701,40 +736,117 @@ List<SlideData> parseSongToSlides(
       }
     }
 
-    // If it is a marker, end the current section and start a new one (skipping the marker line)
-    if (isMarker(trimmed)) {
-      if (currentSection.isNotEmpty) {
-        sections.add(List.from(currentSection));
-        currentSection.clear();
+    final match = headerRegex.firstMatch(trimmed);
+    bool shouldProcessHeader = false;
+    String headerName = "";
+    var remainingText = "";
+
+    if (match != null) {
+      headerName = match.group(1)!.trim().toUpperCase();
+      final matchLength = match.end;
+      remainingText = trimmed.substring(matchLength).trim();
+      if (remainingText.startsWith(']') || remainingText.startsWith(')')) {
+        remainingText = remainingText.substring(1).trim();
       }
-      continue;
+
+      shouldProcessHeader = !inArrangement ||
+          trimmed.contains(':') ||
+          trimmed.startsWith('[') ||
+          trimmed.startsWith('(');
     }
 
-    currentSection.add(trimmed);
+    if (shouldProcessHeader) {
+      if (headerName.startsWith("ARRANGEMENT")) {
+        inArrangement = true;
+        // Close current section if any
+        if (currentSectionLines.isNotEmpty) {
+          sections.add(_SongSection(currentSectionName, List.from(currentSectionLines)));
+          currentSectionLines.clear();
+        }
+        currentSectionName = "";
+        if (remainingText.isNotEmpty) {
+          final tokens = remainingText.split(RegExp(r'[\s,]+'));
+          for (final t in tokens) {
+            if (t.isNotEmpty) arrangementTokens.add(t.toUpperCase());
+          }
+        }
+      } else {
+        inArrangement = false;
+        // Close current section if any
+        if (currentSectionLines.isNotEmpty) {
+          sections.add(_SongSection(currentSectionName, List.from(currentSectionLines)));
+          currentSectionLines.clear();
+        }
+        currentSectionName = headerName;
+        if (remainingText.isNotEmpty) {
+          currentSectionLines.add(remainingText);
+        }
+      }
+    } else {
+      if (inArrangement) {
+        final tokens = trimmed.split(RegExp(r'[\s,]+'));
+        for (final t in tokens) {
+          if (t.isNotEmpty) arrangementTokens.add(t.toUpperCase());
+        }
+      } else {
+        currentSectionLines.add(trimmed);
+      }
+    }
   }
 
-  if (currentSection.isNotEmpty) {
-    sections.add(List.from(currentSection));
+  // Close the last section at the end of the loop
+  if (currentSectionLines.isNotEmpty) {
+    sections.add(_SongSection(currentSectionName, List.from(currentSectionLines)));
   }
 
-  // 2. Generate lyric slides from sections
-  for (final section in sections) {
-    for (int i = 0; i < section.length; i += linesPerSlide) {
-      final end = (i + linesPerSlide).clamp(0, section.length);
-      final chunk = section.sublist(i, end);
-      final subtitleText = chunk.join('\n');
+  // 2. Generate lyric slides from sections (using arrangement list if present)
+  if (arrangementTokens.isNotEmpty) {
+    for (final token in arrangementTokens) {
+      final arrItem = _parseArrangementToken(token);
+      final section = _findMatchingSection(arrItem.sectionName, sections);
+      if (section != null) {
+        for (int count = 0; count < arrItem.count; count++) {
+          final sectionLines = section.lines;
+          for (int i = 0; i < sectionLines.length; i += linesPerSlide) {
+            final end = (i + linesPerSlide).clamp(0, sectionLines.length);
+            final chunk = sectionLines.sublist(i, end);
+            final subtitleText = chunk.join('\n');
 
-      slides.add(SlideData(
-        id: '${slides.length + 1}'.padLeft(2, '0'),
-        title: '', // No title on subsequent slides
-        subtitle: subtitleText,
-        imageUrl: sharedBg,
-        opacity: 0.80,
-        blur: 8.0,
-        titleFontSize: 36.0,
-        subtitleFontSize: 24.0,
-        alignment: TextAlign.center,
-      ));
+            slides.add(SlideData(
+              id: '${slides.length + 1}'.padLeft(2, '0'),
+              title: section.name.toUpperCase(),
+              subtitle: subtitleText,
+              imageUrl: sharedBg,
+              opacity: 0.80,
+              blur: 8.0,
+              titleFontSize: 36.0,
+              subtitleFontSize: 24.0,
+              alignment: TextAlign.center,
+            ));
+          }
+        }
+      }
+    }
+  } else {
+    for (final section in sections) {
+      final sectionLines = section.lines;
+      for (int i = 0; i < sectionLines.length; i += linesPerSlide) {
+        final end = (i + linesPerSlide).clamp(0, sectionLines.length);
+        final chunk = sectionLines.sublist(i, end);
+        final subtitleText = chunk.join('\n');
+
+        slides.add(SlideData(
+          id: '${slides.length + 1}'.padLeft(2, '0'),
+          title: section.name.toUpperCase(),
+          subtitle: subtitleText,
+          imageUrl: sharedBg,
+          opacity: 0.80,
+          blur: 8.0,
+          titleFontSize: 36.0,
+          subtitleFontSize: 24.0,
+          alignment: TextAlign.center,
+        ));
+      }
     }
   }
 
@@ -767,10 +879,12 @@ class _SongToSlidesSidebarPaneState extends State<SongToSlidesSidebarPane> {
   }
 
   int get _estimatedSlideCount {
-    final text = _lyricsController.text;
-    if (text.trim().isEmpty) return 0;
-    final lines = text.split('\n').where((l) => l.trim().isNotEmpty).toList();
-    return (lines.length / _linesPerSlide).ceil();
+    final text = _lyricsController.text.trim();
+    if (text.isEmpty) return 0;
+    final songTitle = _titleController.text.trim().isEmpty
+        ? 'Choir Song'
+        : _titleController.text.trim();
+    return parseSongToSlides(text, songTitle, _linesPerSlide).length;
   }
 
   Future<void> _pickFile() async {

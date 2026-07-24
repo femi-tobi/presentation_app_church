@@ -983,6 +983,7 @@ class _LibraryCardState extends State<_LibraryCard> {
                 builder: (context) => PreviewPage(
                   presentationId: realPres.id,
                   initialSlides: realPres.slides,
+                  initialSections: realPres.sections,
                   outlineText: realPres.outlineText,
                 ),
               ),
@@ -1305,6 +1306,7 @@ How great, how great is our God.''';
                                             builder: (context) => PreviewPage(
                                               presentationId: realPres.id,
                                               initialSlides: realPres.slides,
+                                              initialSections: realPres.sections,
                                               outlineText: realPres.outlineText,
                                             ),
                                           ),
