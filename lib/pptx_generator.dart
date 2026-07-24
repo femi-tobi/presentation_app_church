@@ -5,6 +5,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:math';
 import 'package:archive/archive.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
@@ -200,7 +201,7 @@ class PptxGenerator {
     _add(archive, '_rels/.rels', _rootRels());
     _add(archive, 'docProps/app.xml', _appXml(slides.length));
     _add(archive, 'docProps/core.xml', _coreXml());
-    _add(archive, 'ppt/presentation.xml', _presentationXml(slides.length));
+    _add(archive, 'ppt/presentation.xml', _presentationXml(slides.length, sections));
     _add(archive, 'ppt/_rels/presentation.xml.rels', _presentationRels(slides.length));
     _add(archive, 'ppt/theme/theme1.xml', _themeXml(font));
     _add(archive, 'ppt/slideLayouts/slideLayout1.xml', _slideLayoutXml());
@@ -301,15 +302,49 @@ $slideEntries
 </cp:coreProperties>''';
   }
 
-  static String _presentationXml(int slideCount) {
+  static String _presentationXml(
+    int slideCount,
+    List<({
+      String name,
+      List<int> slideIndices,
+    })>? sections,
+  ) {
     final slideList = List.generate(
       slideCount,
       (i) => '<p:sldId id="${256 + i}" r:id="rId${i + 3}"/>',
     ).join('\n    ');
+
+    String extLstXml = '';
+    if (sections != null && sections.isNotEmpty) {
+      final sectionBuf = StringBuffer();
+      sectionBuf.writeln('  <p:extLst>');
+      sectionBuf.writeln('    <p:ext uri="{521415D9-36F7-43E2-AB2F-B90AF26B5E84}">');
+      sectionBuf.writeln('      <p14:sectionLst xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main">');
+      
+      for (final sec in sections) {
+        final secId = _generateUuid();
+        sectionBuf.writeln('        <p14:section name="${sec.name.replaceAll('"', '&amp;quot;')}" id="$secId">');
+        sectionBuf.writeln('          <p14:sldIdLst>');
+        for (final sIdx in sec.slideIndices) {
+          if (sIdx >= 0 && sIdx < slideCount) {
+            sectionBuf.writeln('            <p14:sldId id="${256 + sIdx}"/>');
+          }
+        }
+        sectionBuf.writeln('          </p14:sldIdLst>');
+        sectionBuf.writeln('        </p14:section>');
+      }
+      
+      sectionBuf.writeln('      </p14:sectionLst>');
+      sectionBuf.writeln('    </p:ext>');
+      sectionBuf.writeln('  </p:extLst>');
+      extLstXml = sectionBuf.toString();
+    }
+
     return '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
   xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
-  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+  xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main">
   <p:sldMasterIdLst>
     <p:sldMasterId id="2147483648" r:id="rId1"/>
   </p:sldMasterIdLst>
@@ -318,7 +353,7 @@ $slideEntries
   </p:sldIdLst>
   <p:sldSz cx="9144000" cy="5143500"/>
   <p:notesSz cx="6858000" cy="9144000"/>
-</p:presentation>''';
+$extLstXml</p:presentation>''';
   }
 
   static String _presentationRels(int slideCount) {
@@ -638,4 +673,25 @@ $slideEntries
   <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
 </p:sld>''';
   }
+
+  @visibleForTesting
+  static Future<List<int>> buildPptxForTesting(
+    List<({
+      String title,
+      String subtitle,
+      double titleFontSize,
+      double subtitleFontSize,
+      String? logoUrl,
+      double logoX,
+      double logoY,
+      double logoSize,
+      double textX,
+      double textY,
+      int bgColorValue,
+    })> slides, {
+    List<({
+      String name,
+      List<int> slideIndices,
+    })>? sections,
+  }) => _buildPptx(slides, null, null, sections);
 }

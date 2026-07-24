@@ -83,6 +83,20 @@ class _ExportPageState extends State<ExportPage>
             ))
         .toList();
 
+    final sections = AppSettings.instance.activeSections.map((sec) {
+      final List<int> slideIndices = [];
+      for (final slideId in sec.slideIds) {
+        final idx = activeSlides.indexWhere((s) => s.id == slideId);
+        if (idx != -1) {
+          slideIndices.add(idx);
+        }
+      }
+      return (
+        name: sec.name,
+        slideIndices: slideIndices,
+      );
+    }).toList();
+
     // Get the shared background image URL (all slides use the same one)
     final String? bgImageUrl =
         activeSlides.isNotEmpty ? activeSlides.first.imageUrl : null;
@@ -93,6 +107,7 @@ class _ExportPageState extends State<ExportPage>
       'LiveDeck_Presentation',
       backgroundImageUrl: bgImageUrl,
       fontFamily: AppSettings.instance.fontFamily,
+      sections: sections,
     );
 
     setState(() => _downloadState = _DownloadState.done);
