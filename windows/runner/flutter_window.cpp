@@ -31,6 +31,52 @@ bool FlutterWindow::OnCreate() {
     this->Show();
   });
 
+  // Setup MethodChannel for native fullscreen and topmost controls
+  channel_ = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+      flutter_controller_->engine()->messenger(), "window_control",
+      &flutter::StandardMethodCodec::GetInstance());
+
+  HWND hwnd = GetHandle();
+
+  channel_->SetMethodCallHandler(
+      [hwnd](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+        if (call.method_name() == "setFullscreen") {
+          const auto* arguments = std::get_if<flutter::EncodableMap>(call.arguments());
+          bool fullscreen = false;
+          if (arguments) {
+            auto it = arguments->find(flutter::EncodableValue("fullscreen"));
+            if (it != arguments->end()) {
+              fullscreen = std::get<bool>(it->second);
+            }
+          }
+
+          static WINDOWPLACEMENT g_wpPrev = { sizeof(g_wpPrev) };
+          DWORD dwStyle = GetWindowLong(hwnd, GWL_STYLE);
+          if (fullscreen) {
+            MONITORINFO mi = { sizeof(mi) };
+            if (GetWindowPlacement(hwnd, &g_wpPrev) &&
+                GetMonitorInfo(MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY), &mi)) {
+              SetWindowLong(hwnd, GWL_STYLE, dwStyle & ~WS_OVERLAPPEDWINDOW);
+              SetWindowPos(hwnd, HWND_TOPMOST,
+                           mi.rcMonitor.left, mi.rcMonitor.top,
+                           mi.rcMonitor.right - mi.rcMonitor.left,
+                           mi.rcMonitor.bottom - mi.rcMonitor.top,
+                           SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+            }
+          } else {
+            SetWindowLong(hwnd, GWL_STYLE, dwStyle | WS_OVERLAPPEDWINDOW);
+            SetWindowPlacement(hwnd, &g_wpPrev);
+            SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
+                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+                         SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+          }
+          result->Success(flutter::EncodableValue(true));
+        } else {
+          result->NotImplemented();
+        }
+      });
+
   // Flutter can complete the first frame before the "show window" callback is
   // registered. The following call ensures a frame is pending to ensure the
   // window is shown. It is a no-op if the first frame hasn't completed yet.

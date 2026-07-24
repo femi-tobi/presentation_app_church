@@ -11,6 +11,10 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'settings_state.dart';
 import 'dashboard_page.dart';
+import 'presentation_controller.dart';
+import 'display_manager.dart';
+import 'diagnostics_page.dart';
+import 'audience_window.dart';
 
 Uint8List _decodeDataUrlPresenter(String dataUrl) {
   return decodeDataUrl(dataUrl);
@@ -24,54 +28,60 @@ class ProfessionalPresenterView extends StatefulWidget {
   @override
   State<ProfessionalPresenterView> createState() => _ProfessionalPresenterViewState();
 }
-/// Presentation modes for the presenter view.
-enum PresentationMode { live, rehearsal, auto, locked }
 
 class _ProfessionalPresenterViewState extends State<ProfessionalPresenterView> {
-  late int _currentIndex;
   final FocusNode _focusNode = FocusNode();
-  late Timer _clockTimer;
   late Timer _blinkTimer;
-  late DateTime _startTime;
-  Duration _elapsed = Duration.zero;
-  PresentationMode _mode = PresentationMode.live;
   bool _liveDotVisible = true;
   bool _displaysSwapped = false;
 
   @override
   void initState() {
     super.initState();
-    _currentIndex = AppSettings.instance.activeSlideIndex;
-    _startTime = DateTime.now();
+    PresentationController.instance.initialize(
+      AppSettings.instance.activeSlides,
+      AppSettings.instance.activeSections,
+      AppSettings.instance.activeSlideIndex,
+    );
+    PresentationController.instance.addListener(_onControllerChanged);
+    DisplayManager.instance.addListener(_onDisplayChanged);
     _focusNode.requestFocus();
-
-    // Update clock every second
-    _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) {
-        setState(() {
-          _elapsed = DateTime.now().difference(_startTime);
-        });
-      }
-    });
 
     // Blink the LIVE dot
     _blinkTimer = Timer.periodic(const Duration(milliseconds: 600), (_) {
-      if (mounted && _mode == PresentationMode.live) {
+      if (mounted && PresentationController.instance.mode == PresentationMode.live) {
         setState(() => _liveDotVisible = !_liveDotVisible);
       }
     });
+
+    DisplayManager.instance.log('Presenter View initialized and synchronized.');
   }
 
   @override
   void dispose() {
-    _clockTimer.cancel();
+    PresentationController.instance.removeListener(_onControllerChanged);
+    DisplayManager.instance.removeListener(_onDisplayChanged);
     _blinkTimer.cancel();
     _focusNode.dispose();
     super.dispose();
   }
 
-  List<SlideData> get _slides => AppSettings.instance.activeSlides;
-  List<SlideSection> get _sections => AppSettings.instance.activeSections;
+  void _onControllerChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _onDisplayChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  int get _currentIndex => PresentationController.instance.presenterIndex;
+
+  List<SlideData> get _slides => PresentationController.instance.slides;
+  List<SlideSection> get _sections => PresentationController.instance.sections;
 
   SlideData? get _currentSlide =>
       _slides.isNotEmpty && _currentIndex < _slides.length ? _slides[_currentIndex] : null;
@@ -115,9 +125,13 @@ class _ProfessionalPresenterViewState extends State<ProfessionalPresenterView> {
 
   double get _progress => _slides.isEmpty ? 0 : (_currentIndex + 1) / _slides.length;
 
+  Duration get _elapsed => PresentationController.instance.elapsedTime;
+
   Duration get _estimatedRemaining {
     if (_slides.isEmpty || _currentIndex >= _slides.length - 1) return Duration.zero;
-    final avgPerSlide = _elapsed.inSeconds / (_currentIndex + 1);
+    final elapsedSec = _elapsed.inSeconds;
+    if (elapsedSec == 0) return Duration.zero;
+    final avgPerSlide = elapsedSec / (_currentIndex + 1);
     final remaining = avgPerSlide * (_slides.length - _currentIndex - 1);
     return Duration(seconds: remaining.round());
   }
@@ -135,18 +149,17 @@ class _ProfessionalPresenterViewState extends State<ProfessionalPresenterView> {
   }
 
   void _goTo(int index) {
-    if (index < 0 || index >= _slides.length) return;
-    setState(() => _currentIndex = index);
-    AppSettings.instance.activeSlideIndex = index;
+    PresentationController.instance.goTo(index);
   }
 
-  void _next() => _goTo(_currentIndex + 1);
-  void _prev() => _goTo(_currentIndex - 1);
-  void _goFirst() => _goTo(0);
-  void _goLast() => _goTo(_slides.length - 1);
+  void _next() => PresentationController.instance.next();
+  void _prev() => PresentationController.instance.prev();
+  void _goFirst() => PresentationController.instance.goFirst();
+  void _goLast() => PresentationController.instance.goLast();
 
   void _handleKeyEvent(KeyEvent event) {
     if (event is! KeyDownEvent) return;
+    if (PresentationController.instance.mode == PresentationMode.locked) return;
     switch (event.logicalKey) {
       case LogicalKeyboardKey.arrowRight:
       case LogicalKeyboardKey.space:
@@ -186,55 +199,79 @@ class _ProfessionalPresenterViewState extends State<ProfessionalPresenterView> {
       );
     }
 
+    final mainLayout = Column(
+      children: [
+        // Top bar
+        _buildTopBar(),
+
+        // Main content
+        Expanded(
+          child: Row(
+            children: [
+              // Left: Current Slide (large)
+              Expanded(
+                flex: 3,
+                child: _buildCurrentSlidePanel(),
+              ),
+
+              // Right column: Next slide + Notes
+              Expanded(
+                flex: 2,
+                child: Column(
+                  children: [
+                    // Next Slide preview
+                    Expanded(
+                      flex: 2,
+                      child: _buildNextSlidePanel(),
+                    ),
+                    // Speaker Notes
+                    Expanded(
+                      flex: 3,
+                      child: _buildNotesPanel(),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Section Info Bar
+        _buildSectionInfoBar(),
+
+        // Bottom Clock / Progress Bar
+        _buildBottomBar(),
+      ],
+    );
+
+    Widget bodyContent;
+    if (DisplayManager.instance.simulateAudience) {
+      bodyContent = Column(
+        children: [
+          Expanded(
+            flex: 3,
+            child: mainLayout,
+          ),
+          Container(
+            height: 6,
+            color: Colors.white10,
+          ),
+          const Expanded(
+            flex: 2,
+            child: AudienceWindow(),
+          ),
+        ],
+      );
+    } else {
+      bodyContent = mainLayout;
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFF0D0D1A),
       body: KeyboardListener(
         focusNode: _focusNode,
         onKeyEvent: _handleKeyEvent,
-        child: Column(
-          children: [
-            // Top bar
-            _buildTopBar(),
-
-            // Main content
-            Expanded(
-              child: Row(
-                children: [
-                  // Left: Current Slide (large)
-                  Expanded(
-                    flex: 3,
-                    child: _buildCurrentSlidePanel(),
-                  ),
-
-                  // Right column: Next slide + Notes
-                  Expanded(
-                    flex: 2,
-                    child: Column(
-                      children: [
-                        // Next Slide preview
-                        Expanded(
-                          flex: 2,
-                          child: _buildNextSlidePanel(),
-                        ),
-                        // Speaker Notes
-                        Expanded(
-                          flex: 3,
-                          child: _buildNotesPanel(),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // Section Info Bar
-            _buildSectionInfoBar(),
-
-            // Bottom Clock / Progress Bar
-            _buildBottomBar(),
-          ],
-        ),
+        child: bodyContent,
       ),
     );
   }
@@ -242,7 +279,8 @@ class _ProfessionalPresenterViewState extends State<ProfessionalPresenterView> {
   // ─── Top Bar ─────────────────────────────────────────────────────────────
 
   Widget _buildTopBar() {
-    // Mode badge config
+    final pc = PresentationController.instance;
+    final dm = DisplayManager.instance;
     final modeBadge = _getModeBadge();
 
     return Container(
@@ -268,7 +306,7 @@ class _ProfessionalPresenterViewState extends State<ProfessionalPresenterView> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   AnimatedOpacity(
-                    opacity: _mode == PresentationMode.live
+                    opacity: pc.mode == PresentationMode.live
                         ? (_liveDotVisible ? 1.0 : 0.2)
                         : 1.0,
                     duration: const Duration(milliseconds: 200),
@@ -311,38 +349,80 @@ class _ProfessionalPresenterViewState extends State<ProfessionalPresenterView> {
 
           const SizedBox(width: 16),
 
-          // Display layout indicator
-          Tooltip(
-            message: 'Swap Displays',
-            child: InkWell(
-              onTap: () => setState(() => _displaysSwapped = !_displaysSwapped),
+          // "Present To" Dropdown
+          Text(
+            'Present To:',
+            style: GoogleFonts.inter(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.06),
               borderRadius: BorderRadius.circular(4),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.06),
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: Colors.white.withOpacity(0.1)),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.swap_horiz, size: 14, color: Colors.white54),
-                    const SizedBox(width: 6),
-                    Text(
-                      _displaysSwapped
-                          ? '[1: Audience] [2: Presenter]'
-                          : '[1: Presenter] [2: Audience]',
-                      style: GoogleFonts.inter(
-                        color: Colors.white38,
-                        fontSize: 10,
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              border: Border.all(color: Colors.white.withOpacity(0.1)),
             ),
+            child: DropdownButton<String>(
+              value: dm.selectedDisplay?.id,
+              dropdownColor: const Color(0xFF151528),
+              underline: const SizedBox(),
+              icon: const Icon(Icons.arrow_drop_down, size: 16, color: Colors.white54),
+              style: GoogleFonts.inter(color: Colors.white70, fontSize: 11),
+              onChanged: (val) {
+                if (val != null) {
+                  dm.selectDisplay(val);
+                }
+              },
+              items: dm.displays.map((disp) {
+                return DropdownMenuItem<String>(
+                  value: disp.id,
+                  child: Text(
+                    '${disp.name} (${disp.resolution})',
+                    style: GoogleFonts.inter(color: Colors.white70, fontSize: 11),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+
+          const SizedBox(width: 12),
+
+          // Diagnostics Panel Launcher
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF222238),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              textStyle: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold),
+            ),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const DiagnosticsPage()),
+              );
+            },
+            icon: const Icon(Icons.analytics_outlined, size: 14),
+            label: const Text('Diagnostics'),
+          ),
+
+          const SizedBox(width: 12),
+
+          // Start Presentation Button
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green[800],
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              textStyle: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold),
+            ),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const AudienceWindow()),
+              );
+            },
+            icon: const Icon(Icons.play_arrow, size: 14),
+            label: const Text('Start Presentation'),
           ),
 
           const Spacer(),
@@ -370,7 +450,8 @@ class _ProfessionalPresenterViewState extends State<ProfessionalPresenterView> {
   }
 
   _ModeBadge _getModeBadge() {
-    switch (_mode) {
+    final mode = PresentationController.instance.mode;
+    switch (mode) {
       case PresentationMode.live:
         return _ModeBadge('LIVE', Colors.red);
       case PresentationMode.rehearsal:
@@ -407,7 +488,7 @@ class _ProfessionalPresenterViewState extends State<ProfessionalPresenterView> {
             Icon(m.$4, size: 16, color: m.$3),
             const SizedBox(width: 8),
             Text(m.$2, style: GoogleFonts.inter(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600)),
-            if (m.$1 == _mode) ...[
+            if (m.$1 == PresentationController.instance.mode) ...[
               const Spacer(),
               Icon(Icons.check, size: 14, color: m.$3),
             ],
@@ -415,7 +496,9 @@ class _ProfessionalPresenterViewState extends State<ProfessionalPresenterView> {
         ),
       )).toList(),
     ).then((value) {
-      if (value != null) setState(() => _mode = value);
+      if (value != null) {
+        PresentationController.instance.setMode(value);
+      }
     });
   }
 
@@ -868,46 +951,58 @@ class _SlidePreviewWidget extends StatelessWidget {
             // Text content
             Positioned.fill(
               child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    if (slide.title.isNotEmpty)
-                      Text(
-                        slide.title,
-                        textAlign: slide.alignment,
-                        maxLines: showDetails ? 4 : 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.inter(
-                          color: Colors.white,
-                          fontWeight: slide.isBold ? FontWeight.bold : FontWeight.w600,
-                          fontStyle: slide.isItalic ? FontStyle.italic : FontStyle.normal,
-                          fontSize: showDetails ? 20 : 14,
-                          shadows: const [
-                            Shadow(color: Colors.black54, offset: Offset(0, 2), blurRadius: 6),
-                          ],
-                        ),
-                      ),
-                    if (slide.subtitle.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        slide.subtitle,
-                        textAlign: slide.alignment,
-                        maxLines: showDetails ? 8 : 3,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.inter(
-                          color: Colors.white.withOpacity(0.9),
-                          fontWeight: slide.isBold ? FontWeight.w600 : FontWeight.normal,
-                          fontStyle: slide.isItalic ? FontStyle.italic : FontStyle.normal,
-                          fontSize: showDetails ? 16 : 11,
-                          height: 1.5,
-                          shadows: const [
-                            Shadow(color: Colors.black54, offset: Offset(0, 2), blurRadius: 6),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
+                padding: const EdgeInsets.all(8),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    if (constraints.maxHeight < 40 || constraints.maxWidth < 60) {
+                      return const SizedBox.shrink();
+                    }
+                    return Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (slide.title.isNotEmpty)
+                          Flexible(
+                            child: Text(
+                              slide.title,
+                              textAlign: slide.alignment,
+                              maxLines: showDetails ? 4 : 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.inter(
+                                color: Colors.white,
+                                fontWeight: slide.isBold ? FontWeight.bold : FontWeight.w600,
+                                fontStyle: slide.isItalic ? FontStyle.italic : FontStyle.normal,
+                                fontSize: showDetails ? 20 : 14,
+                                shadows: const [
+                                  Shadow(color: Colors.black54, offset: Offset(0, 2), blurRadius: 6),
+                                ],
+                              ),
+                            ),
+                          ),
+                        if (slide.subtitle.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Flexible(
+                            child: Text(
+                              slide.subtitle,
+                              textAlign: slide.alignment,
+                              maxLines: showDetails ? 8 : 3,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.inter(
+                                color: Colors.white.withOpacity(0.9),
+                                fontWeight: slide.isBold ? FontWeight.w600 : FontWeight.normal,
+                                fontStyle: slide.isItalic ? FontStyle.italic : FontStyle.normal,
+                                fontSize: showDetails ? 16 : 11,
+                                height: 1.4,
+                                shadows: const [
+                                  Shadow(color: Colors.black54, offset: Offset(0, 2), blurRadius: 6),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    );
+                  }
                 ),
               ),
             ),

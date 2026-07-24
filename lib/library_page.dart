@@ -1,10 +1,15 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
+import 'package:file_picker/file_picker.dart';
 import 'dashboard_page.dart'; // Reuse SacredColors, SacredTypography, SacredShadows
 import 'settings_state.dart';
 import 'preview_page.dart';
 import 'fullscreen_presenter_page.dart';
 import 'connectivity_badge.dart';
+import 'pptx_parser.dart';
 
 class LibraryPage extends StatefulWidget {
   final GlobalKey<ScaffoldState>? scaffoldKey;
@@ -20,12 +25,211 @@ class _LibraryPageState extends State<LibraryPage> {
   List<LibraryItem> _hymns = [];
   bool _isLoadingHymns = false;
   late List<LibraryItem> _dynamicMockItems;
+  final Set<String> _selectedIds = {};
 
   @override
   void initState() {
     super.initState();
     _dynamicMockItems = List.from(_items);
     _loadHymns();
+  }
+
+  void _toggleSelection(String itemId) {
+    setState(() {
+      if (_selectedIds.contains(itemId)) {
+        _selectedIds.remove(itemId);
+      } else {
+        _selectedIds.add(itemId);
+      }
+    });
+  }
+
+  void _clearSelection() {
+    setState(() {
+      _selectedIds.clear();
+    });
+  }
+
+  void _selectAll(List<LibraryItem> currentItems) {
+    setState(() {
+      if (_selectedIds.length == currentItems.length) {
+        _selectedIds.clear();
+      } else {
+        _selectedIds.addAll(currentItems.map((item) => item.id));
+      }
+    });
+  }
+
+  void _deleteSelectedItems(List<LibraryItem> filteredItems) {
+    final List<LibraryItem> itemsToDelete = filteredItems.where((item) => _selectedIds.contains(item.id)).toList();
+    if (itemsToDelete.isEmpty) return;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Delete ${itemsToDelete.length} Items'),
+        content: Text('Are you sure you want to delete these ${itemsToDelete.length} items? This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: SacredColors.error,
+              foregroundColor: SacredColors.onError,
+            ),
+            onPressed: () {
+              Navigator.of(context).pop();
+              for (final item in itemsToDelete) {
+                _deleteItem(item, showSnackbar: false);
+              }
+              setState(() {
+                _selectedIds.clear();
+              });
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Successfully deleted ${itemsToDelete.length} items.'),
+                  backgroundColor: Colors.redAccent,
+                ),
+              );
+            },
+            child: const Text('Delete All'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _uploadBackgroundImage() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'],
+      );
+
+      if (result == null || result.files.isEmpty) return;
+
+      final file = result.files.first;
+      Uint8List? fileBytes;
+      if (kIsWeb) {
+        fileBytes = file.bytes;
+      } else if (file.path != null) {
+        fileBytes = await File(file.path!).readAsBytes();
+      }
+
+      if (fileBytes == null) return;
+
+      final extension = file.extension?.toLowerCase() ?? 'png';
+      final mimeType = extension == 'jpg' ? 'image/jpeg' : 'image/$extension';
+      final base64String = base64.encode(fileBytes);
+      final dataUrl = 'data:$mimeType;base64,$base64String';
+
+      final newItem = LibraryItem(
+        id: 'uploaded_media_${DateTime.now().millisecondsSinceEpoch}',
+        title: file.name.replaceAll('.$extension', ''),
+        category: 'Media',
+        metadata: '${extension.toUpperCase()} • Local Upload • ${_formatSize(file.size)}',
+        imageUrl: dataUrl,
+        tag: 'Background',
+      );
+
+      setState(() {
+        _dynamicMockItems.insert(0, newItem);
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Successfully uploaded background "${newItem.title}"'),
+            backgroundColor: AppSettings.instance.primaryColor,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error uploading image: $e'),
+            backgroundColor: SacredColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  String _formatSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+
+  Future<void> _importPptxDeck() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pptx'],
+      );
+
+      if (result == null || result.files.isEmpty) return;
+
+      final file = result.files.first;
+      Uint8List? fileBytes;
+      if (kIsWeb) {
+        fileBytes = file.bytes;
+      } else if (file.path != null) {
+        fileBytes = await File(file.path!).readAsBytes();
+      }
+
+      if (fileBytes == null) return;
+
+      final cleanTitle = file.name.replaceAll('.pptx', '');
+      final parsedSlides = PptxParser.parsePptx(fileBytes, cleanTitle);
+      final presentationId = 'imported_${DateTime.now().millisecondsSinceEpoch}';
+
+      // Register the imported deck in recent presentations list
+      final newRecord = PresentationRecord(
+        id: presentationId,
+        title: cleanTitle,
+        slideCount: parsedSlides.length,
+        thumbnailUrl: '',
+        createdAt: DateTime.now(),
+        slides: parsedSlides,
+        outlineText: parsedSlides.map((s) => s.subtitle).join('\n\n'),
+      );
+      AppSettings.instance.addRecentPresentation(newRecord);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Successfully imported "${newRecord.title}"'),
+            backgroundColor: AppSettings.instance.primaryColor,
+          ),
+        );
+
+        // Navigate directly to editing page
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => PreviewPage(
+              presentationId: newRecord.id,
+              initialSlides: newRecord.slides,
+              initialSections: newRecord.sections,
+              outlineText: newRecord.outlineText,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error importing PPTX: $e'),
+            backgroundColor: SacredColors.error,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _loadHymns() async {
@@ -160,16 +364,18 @@ class _LibraryPageState extends State<LibraryPage> {
     ),
   ];
 
-  void _deleteItem(LibraryItem item) {
+  void _deleteItem(LibraryItem item, {bool showSnackbar = true}) {
     if (item.category == 'Presentations') {
       if (AppSettings.instance.recentPresentations.any((p) => p.id == item.id)) {
         AppSettings.instance.deleteRecentPresentation(item.id);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Deleted presentation "${item.title}"'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
+        if (showSnackbar) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Deleted presentation "${item.title}"'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
         return;
       }
     }
@@ -179,12 +385,14 @@ class _LibraryPageState extends State<LibraryPage> {
       _hymns.removeWhere((x) => x.id == item.id);
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Removed "${item.title}" from library'),
-        backgroundColor: Colors.redAccent,
-      ),
-    );
+    if (showSnackbar) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Removed "${item.title}" from library'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
   }
 
   void _renameItem(LibraryItem item, String newTitle) {
@@ -393,12 +601,18 @@ class _LibraryPageState extends State<LibraryPage> {
                               ),
                               ElevatedButton.icon(
                                 onPressed: () {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text('Importing new item into $_selectedCategory...'),
-                                      backgroundColor: primaryColor,
-                                    ),
-                                  );
+                                  if (_selectedCategory == 'Presentations') {
+                                    _importPptxDeck();
+                                  } else if (_selectedCategory == 'Media') {
+                                    _uploadBackgroundImage();
+                                  } else {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('Importing new item into $_selectedCategory...'),
+                                        backgroundColor: primaryColor,
+                                      ),
+                                    );
+                                  }
                                 },
                                 icon: const Icon(Icons.cloud_upload_outlined, size: 18),
                                 label: Text(
@@ -414,7 +628,50 @@ class _LibraryPageState extends State<LibraryPage> {
                               ),
                             ],
                           ),
-                          const SizedBox(height: 24),
+                          const SizedBox(height: 12),
+
+                          // Selection banner/toolbar
+                          if (_selectedIds.isNotEmpty) ...[
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: primaryColor.withOpacity(0.08),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: primaryColor.withOpacity(0.2)),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.check_circle_outline, color: primaryColor),
+                                  const SizedBox(width: 10),
+                                  Text(
+                                    '${_selectedIds.length} items selected',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: primaryColor,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  TextButton.icon(
+                                    icon: const Icon(Icons.select_all),
+                                    label: Text(_selectedIds.length == filteredItems.length ? 'Deselect All' : 'Select All'),
+                                    onPressed: () => _selectAll(filteredItems),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  TextButton.icon(
+                                    icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                                    label: const Text('Delete Selected', style: TextStyle(color: Colors.redAccent)),
+                                    onPressed: () => _deleteSelectedItems(filteredItems),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  IconButton(
+                                    icon: const Icon(Icons.close),
+                                    onPressed: _clearSelection,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                          ],
 
                           // Library Items Grid
                           if (_isLoadingHymns && _selectedCategory == 'Songs')
@@ -450,6 +707,9 @@ class _LibraryPageState extends State<LibraryPage> {
                                 return _LibraryCard(
                                   item: item,
                                   primaryColor: primaryColor,
+                                  isSelected: _selectedIds.contains(item.id),
+                                  isSelectionModeActive: _selectedIds.isNotEmpty,
+                                  onToggleSelect: () => _toggleSelection(item.id),
                                   onDelete: () => _deleteItem(item),
                                   onRename: (newTitle) => _renameItem(item, newTitle),
                                   onDuplicate: () => _duplicateItem(item),
@@ -651,6 +911,9 @@ class _LibraryCard extends StatefulWidget {
   final VoidCallback? onDelete;
   final ValueChanged<String>? onRename;
   final VoidCallback? onDuplicate;
+  final bool isSelected;
+  final bool isSelectionModeActive;
+  final VoidCallback onToggleSelect;
 
   const _LibraryCard({
     required this.item,
@@ -658,6 +921,9 @@ class _LibraryCard extends StatefulWidget {
     this.onDelete,
     this.onRename,
     this.onDuplicate,
+    required this.isSelected,
+    required this.isSelectionModeActive,
+    required this.onToggleSelect,
   });
 
   @override
@@ -1226,6 +1492,12 @@ How great, how great is our God.''';
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
       child: GestureDetector(
+        onTap: () {
+          if (widget.isSelectionModeActive) {
+            widget.onToggleSelect();
+          }
+        },
+        onLongPress: widget.onToggleSelect,
         onSecondaryTapDown: (details) => _showContextMenu(context, details.globalPosition),
         onLongPressStart: (details) => _showContextMenu(context, details.globalPosition),
         child: AnimatedContainer(
@@ -1235,10 +1507,12 @@ How great, how great is our God.''';
           color: isSong ? Colors.black : SacredColors.surface.withValues(alpha: 0.7),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: _isHovered
-                ? widget.primaryColor.withValues(alpha: 0.5)
-                : (isSong ? Colors.white24 : SacredColors.outlineVariant.withValues(alpha: 0.5)),
-            width: 1.0,
+            color: widget.isSelected
+                ? widget.primaryColor
+                : (_isHovered
+                    ? widget.primaryColor.withValues(alpha: 0.5)
+                    : (isSong ? Colors.white24 : SacredColors.outlineVariant.withValues(alpha: 0.5))),
+            width: widget.isSelected ? 2.0 : 1.0,
           ),
           boxShadow: _isHovered ? SacredShadows.sacred : null,
         ),
@@ -1280,100 +1554,101 @@ How great, how great is our God.''';
                             ),
                     ),
 
-                    // Hover Button Actions overlay
-                    AnimatedOpacity(
-                      opacity: _isHovered ? 1.0 : 0.0,
-                      duration: const Duration(milliseconds: 200),
-                      child: Container(
-                        color: Colors.black.withValues(alpha: 0.4),
-                        child: Center(
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              // Edit presentation/lyrics
-                              CircleAvatar(
-                                backgroundColor: Colors.white,
-                                child: IconButton(
-                                  icon: Icon(Icons.edit, color: widget.primaryColor),
-                                  onPressed: () {
-                                    if (widget.item.category == 'Presentations') {
-                                      final matches = AppSettings.instance.recentPresentations.where((p) => p.id == widget.item.id);
-                                      if (matches.isNotEmpty) {
-                                        final realPres = matches.first;
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (context) => PreviewPage(
-                                              presentationId: realPres.id,
-                                              initialSlides: realPres.slides,
-                                              initialSections: realPres.sections,
-                                              outlineText: realPres.outlineText,
+                    // Hover Button Actions overlay - only show if selection mode is not active
+                    if (!widget.isSelectionModeActive)
+                      AnimatedOpacity(
+                        opacity: _isHovered ? 1.0 : 0.0,
+                        duration: const Duration(milliseconds: 200),
+                        child: Container(
+                          color: Colors.black.withValues(alpha: 0.4),
+                          child: Center(
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                // Edit presentation/lyrics
+                                CircleAvatar(
+                                  backgroundColor: Colors.white,
+                                  child: IconButton(
+                                    icon: Icon(Icons.edit, color: widget.primaryColor),
+                                    onPressed: () {
+                                      if (widget.item.category == 'Presentations') {
+                                        final matches = AppSettings.instance.recentPresentations.where((p) => p.id == widget.item.id);
+                                        if (matches.isNotEmpty) {
+                                          final realPres = matches.first;
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (context) => PreviewPage(
+                                                presentationId: realPres.id,
+                                                initialSlides: realPres.slides,
+                                                initialSections: realPres.sections,
+                                                outlineText: realPres.outlineText,
+                                              ),
                                             ),
-                                          ),
-                                        );
+                                          );
+                                        } else {
+                                          final String fallbackId = DateTime.now().millisecondsSinceEpoch.toString();
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (context) => PreviewPage(
+                                                presentationId: fallbackId,
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                      } else if (widget.item.category == 'Songs' && widget.item.assetPath != null) {
+                                        _editHymn(context);
                                       } else {
-                                        final String fallbackId = DateTime.now().millisecondsSinceEpoch.toString();
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (context) => PreviewPage(
-                                              presentationId: fallbackId,
-                                            ),
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text('Editing ${widget.item.title}...'),
+                                            backgroundColor: widget.primaryColor,
                                           ),
                                         );
                                       }
-                                    } else if (widget.item.category == 'Songs' && widget.item.assetPath != null) {
-                                      _editHymn(context);
-                                    } else {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: Text('Editing ${widget.item.title}...'),
-                                          backgroundColor: widget.primaryColor,
-                                        ),
-                                      );
-                                    }
-                                  },
+                                    },
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 16),
-                              // Go Live / Project Fullscreen Presenter
-                              CircleAvatar(
-                                backgroundColor: SacredColors.secondaryContainer,
-                                child: IconButton(
-                                  icon: Icon(Icons.play_arrow, color: SacredColors.onSecondaryContainer),
-                                  onPressed: () {
-                                    if (widget.item.category == 'Presentations') {
-                                      final matches = AppSettings.instance.recentPresentations.where((p) => p.id == widget.item.id);
-                                      if (matches.isNotEmpty) {
-                                        final realPres = matches.first;
-                                        AppSettings.instance.updateActiveSlides(realPres.slides);
-                                        AppSettings.instance.activeSlideIndex = 0;
+                                const SizedBox(width: 16),
+                                // Go Live / Project Fullscreen Presenter
+                                CircleAvatar(
+                                  backgroundColor: SacredColors.secondaryContainer,
+                                  child: IconButton(
+                                    icon: Icon(Icons.play_arrow, color: SacredColors.onSecondaryContainer),
+                                    onPressed: () {
+                                      if (widget.item.category == 'Presentations') {
+                                        final matches = AppSettings.instance.recentPresentations.where((p) => p.id == widget.item.id);
+                                        if (matches.isNotEmpty) {
+                                          final realPres = matches.first;
+                                          AppSettings.instance.updateActiveSlides(realPres.slides);
+                                          AppSettings.instance.activeSlideIndex = 0;
+                                        } else {
+                                          // Default template
+                                          AppSettings.instance.updateActiveSlides(AppSettings.instance.activeSlides);
+                                          AppSettings.instance.activeSlideIndex = 0;
+                                        }
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(builder: (context) => const FullscreenPresenterPage()),
+                                        );
+                                      } else if (widget.item.category == 'Songs' && widget.item.assetPath != null) {
+                                        _playHymn(context);
                                       } else {
-                                        // Default template
-                                        AppSettings.instance.updateActiveSlides(AppSettings.instance.activeSlides);
-                                        AppSettings.instance.activeSlideIndex = 0;
+                                        // Fallback for mock items
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(builder: (context) => const FullscreenPresenterPage()),
+                                        );
                                       }
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(builder: (context) => const FullscreenPresenterPage()),
-                                      );
-                                    } else if (widget.item.category == 'Songs' && widget.item.assetPath != null) {
-                                      _playHymn(context);
-                                    } else {
-                                      // Fallback for mock items
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(builder: (context) => const FullscreenPresenterPage()),
-                                      );
-                                    }
-                                  },
+                                    },
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
-                    ),
 
                     // Tag Badge
                     Positioned(
@@ -1394,6 +1669,29 @@ How great, how great is our God.''';
                         ),
                       ),
                     ),
+
+                    // Selection Checkbox
+                    if (widget.isSelectionModeActive || _isHovered || widget.isSelected)
+                      Positioned(
+                        top: 12,
+                        right: 12,
+                        child: GestureDetector(
+                          onTap: widget.onToggleSelect,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: widget.isSelected ? widget.primaryColor : Colors.black.withValues(alpha: 0.6),
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 1.5),
+                            ),
+                            padding: const EdgeInsets.all(4),
+                            child: Icon(
+                              widget.isSelected ? Icons.check : Icons.add,
+                              color: Colors.white,
+                              size: 14,
+                            ),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
