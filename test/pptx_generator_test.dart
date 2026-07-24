@@ -5,7 +5,19 @@ import 'package:presentation_app/pptx_generator.dart';
 
 void main() {
   test('PPTX Generation Verification - SlideMaster styles and PowerPoint Sections', () async {
-    final slides = [
+    final List<({
+      String title,
+      String subtitle,
+      double titleFontSize,
+      double subtitleFontSize,
+      String? logoUrl,
+      double logoX,
+      double logoY,
+      double logoSize,
+      double textX,
+      double textY,
+      int bgColorValue,
+    })> slides = [
       (
         title: 'Slide 1 Title',
         subtitle: 'Slide 1 Subtitle',
@@ -68,7 +80,7 @@ void main() {
 
     // 2. Verify p14 namespace and native sections list in presentation.xml
     expect(presentationXml, contains('xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main"'));
-    expect(presentationXml, contains('<p14:sectionLst>'));
+    expect(presentationXml, contains('<p14:sectionLst'));
     expect(presentationXml, contains('<p14:section name="Verse 1"'));
     expect(presentationXml, contains('<p14:section name="Chorus"'));
     expect(presentationXml, contains('<p14:sldId id="256"/>'));

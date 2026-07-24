@@ -2168,15 +2168,22 @@ class _SectionHeaderState extends State<_SectionHeader> {
       },
     );
 
-    Overlay.of(context).insert(_overlayEntry!);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _overlayEntry != null) {
+        Overlay.of(context).insert(_overlayEntry!);
+      }
+    });
   }
 
   void _removeOverlayEntry() {
     _showTimer?.cancel();
     _hideTimer?.cancel();
     if (_overlayEntry != null) {
-      _overlayEntry?.remove();
+      final entry = _overlayEntry;
       _overlayEntry = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        entry?.remove();
+      });
     }
   }
 
