@@ -483,46 +483,46 @@ class _PreviewPageState extends State<PreviewPage> {
   }
 
   void _onSlideChanged() {
-    setState(() {
-      if (_applyToAll) {
-        _applyActiveStylesToAll();
-      }
-    });
+    if (_applyToAll) {
+      _applyActiveStylesToAll();
+    } else {
+      _slides[_activeSlideIndex].update();
+    }
     AppSettings.instance.updateActiveSlides(_slides);
     _saveToRecentList();
   }
 
   /// Called when the user picks a new image.
   void _onSlideImageChanged(String dataUrl) {
-    setState(() {
-      _slides[_activeSlideIndex].imageUrl = dataUrl;
-      _slides[_activeSlideIndex].bgColorValue = 0xFF000000;
-      if (_applyToAll) {
-        _applyActiveStylesToAll();
-      }
-    });
+    _slides[_activeSlideIndex].imageUrl = dataUrl;
+    _slides[_activeSlideIndex].bgColorValue = 0xFF000000;
+    if (_applyToAll) {
+      _applyActiveStylesToAll();
+    } else {
+      _slides[_activeSlideIndex].update();
+    }
     AppSettings.instance.updateActiveSlides(_slides);
     _saveToRecentList();
   }
 
   void _onLogoChanged(String? newLogo) {
-    setState(() {
-      _slides[_activeSlideIndex].logoUrl = newLogo;
-      if (_applyToAll) {
-        _applyActiveStylesToAll();
-      }
-    });
+    _slides[_activeSlideIndex].logoUrl = newLogo;
+    if (_applyToAll) {
+      _applyActiveStylesToAll();
+    } else {
+      _slides[_activeSlideIndex].update();
+    }
     AppSettings.instance.updateActiveSlides(_slides);
     _saveToRecentList();
   }
 
   void _onLogoSizeChanged(double val) {
-    setState(() {
-      _slides[_activeSlideIndex].logoSize = val;
-      if (_applyToAll) {
-        _applyActiveStylesToAll();
-      }
-    });
+    _slides[_activeSlideIndex].logoSize = val;
+    if (_applyToAll) {
+      _applyActiveStylesToAll();
+    } else {
+      _slides[_activeSlideIndex].update();
+    }
     AppSettings.instance.updateActiveSlides(_slides);
     _saveToRecentList();
   }
@@ -711,13 +711,13 @@ class _PreviewPageState extends State<PreviewPage> {
                           onLogoChanged: _onLogoChanged,
                           onLogoSizeChanged: _onLogoSizeChanged,
                           onBgColorChanged: (color) {
-                            setState(() {
-                              activeSlide.bgColorValue = color.value;
-                              activeSlide.imageUrl = "";
-                              if (_applyToAll) {
-                                _applyActiveStylesToAll();
-                              }
-                            });
+                            activeSlide.bgColorValue = color.value;
+                            activeSlide.imageUrl = "";
+                            if (_applyToAll) {
+                              _applyActiveStylesToAll();
+                            } else {
+                              activeSlide.update();
+                            }
                             AppSettings.instance.updateActiveSlides(_slides);
                             _saveToRecentList();
                           },
@@ -751,24 +751,24 @@ class _PreviewPageState extends State<PreviewPage> {
                         }
                       },
                       onLogoPositionChanged: (x, y) {
-                        setState(() {
-                          activeSlide.logoX = x;
-                          activeSlide.logoY = y;
-                          if (_applyToAll) {
-                            _applyActiveStylesToAll();
-                          }
-                        });
+                        activeSlide.logoX = x;
+                        activeSlide.logoY = y;
+                        if (_applyToAll) {
+                          _applyActiveStylesToAll();
+                        } else {
+                          activeSlide.update();
+                        }
                         AppSettings.instance.updateActiveSlides(_slides);
                         _saveToRecentList();
                       },
                       onTextPositionChanged: (x, y) {
-                        setState(() {
-                          activeSlide.textX = x;
-                          activeSlide.textY = y;
-                          if (_applyToAll) {
-                            _applyActiveStylesToAll();
-                          }
-                        });
+                        activeSlide.textX = x;
+                        activeSlide.textY = y;
+                        if (_applyToAll) {
+                          _applyActiveStylesToAll();
+                        } else {
+                          activeSlide.update();
+                        }
                         AppSettings.instance.updateActiveSlides(_slides);
                         _saveToRecentList();
                       },
@@ -788,13 +788,13 @@ class _PreviewPageState extends State<PreviewPage> {
                 onLogoChanged: _onLogoChanged,
                 onLogoSizeChanged: _onLogoSizeChanged,
                 onBgColorChanged: (color) {
-                  setState(() {
-                    activeSlide.bgColorValue = color.value;
-                    activeSlide.imageUrl = "";
-                    if (_applyToAll) {
-                      _applyActiveStylesToAll();
-                    }
-                  });
+                  activeSlide.bgColorValue = color.value;
+                  activeSlide.imageUrl = "";
+                  if (_applyToAll) {
+                    _applyActiveStylesToAll();
+                  } else {
+                    activeSlide.update();
+                  }
                   AppSettings.instance.updateActiveSlides(_slides);
                   _saveToRecentList();
                 },
@@ -1136,108 +1136,113 @@ class _SlideThumbnailCardState extends State<_SlideThumbnailCard> {
       0, 0, 0, 1, 0, // Alpha
     ];
 
-    final bool renderFullColor = widget.isActive || _isHovered;
+    return ListenableBuilder(
+      listenable: widget.slide,
+      builder: (context, _) {
+        final bool renderFullColor = widget.isActive || _isHovered;
 
-    return MouseRegion(
-      onEnter: (_) => setState(() => _isHovered = true),
-      onExit: (_) => setState(() => _isHovered = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(8),
-                boxShadow: widget.isActive ? SacredShadows.sacred : null,
-                border: Border.all(
-                  color: widget.isActive
-                      ? SacredColors.primary
-                      : (_isHovered
-                          ? SacredColors.primary.withValues(alpha: 0.5)
-                          : SacredColors.outlineVariant),
-                  width: widget.isActive ? 2.5 : 1.0,
-                ),
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(6),
-                child: AspectRatio(
-                  aspectRatio: 16 / 9,
-                  child: Stack(
-                    children: [
-                      // Grayscale ColorFilter Transition Layer
-                      Positioned.fill(
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 300),
-                          child: ColorFiltered(
-                            colorFilter: renderFullColor
-                                ? const ColorFilter.mode(Colors.transparent, BlendMode.multiply)
-                                : const ColorFilter.matrix(grayscaleMatrix),
-                            child: widget.slide.imageUrl.isEmpty
-                                ? Container(color: Colors.black)
-                                : widget.slide.imageUrl.startsWith('data:')
-                                    ? Image.memory(
-                                        _decodeDataUrl(widget.slide.imageUrl),
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (context, e, s) => Container(
-                                          color: SacredColors.surfaceContainerHigh,
-                                          child: Icon(Icons.image, color: SacredColors.primary),
-                                        ),
-                                      )
-                                    : Image.network(
-                                        widget.slide.imageUrl,
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (context, e, s) => Container(
-                                          color: SacredColors.surfaceContainerHigh,
-                                          child: Icon(Icons.image, color: SacredColors.primary),
-                                        ),
-                                      ),
-                          ),
-                        ),
-                      ),
-
-                      // Index Slide Badge
-                      Positioned(
-                        bottom: 4,
-                        right: 4,
-                        child: Container(
-                          padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: widget.isActive ? SacredColors.primary : SacredColors.surfaceContainerHighest,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            widget.indexText,
-                            style: SacredTypography.labelSm(context).copyWith(
-                              fontSize: 9,
-                              fontWeight: FontWeight.bold,
-                              color: widget.isActive ? Colors.white : SacredColors.onSurface,
+        return MouseRegion(
+          onEnter: (_) => setState(() => _isHovered = true),
+          onExit: (_) => setState(() => _isHovered = false),
+          child: GestureDetector(
+            onTap: widget.onTap,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: widget.isActive ? SacredShadows.sacred : null,
+                    border: Border.all(
+                      color: widget.isActive
+                          ? SacredColors.primary
+                          : (_isHovered
+                              ? SacredColors.primary.withValues(alpha: 0.5)
+                              : SacredColors.outlineVariant),
+                      width: widget.isActive ? 2.5 : 1.0,
+                    ),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: AspectRatio(
+                      aspectRatio: 16 / 9,
+                      child: Stack(
+                        children: [
+                          // Grayscale ColorFilter Transition Layer
+                          Positioned.fill(
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 300),
+                              child: ColorFiltered(
+                                colorFilter: renderFullColor
+                                    ? const ColorFilter.mode(Colors.transparent, BlendMode.multiply)
+                                    : const ColorFilter.matrix(grayscaleMatrix),
+                                child: widget.slide.imageUrl.isEmpty
+                                    ? Container(color: Colors.black)
+                                    : widget.slide.imageUrl.startsWith('data:')
+                                        ? Image.memory(
+                                            _decodeDataUrl(widget.slide.imageUrl),
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (context, e, s) => Container(
+                                              color: SacredColors.surfaceContainerHigh,
+                                              child: Icon(Icons.image, color: SacredColors.primary),
+                                            ),
+                                          )
+                                        : Image.network(
+                                            widget.slide.imageUrl,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (context, e, s) => Container(
+                                              color: SacredColors.surfaceContainerHigh,
+                                              child: Icon(Icons.image, color: SacredColors.primary),
+                                            ),
+                                          ),
+                              ),
                             ),
                           ),
-                        ),
+
+                          // Index Slide Badge
+                          Positioned(
+                            bottom: 4,
+                            right: 4,
+                            child: Container(
+                              padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: widget.isActive ? SacredColors.primary : SacredColors.surfaceContainerHighest,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                widget.indexText,
+                                style: SacredTypography.labelSm(context).copyWith(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
+                                  color: widget.isActive ? Colors.white : SacredColors.onSurface,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
-              ),
-            ),
-            SizedBox(height: 6),
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: 4.0),
-              child: Text(
-                widget.slide.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: SacredTypography.labelSm(context).copyWith(
-                  fontWeight: widget.isActive ? FontWeight.bold : FontWeight.w500,
-                  color: widget.isActive ? SacredColors.primary : SacredColors.onSurfaceVariant,
+                SizedBox(height: 6),
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 4.0),
+                  child: Text(
+                    widget.slide.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: SacredTypography.labelSm(context).copyWith(
+                      fontWeight: widget.isActive ? FontWeight.bold : FontWeight.w500,
+                      color: widget.isActive ? SacredColors.primary : SacredColors.onSurfaceVariant,
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }
@@ -1262,7 +1267,10 @@ class _LiveWorkspaceCanvas extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return ListenableBuilder(
+      listenable: activeSlide,
+      builder: (context, _) {
+        return Container(
       color: SacredColors.surfaceContainerLow,
       width: double.infinity,
       height: double.infinity,
@@ -1432,6 +1440,8 @@ class _LiveWorkspaceCanvas extends StatelessWidget {
           ),
         ],
       ),
+        );
+      },
     );
   }
 }
@@ -1692,7 +1702,10 @@ class _PropertiesSidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return ListenableBuilder(
+      listenable: activeSlide,
+      builder: (context, _) {
+        return Container(
       width: 320,
       height: double.infinity,
       decoration: BoxDecoration(
@@ -2159,6 +2172,8 @@ class _PropertiesSidebar extends StatelessWidget {
           ],
         ),
       ),
+        );
+      },
     );
   }
 }
@@ -2777,6 +2792,8 @@ class _DraggableTextLayerState extends State<_DraggableTextLayer> {
       final double h = constraints.maxHeight;
       if (w == 0 || h == 0) return const SizedBox.expand();
 
+      final double scale = w / 960.0;
+
       // Drag offsets range: let them drag up to 85% off screen vertically/horizontally
       final double maxLeft = w * 0.85;
       final double minLeft = -w * 0.85;
@@ -2846,7 +2863,10 @@ class _DraggableTextLayerState extends State<_DraggableTextLayer> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 48.0, vertical: 32.0),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: (48.0 * scale).clamp(8.0, w),
+                    vertical: (32.0 * scale).clamp(8.0, h),
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -2857,7 +2877,7 @@ class _DraggableTextLayerState extends State<_DraggableTextLayer> {
                         style: GoogleFonts.getFont(
                           AppSettings.instance.fontFamily,
                           textStyle: TextStyle(
-                            fontSize: widget.activeSlide.titleFontSize,
+                            fontSize: (widget.activeSlide.titleFontSize * scale).clamp(8.0, 150.0),
                             color: Colors.white,
                             fontWeight: widget.activeSlide.isBold ? FontWeight.bold : FontWeight.normal,
                             fontStyle: widget.activeSlide.isItalic ? FontStyle.italic : FontStyle.normal,
@@ -2872,10 +2892,10 @@ class _DraggableTextLayerState extends State<_DraggableTextLayer> {
                         ),
                       ),
                       if (hasSubtitle) ...[
-                        const SizedBox(height: 16),
+                        SizedBox(height: 16.0 * scale),
                         Container(
-                          width: 96,
-                          height: 4,
+                          width: 96.0 * scale,
+                          height: (4.0 * scale).clamp(1.0, 20.0),
                           decoration: BoxDecoration(
                             color: SacredColors.secondaryContainer,
                             borderRadius: BorderRadius.circular(999),
@@ -2888,7 +2908,7 @@ class _DraggableTextLayerState extends State<_DraggableTextLayer> {
                               textAlign: widget.activeSlide.alignment,
                               style: GoogleFonts.inter(
                                 textStyle: TextStyle(
-                                  fontSize: widget.activeSlide.subtitleFontSize,
+                                  fontSize: (widget.activeSlide.subtitleFontSize * scale).clamp(6.0, 100.0),
                                   color: Colors.white.withValues(alpha: 0.9),
                                   fontStyle: FontStyle.italic,
                                   shadows: const [

@@ -9,6 +9,7 @@ import 'create_presentation_page.dart';
 import 'templates_page.dart';
 import 'fullscreen_presenter_page.dart';
 import 'library_page.dart';
+import 'song_to_slides_page.dart';
 
 
 /// Exact Material 3 custom color system derived from the design tailwind config.
@@ -1269,7 +1270,9 @@ class MainCanvasContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool useVerticalHero = screenWidth < 900;
+    final bool isDesktop = screenWidth >= 1024;
+    final double contentWidth = screenWidth - (isDesktop ? 280 : 0);
+    final bool useVerticalHero = contentWidth < 800;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1277,6 +1280,8 @@ class MainCanvasContent extends StatelessWidget {
         // Hero Section Layout
         if (useVerticalHero) ...[
           const CreateNewPresentationCard(),
+          SizedBox(height: 24),
+          const SongToSlidesCard(),
           SizedBox(height: 24),
           const StorageWidget(),
         ] else ...[
@@ -1286,6 +1291,11 @@ class MainCanvasContent extends StatelessWidget {
               const Expanded(
                 flex: 2,
                 child: CreateNewPresentationCard(),
+              ),
+              SizedBox(width: 24),
+              const Expanded(
+                flex: 1,
+                child: SongToSlidesCard(),
               ),
               SizedBox(width: 24),
               const Expanded(
@@ -1434,7 +1444,125 @@ class _CreateNewPresentationCardState extends State<CreateNewPresentationCard> {
   }
 }
 
-/// Local Storage usage card — reads real data from AppSettings.
+/// Song to Slides Interactive Card — converts choir lyrics to presentation slides.
+class SongToSlidesCard extends StatefulWidget {
+  const SongToSlidesCard({super.key});
+
+  @override
+  State<SongToSlidesCard> createState() => _SongToSlidesCardState();
+}
+
+class _SongToSlidesCardState extends State<SongToSlidesCard> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: GestureDetector(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const SongToSlidesPage()),
+          );
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+          height: 256,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.7),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: _isHovered
+                  ? SacredColors.primary.withValues(alpha: 0.5)
+                  : SacredColors.outlineVariant.withValues(alpha: 0.5),
+              width: 1.0,
+            ),
+            boxShadow: SacredShadows.sacred,
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: Stack(
+              children: [
+                // Hover Gradient Overlay
+                AnimatedOpacity(
+                  opacity: _isHovered ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 300),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          SacredColors.primary.withValues(alpha: 0.05),
+                          Colors.transparent,
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Center Widget Column
+                Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // Animated Music Note Icon
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut,
+                        width: 64,
+                        height: 64,
+                        transform: Matrix4.diagonal3Values(
+                            _isHovered ? 1.1 : 1.0,
+                            _isHovered ? 1.1 : 1.0,
+                            1.0),
+                        transformAlignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: SacredColors.primaryFixed,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.music_note_rounded,
+                          color: SacredColors.primary,
+                          size: 36,
+                        ),
+                      ),
+                      SizedBox(height: 16),
+                      Text(
+                        'Song to Slides',
+                        style: SacredTypography.headlineMd(context).copyWith(
+                          color: SacredColors.primary,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      SizedBox(height: 8),
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 24.0),
+                        child: Text(
+                          'Convert choir songs into presentation slides',
+                          style: SacredTypography.bodyMd(context).copyWith(
+                            color: SacredColors.onSurfaceVariant
+                                .withValues(alpha: 0.7),
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class StorageWidget extends StatelessWidget {
   const StorageWidget({super.key});
 
@@ -1456,123 +1584,185 @@ class StorageWidget extends StatelessWidget {
                 ? const Color(0xFFD97706) // amber
                 : const Color(0xFFDC2626)); // red
 
-        return Container(
-          height: 256,
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.7),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: SacredColors.outlineVariant.withValues(alpha: 0.5),
-              width: 1.0,
-            ),
-            boxShadow: SacredShadows.sacred,
-          ),
-          padding: const EdgeInsets.all(32.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final bool isNarrow = constraints.maxWidth < 240;
+            final double paddingValue = isNarrow ? 20.0 : 28.0;
+
+            return Container(
+              height: 256,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.7),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: SacredColors.outlineVariant.withValues(alpha: 0.5),
+                  width: 1.0,
+                ),
+                boxShadow: SacredShadows.sacred,
+              ),
+              padding: EdgeInsets.all(paddingValue),
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: SacredColors.surfaceContainer,
-                      borderRadius: BorderRadius.circular(12),
+                  if (isNarrow) ...[
+                    // Narrow Layout: Column to stack Icon and Badge vertically to prevent overflow
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: SacredColors.surfaceContainer,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(
+                        Icons.storage_outlined,
+                        color: SacredColors.primary,
+                        size: 20,
+                      ),
                     ),
-                    child: Icon(
-                      Icons.storage_outlined,
-                      color: SacredColors.primary,
-                      size: 24,
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: SacredColors.surfaceContainer,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        '$count Presentation${count == 1 ? '' : 's'}',
+                        style: SacredTypography.labelSm(context).copyWith(
+                          color: SacredColors.primary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  ] else ...[
+                    // Wide Layout: Row to place Icon and Badge side-by-side
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: SacredColors.surfaceContainer,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(
+                            Icons.storage_outlined,
+                            color: SacredColors.primary,
+                            size: 24,
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: SacredColors.surfaceContainer,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            '$count Presentation${count == 1 ? '' : 's'}',
+                            style: SacredTypography.labelSm(context).copyWith(
+                              color: SacredColors.primary,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                  SizedBox(height: isNarrow ? 12 : 24),
+                  Text(
+                    'Storage Usage',
+                    style: SacredTypography.labelLg(context).copyWith(
+                      color: SacredColors.onSurface,
                     ),
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: SacredColors.surfaceContainer,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      '$count Presentation${count == 1 ? '' : 's'}',
-                      style: SacredTypography.labelSm(context).copyWith(
-                        color: SacredColors.primary,
-                        fontWeight: FontWeight.bold,
-                      ),
+                  const SizedBox(height: 8),
+
+                  // Animated progress bar driven by real fraction
+                  TweenAnimationBuilder<double>(
+                    tween: Tween<double>(begin: 0.0, end: fraction),
+                    duration: const Duration(milliseconds: 900),
+                    curve: Curves.easeOut,
+                    builder: (context, value, child) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: double.infinity,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: SacredColors.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: FractionallySizedBox(
+                              alignment: Alignment.centerLeft,
+                              widthFactor: value.clamp(0.0, 1.0),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: barColor,
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          if (isNarrow)
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  usedLabel,
+                                  style: SacredTypography.labelSm(context).copyWith(
+                                    color: barColor,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'of $totalLabel',
+                                  style: SacredTypography.labelSm(context).copyWith(
+                                    color: SacredColors.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            )
+                          else
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  usedLabel,
+                                  style: SacredTypography.labelSm(context).copyWith(
+                                    color: barColor,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                Text(
+                                  'of $totalLabel',
+                                  style: SacredTypography.labelSm(context).copyWith(
+                                    color: SacredColors.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                        ],
+                      );
+                    },
+                  ),
+                  const Spacer(),
+                  Text(
+                    '* Based on presentation data saved to this device.',
+                    style: SacredTypography.labelSm(context).copyWith(
+                      color: SacredColors.onSurfaceVariant,
+                      fontStyle: FontStyle.italic,
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 24),
-              Text(
-                'Storage Usage',
-                style: SacredTypography.labelLg(context).copyWith(
-                  color: SacredColors.onSurface,
-                ),
-              ),
-              const SizedBox(height: 8),
-
-              // Animated progress bar driven by real fraction
-              TweenAnimationBuilder<double>(
-                tween: Tween<double>(begin: 0.0, end: fraction),
-                duration: const Duration(milliseconds: 900),
-                curve: Curves.easeOut,
-                builder: (context, value, child) {
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: double.infinity,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: SacredColors.surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: FractionallySizedBox(
-                          alignment: Alignment.centerLeft,
-                          widthFactor: value.clamp(0.0, 1.0),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: barColor,
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            usedLabel,
-                            style: SacredTypography.labelSm(context).copyWith(
-                              color: barColor,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          Text(
-                            'of $totalLabel',
-                            style: SacredTypography.labelSm(context).copyWith(
-                              color: SacredColors.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  );
-                },
-              ),
-              const Spacer(),
-              Text(
-                '* Based on presentation data saved to this device.',
-                style: SacredTypography.labelSm(context).copyWith(
-                  color: SacredColors.onSurfaceVariant,
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
-            ],
-          ),
+            );
+          },
         );
       },
     );

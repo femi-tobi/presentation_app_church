@@ -12,6 +12,7 @@ import 'settings_page.dart';
 import 'connectivity_badge.dart';
 import 'connectors/connector_contract.dart';
 import 'connectors/connector_manager.dart';
+import 'song_to_slides_page.dart';
 
 class CreatePresentationPage extends StatefulWidget {
   const CreatePresentationPage({super.key});
@@ -171,10 +172,11 @@ class _CreatePresentationPageState extends State<CreatePresentationPage> {
                                               ),
                                               alignment: Alignment.center,
                                               child: Text(
-                                                'Church Themes',
+                                                'Themes',
                                                 style: SacredTypography.labelLg(context).copyWith(
                                                   color: _sidebarTabIndex == 0 ? Colors.white : SacredColors.onSurfaceVariant,
                                                   fontWeight: FontWeight.bold,
+                                                  fontSize: 12,
                                                 ),
                                               ),
                                             ),
@@ -183,10 +185,6 @@ class _CreatePresentationPageState extends State<CreatePresentationPage> {
                                         Expanded(
                                           child: InkWell(
                                             onTap: () => setState(() => _sidebarTabIndex = 1),
-                                            borderRadius: const BorderRadius.only(
-                                              topRight: Radius.circular(12),
-                                              bottomRight: Radius.circular(12),
-                                            ),
                                             child: Container(
                                               padding: const EdgeInsets.symmetric(vertical: 12),
                                               decoration: BoxDecoration(
@@ -195,11 +193,48 @@ class _CreatePresentationPageState extends State<CreatePresentationPage> {
                                               ),
                                               alignment: Alignment.center,
                                               child: Text(
-                                                'AI PPTX Generator',
+                                                'AI PPTX',
                                                 style: SacredTypography.labelLg(context).copyWith(
                                                   color: _sidebarTabIndex == 1 ? Colors.white : SacredColors.onSurfaceVariant,
                                                   fontWeight: FontWeight.bold,
+                                                  fontSize: 12,
                                                 ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        Expanded(
+                                          child: InkWell(
+                                            onTap: () => setState(() => _sidebarTabIndex = 2),
+                                            borderRadius: const BorderRadius.only(
+                                              topRight: Radius.circular(12),
+                                              bottomRight: Radius.circular(12),
+                                            ),
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(vertical: 12),
+                                              decoration: BoxDecoration(
+                                                color: _sidebarTabIndex == 2 ? primaryColor : Colors.transparent,
+                                                borderRadius: BorderRadius.circular(12),
+                                              ),
+                                              alignment: Alignment.center,
+                                              child: Row(
+                                                mainAxisAlignment: MainAxisAlignment.center,
+                                                children: [
+                                                  Icon(
+                                                    Icons.music_note_rounded,
+                                                    size: 14,
+                                                    color: _sidebarTabIndex == 2 ? Colors.white : SacredColors.onSurfaceVariant,
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                  Text(
+                                                    'Song',
+                                                    style: SacredTypography.labelLg(context).copyWith(
+                                                      color: _sidebarTabIndex == 2 ? Colors.white : SacredColors.onSurfaceVariant,
+                                                      fontWeight: FontWeight.bold,
+                                                      fontSize: 12,
+                                                    ),
+                                                  ),
+                                                ],
                                               ),
                                             ),
                                           ),
@@ -223,6 +258,9 @@ class _CreatePresentationPageState extends State<CreatePresentationPage> {
                                       _PptxGeneratorPane(
                                         primaryColor: primaryColor,
                                         outlineController: _outlineController,
+                                      ),
+                                      SongToSlidesSidebarPane(
+                                        primaryColor: primaryColor,
                                       ),
                                     ],
                                   ),
@@ -263,10 +301,11 @@ class _CreatePresentationPageState extends State<CreatePresentationPage> {
                                         ),
                                         alignment: Alignment.center,
                                         child: Text(
-                                          'Church Themes',
+                                          'Themes',
                                           style: SacredTypography.labelLg(context).copyWith(
                                             color: _sidebarTabIndex == 0 ? Colors.white : SacredColors.onSurfaceVariant,
                                             fontWeight: FontWeight.bold,
+                                            fontSize: 12,
                                           ),
                                         ),
                                       ),
@@ -283,11 +322,44 @@ class _CreatePresentationPageState extends State<CreatePresentationPage> {
                                         ),
                                         alignment: Alignment.center,
                                         child: Text(
-                                          'AI PPTX Generator',
+                                          'AI PPTX',
                                           style: SacredTypography.labelLg(context).copyWith(
                                             color: _sidebarTabIndex == 1 ? Colors.white : SacredColors.onSurfaceVariant,
                                             fontWeight: FontWeight.bold,
+                                            fontSize: 12,
                                           ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: InkWell(
+                                      onTap: () => setState(() => _sidebarTabIndex = 2),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(vertical: 12),
+                                        decoration: BoxDecoration(
+                                          color: _sidebarTabIndex == 2 ? primaryColor : Colors.transparent,
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                        alignment: Alignment.center,
+                                        child: Row(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Icon(
+                                              Icons.music_note_rounded,
+                                              size: 14,
+                                              color: _sidebarTabIndex == 2 ? Colors.white : SacredColors.onSurfaceVariant,
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              'Song',
+                                              style: SacredTypography.labelLg(context).copyWith(
+                                                color: _sidebarTabIndex == 2 ? Colors.white : SacredColors.onSurfaceVariant,
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
                                     ),
@@ -305,10 +377,14 @@ class _CreatePresentationPageState extends State<CreatePresentationPage> {
                                   isGenerating: _isGenerating,
                                   primaryColor: primaryColor,
                                 )
-                              : _PptxGeneratorPane(
-                                  primaryColor: primaryColor,
-                                  outlineController: _outlineController,
-                                ),
+                              : (_sidebarTabIndex == 1
+                                  ? _PptxGeneratorPane(
+                                      primaryColor: primaryColor,
+                                      outlineController: _outlineController,
+                                    )
+                                  : SongToSlidesSidebarPane(
+                                      primaryColor: primaryColor,
+                                    )),
                         ],
                       ),
                     ),
@@ -1159,7 +1235,7 @@ class _PptxGeneratorPane extends StatefulWidget {
 
 class _PptxGeneratorPaneState extends State<_PptxGeneratorPane> {
   String? _selectedConnectorId;
-  double _slideCount = 8.0;
+  late final ValueNotifier<double> _slideCountNotifier;
   String _themeName = 'Modern';
   String _primaryColorHex = '#2E0052';
   String _fontPreference = 'Inter';
@@ -1172,7 +1248,15 @@ class _PptxGeneratorPaneState extends State<_PptxGeneratorPane> {
   @override
   void initState() {
     super.initState();
+    _slideCountNotifier = ValueNotifier<double>(8.0);
     _initConnector();
+  }
+
+  @override
+  void dispose() {
+    _slideCountNotifier.dispose();
+    _stylePromptController.dispose();
+    super.dispose();
   }
 
   void _initConnector() {
@@ -1242,7 +1326,7 @@ class _PptxGeneratorPaneState extends State<_PptxGeneratorPane> {
     try {
       final config = PresentationConfig(
         themeName: _themeName,
-        targetSlideCount: _slideCount.toInt(),
+        targetSlideCount: _slideCountNotifier.value.toInt(),
         primaryColorHex: _primaryColorHex,
         fontPreference: _fontPreference,
         stylePrompt: _stylePromptController.text,
@@ -1282,7 +1366,7 @@ class _PptxGeneratorPaneState extends State<_PptxGeneratorPane> {
 
         if (bytes.isNotEmpty) {
           final String filename = 'Generated_${connector.id}_Presentation';
-          final String? outputPath = await FilePicker.platform.saveFile(
+          String? outputPath = await FilePicker.platform.saveFile(
             dialogTitle: 'Save presentation as…',
             fileName: '$filename.pptx',
             type: FileType.custom,
@@ -1291,6 +1375,9 @@ class _PptxGeneratorPaneState extends State<_PptxGeneratorPane> {
           );
 
           if (outputPath != null && !kIsWeb) {
+            if (!outputPath.toLowerCase().endsWith('.pptx')) {
+              outputPath = '$outputPath.pptx';
+            }
             await File(outputPath).writeAsBytes(bytes);
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -1448,27 +1535,37 @@ class _PptxGeneratorPaneState extends State<_PptxGeneratorPane> {
             const SizedBox(height: 24),
 
             // Slides Count Slider
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Slide Count',
-                  style: SacredTypography.labelLg(context).copyWith(fontWeight: FontWeight.bold),
-                ),
-                Text(
-                  '${_slideCount.toInt()} slides',
-                  style: SacredTypography.labelLg(context).copyWith(color: widget.primaryColor, fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-            Slider(
-              value: _slideCount,
-              min: 5.0,
-              max: 20.0,
-              divisions: 15,
-              activeColor: widget.primaryColor,
-              inactiveColor: widget.primaryColor.withOpacity(0.2),
-              onChanged: (val) => setState(() => _slideCount = val),
+            ValueListenableBuilder<double>(
+              valueListenable: _slideCountNotifier,
+              builder: (context, slideCount, _) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Slide Count',
+                          style: SacredTypography.labelLg(context).copyWith(fontWeight: FontWeight.bold),
+                        ),
+                        Text(
+                          '${slideCount.toInt()} slides',
+                          style: SacredTypography.labelLg(context).copyWith(color: widget.primaryColor, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                    Slider(
+                      value: slideCount,
+                      min: 5.0,
+                      max: 20.0,
+                      divisions: 15,
+                      activeColor: widget.primaryColor,
+                      inactiveColor: widget.primaryColor.withOpacity(0.2),
+                      onChanged: (val) => _slideCountNotifier.value = val,
+                    ),
+                  ],
+                );
+              },
             ),
             const SizedBox(height: 16),
 

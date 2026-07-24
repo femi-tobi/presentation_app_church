@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:async';
 
 
 /// Stores a single entry in the recent presentations list.
@@ -66,51 +67,209 @@ class PresentationRecord {
 }
 
 /// Slide data representation holding editing configurations.
-class SlideData {
+class SlideData extends ChangeNotifier {
   final String id;
-  String title;
-  String subtitle;
-  String imageUrl;        // mutable so user can swap backgrounds
-  double opacity;         // 0.0–1.0 overlay visibility
-  double blur;            // 0.0–30.0 background blur
-  bool isBold;
-  bool isItalic;
-  TextAlign alignment;
-  String transition;
-  double titleFontSize;   // pt size for main title text
-  double subtitleFontSize; // pt size for subtitle / quote text
-  String? _logoUrl;       // logo image url / data-url
-  String? get logoUrl => _logoUrl ?? AppSettings.instance.logoUrl;
-  set logoUrl(String? value) => _logoUrl = value;
+  
+  String _title;
+  String get title => _title;
+  set title(String value) {
+    if (_title != value) {
+      _title = value;
+      notifyListeners();
+    }
+  }
 
-  double logoX;           // relative X position (0.0 to 1.0)
-  double logoY;           // relative Y position (0.0 to 1.0)
-  double logoSize;        // size of logo in pixels
-  double textX;           // relative X offset (-1.0 to 1.0)
-  double textY;           // relative Y offset (-1.0 to 1.0)
-  int bgColorValue;       // ARGB color value (default 0xFF000000 for black)
+  String _subtitle;
+  String get subtitle => _subtitle;
+  set subtitle(String value) {
+    if (_subtitle != value) {
+      _subtitle = value;
+      notifyListeners();
+    }
+  }
+
+  String _imageUrl;
+  String get imageUrl => _imageUrl;
+  set imageUrl(String value) {
+    if (_imageUrl != value) {
+      _imageUrl = value;
+      notifyListeners();
+    }
+  }
+
+  double _opacity;
+  double get opacity => _opacity;
+  set opacity(double value) {
+    if (_opacity != value) {
+      _opacity = value;
+      notifyListeners();
+    }
+  }
+
+  double _blur;
+  double get blur => _blur;
+  set blur(double value) {
+    if (_blur != value) {
+      _blur = value;
+      notifyListeners();
+    }
+  }
+
+  bool _isBold;
+  bool get isBold => _isBold;
+  set isBold(bool value) {
+    if (_isBold != value) {
+      _isBold = value;
+      notifyListeners();
+    }
+  }
+
+  bool _isItalic;
+  bool get isItalic => _isItalic;
+  set isItalic(bool value) {
+    if (_isItalic != value) {
+      _isItalic = value;
+      notifyListeners();
+    }
+  }
+
+  TextAlign _alignment;
+  TextAlign get alignment => _alignment;
+  set alignment(TextAlign value) {
+    if (_alignment != value) {
+      _alignment = value;
+      notifyListeners();
+    }
+  }
+
+  String _transition;
+  String get transition => _transition;
+  set transition(String value) {
+    if (_transition != value) {
+      _transition = value;
+      notifyListeners();
+    }
+  }
+
+  double _titleFontSize;
+  double get titleFontSize => _titleFontSize;
+  set titleFontSize(double value) {
+    if (_titleFontSize != value) {
+      _titleFontSize = value;
+      notifyListeners();
+    }
+  }
+
+  double _subtitleFontSize;
+  double get subtitleFontSize => _subtitleFontSize;
+  set subtitleFontSize(double value) {
+    if (_subtitleFontSize != value) {
+      _subtitleFontSize = value;
+      notifyListeners();
+    }
+  }
+
+  String? _logoUrl;
+  String? get logoUrl => _logoUrl ?? AppSettings.instance.logoUrl;
+  set logoUrl(String? value) {
+    if (_logoUrl != value) {
+      _logoUrl = value;
+      notifyListeners();
+    }
+  }
+
+  double _logoX;
+  double get logoX => _logoX;
+  set logoX(double value) {
+    if (_logoX != value) {
+      _logoX = value;
+      notifyListeners();
+    }
+  }
+
+  double _logoY;
+  double get logoY => _logoY;
+  set logoY(double value) {
+    if (_logoY != value) {
+      _logoY = value;
+      notifyListeners();
+    }
+  }
+
+  double _logoSize;
+  double get logoSize => _logoSize;
+  set logoSize(double value) {
+    if (_logoSize != value) {
+      _logoSize = value;
+      notifyListeners();
+    }
+  }
+
+  double _textX;
+  double get textX => _textX;
+  set textX(double value) {
+    if (_textX != value) {
+      _textX = value;
+      notifyListeners();
+    }
+  }
+
+  double _textY;
+  double get textY => _textY;
+  set textY(double value) {
+    if (_textY != value) {
+      _textY = value;
+      notifyListeners();
+    }
+  }
+
+  int _bgColorValue;
+  int get bgColorValue => _bgColorValue;
+  set bgColorValue(int value) {
+    if (_bgColorValue != value) {
+      _bgColorValue = value;
+      notifyListeners();
+    }
+  }
 
   SlideData({
     required this.id,
-    required this.title,
-    required this.subtitle,
-    required this.imageUrl,
-    this.opacity = 0.85,
-    this.blur = 12.0,
-    this.isBold = false,
-    this.isItalic = true,
-    this.alignment = TextAlign.center,
-    this.transition = 'Cross Dissolve',
-    this.titleFontSize = 48.0,
-    this.subtitleFontSize = 20.0,
+    required String title,
+    required String subtitle,
+    required String imageUrl,
+    double opacity = 0.85,
+    double blur = 12.0,
+    bool isBold = false,
+    bool isItalic = true,
+    TextAlign alignment = TextAlign.center,
+    String transition = 'Cross Dissolve',
+    double titleFontSize = 48.0,
+    double subtitleFontSize = 20.0,
     String? logoUrl,
-    this.logoX = 0.85,
-    this.logoY = 0.05,
-    this.logoSize = 80.0,
-    this.textX = 0.0,
-    this.textY = 0.0,
-    this.bgColorValue = 0xFF000000,
-  }) : _logoUrl = logoUrl;
+    double logoX = 0.85,
+    double logoY = 0.05,
+    double logoSize = 80.0,
+    double textX = 0.0,
+    double textY = 0.0,
+    int bgColorValue = 0xFF000000,
+  })  : _title = title,
+        _subtitle = subtitle,
+        _imageUrl = imageUrl,
+        _opacity = opacity,
+        _blur = blur,
+        _isBold = isBold,
+        _isItalic = isItalic,
+        _alignment = alignment,
+        _transition = transition,
+        _titleFontSize = titleFontSize,
+        _subtitleFontSize = subtitleFontSize,
+        _logoUrl = logoUrl,
+        _logoX = logoX,
+        _logoY = logoY,
+        _logoSize = logoSize,
+        _textX = textX,
+        _textY = textY,
+        _bgColorValue = bgColorValue;
 
   Map<String, dynamic> toJson() {
     return {
@@ -161,6 +320,10 @@ class SlideData {
       textY: (json['textY'] as num?)?.toDouble() ?? 0.0,
       bgColorValue: json['bgColorValue'] as int? ?? 0xFF000000,
     );
+  }
+
+  void update() {
+    notifyListeners();
   }
 }
 
@@ -534,7 +697,28 @@ class AppSettings extends ChangeNotifier {
     }
   }
 
+  Timer? _saveTimer;
+  Completer<void>? _saveCompleter;
+
+  /// Debounced saveSettings to batch disk writes and prevent UI stutter during user edits
   Future<void> saveSettings() async {
+    _saveTimer?.cancel();
+    _saveCompleter ??= Completer<void>();
+    _saveTimer = Timer(const Duration(milliseconds: 300), () async {
+      final completer = _saveCompleter;
+      _saveCompleter = null;
+      try {
+        await saveSettingsImmediately();
+        completer?.complete();
+      } catch (e) {
+        completer?.completeError(e);
+      }
+    });
+    return _saveCompleter!.future;
+  }
+
+  /// Flushes settings to disk immediately (e.g. before exiting the page or app)
+  Future<void> saveSettingsImmediately() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('isDarkMode', _isDarkMode);

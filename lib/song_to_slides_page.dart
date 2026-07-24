@@ -110,7 +110,7 @@ class _SongToSlidesPageState extends State<SongToSlidesPage>
         ? 'Choir Song'
         : _titleController.text.trim();
 
-    final slides = _parseSongToSlides(lyrics, songTitle, _linesPerSlide);
+    final slides = parseSongToSlides(lyrics, songTitle, _linesPerSlide);
 
     final presentationId = DateTime.now().millisecondsSinceEpoch.toString();
     Navigator.pushReplacement(
@@ -124,55 +124,6 @@ class _SongToSlidesPageState extends State<SongToSlidesPage>
         ),
       ),
     );
-  }
-
-  /// Parses song text into slides, grouping lines by [linesPerSlide].
-  static List<SlideData> _parseSongToSlides(
-      String lyrics, String title, int linesPerSlide) {
-    const String sharedBg =
-        'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?w=1280&q=80';
-
-    final rawLines = lyrics.split('\n');
-    // Keep blank lines as verse separators — but for grouping, only count non-blank lines
-    final nonBlankLines =
-        rawLines.where((l) => l.trim().isNotEmpty).toList();
-
-    if (nonBlankLines.isEmpty) {
-      return [
-        SlideData(
-          id: '01',
-          title: title,
-          subtitle: '',
-          imageUrl: sharedBg,
-          opacity: 0.80,
-          blur: 8.0,
-          titleFontSize: 56.0,
-          alignment: TextAlign.center,
-        ),
-      ];
-    }
-
-    final List<SlideData> slides = [];
-
-    for (int i = 0; i < nonBlankLines.length; i += linesPerSlide) {
-      final end = (i + linesPerSlide).clamp(0, nonBlankLines.length);
-      final chunk = nonBlankLines.sublist(i, end);
-      final subtitleText = chunk.join('\n');
-
-      slides.add(SlideData(
-        id: '${slides.length + 1}'.padLeft(2, '0'),
-        title: title,
-        subtitle: subtitleText,
-        imageUrl: sharedBg,
-        opacity: 0.80,
-        blur: 8.0,
-        titleFontSize: 36.0,
-        subtitleFontSize: 24.0,
-        alignment: TextAlign.center,
-      ));
-    }
-
-    return slides;
   }
 
   @override
@@ -680,6 +631,116 @@ class _SongToSlidesPageState extends State<SongToSlidesPage>
   }
 }
 
+/// Top-level song-to-slides parser used by both the full page and sidebar pane.
+List<SlideData> parseSongToSlides(
+    String lyrics, String title, int linesPerSlide) {
+  const String sharedBg =
+      'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?w=1280&q=80';
+
+  final List<SlideData> slides = [];
+
+  // 1. Add the Title Slide (large title, no lyrics)
+  slides.add(SlideData(
+    id: '01',
+    title: title,
+    subtitle: '',
+    imageUrl: sharedBg,
+    opacity: 0.80,
+    blur: 8.0,
+    titleFontSize: 56.0,
+    alignment: TextAlign.center,
+  ));
+
+  final rawLines = lyrics.split('\n');
+
+  // Helper to identify if a line is a section marker (e.g. Chorus, VS1, Verse 2, Bridge)
+  bool isMarker(String line) {
+    final clean = line.trim().toUpperCase()
+        .replaceAll(RegExp(r'[\[\]\(\):\.\-]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+        
+    if (clean.isEmpty) return false;
+
+    final exactWords = {
+      'CHORUS', 'VERSE', 'VS', 'MEDLEY', 'CODA', 'BRIDGE', 'INTRO', 'OUTRO', 'TAG', 'REFRAIN'
+    };
+    if (exactWords.contains(clean)) {
+      return true;
+    }
+
+    if (RegExp(r'^(VERSE|CHORUS|BRIDGE|CODA|MEDLEY|INTRO|OUTRO|REFRAIN|TAG|VS|V)\s*\d+$').hasMatch(clean)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  // Pre-process lines into sections (separated by blank lines or markers)
+  final List<List<String>> sections = [];
+  List<String> currentSection = [];
+
+  bool isFirstNonEmpty = true;
+  for (final rawLine in rawLines) {
+    final trimmed = rawLine.trim();
+    
+    // Treat blank lines as section boundaries
+    if (trimmed.isEmpty) {
+      if (currentSection.isNotEmpty) {
+        sections.add(List.from(currentSection));
+        currentSection.clear();
+      }
+      continue;
+    }
+
+    // Skip the first non-empty line if it is exactly the song title (case-insensitive)
+    if (isFirstNonEmpty) {
+      isFirstNonEmpty = false;
+      if (trimmed.toLowerCase() == title.toLowerCase()) {
+        continue;
+      }
+    }
+
+    // If it is a marker, end the current section and start a new one (skipping the marker line)
+    if (isMarker(trimmed)) {
+      if (currentSection.isNotEmpty) {
+        sections.add(List.from(currentSection));
+        currentSection.clear();
+      }
+      continue;
+    }
+
+    currentSection.add(trimmed);
+  }
+
+  if (currentSection.isNotEmpty) {
+    sections.add(List.from(currentSection));
+  }
+
+  // 2. Generate lyric slides from sections
+  for (final section in sections) {
+    for (int i = 0; i < section.length; i += linesPerSlide) {
+      final end = (i + linesPerSlide).clamp(0, section.length);
+      final chunk = section.sublist(i, end);
+      final subtitleText = chunk.join('\n');
+
+      slides.add(SlideData(
+        id: '${slides.length + 1}'.padLeft(2, '0'),
+        title: '', // No title on subsequent slides
+        subtitle: subtitleText,
+        imageUrl: sharedBg,
+        opacity: 0.80,
+        blur: 8.0,
+        titleFontSize: 36.0,
+        subtitleFontSize: 24.0,
+        alignment: TextAlign.center,
+      ));
+    }
+  }
+
+  return slides;
+}
+
 /// A compact song-to-slides sidebar pane for the Create Presentation page.
 /// This is designed to fit within the right sidebar alongside
 /// the Church Themes and AI PPTX Generator tabs.
@@ -768,7 +829,7 @@ class _SongToSlidesSidebarPaneState extends State<SongToSlidesSidebarPane> {
         : _titleController.text.trim();
 
     final slides =
-        _SongToSlidesPageState._parseSongToSlides(lyrics, songTitle, _linesPerSlide);
+        parseSongToSlides(lyrics, songTitle, _linesPerSlide);
 
     final presentationId = DateTime.now().millisecondsSinceEpoch.toString();
     Navigator.push(

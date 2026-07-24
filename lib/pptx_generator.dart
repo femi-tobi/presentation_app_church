@@ -36,7 +36,7 @@ class PptxGenerator {
       _webDownload(bytes, '$filename.pptx');
     } else {
       // Desktop / mobile: use file_picker to let user choose save location
-      final String? outputPath = await FilePicker.platform.saveFile(
+      String? outputPath = await FilePicker.platform.saveFile(
         dialogTitle: 'Save presentation as…',
         fileName: '$filename.pptx',
         type: FileType.custom,
@@ -44,6 +44,9 @@ class PptxGenerator {
         bytes: Uint8List.fromList(bytes),
       );
       if (outputPath != null && !kIsWeb) {
+        if (!outputPath.toLowerCase().endsWith('.pptx')) {
+          outputPath = '$outputPath.pptx';
+        }
         await File(outputPath).writeAsBytes(bytes);
       }
     }
