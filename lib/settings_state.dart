@@ -113,6 +113,15 @@ class PresentationRecord {
 /// Slide data representation holding editing configurations.
 class SlideData extends ChangeNotifier {
   final String id;
+
+  String? _sectionId;
+  String? get sectionId => _sectionId;
+  set sectionId(String? value) {
+    if (_sectionId != value) {
+      _sectionId = value;
+      notifyListeners();
+    }
+  }
   
   String _title;
   String get title => _title;
@@ -296,6 +305,7 @@ class SlideData extends ChangeNotifier {
     double textX = 0.0,
     double textY = 0.0,
     int bgColorValue = 0xFF000000,
+    String? sectionId,
   })  : _title = title,
         _subtitle = subtitle,
         _imageUrl = imageUrl,
@@ -313,7 +323,8 @@ class SlideData extends ChangeNotifier {
         _logoSize = logoSize,
         _textX = textX,
         _textY = textY,
-        _bgColorValue = bgColorValue;
+        _bgColorValue = bgColorValue,
+        _sectionId = sectionId;
 
   Map<String, dynamic> toJson() {
     return {
@@ -336,6 +347,7 @@ class SlideData extends ChangeNotifier {
       'textX': textX,
       'textY': textY,
       'bgColorValue': bgColorValue,
+      'sectionId': sectionId,
     };
   }
 
@@ -363,6 +375,7 @@ class SlideData extends ChangeNotifier {
       textX: (json['textX'] as num?)?.toDouble() ?? 0.0,
       textY: (json['textY'] as num?)?.toDouble() ?? 0.0,
       bgColorValue: json['bgColorValue'] as int? ?? 0xFF000000,
+      sectionId: json['sectionId'] as String?,
     );
   }
 

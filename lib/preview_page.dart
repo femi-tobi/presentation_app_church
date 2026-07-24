@@ -567,6 +567,7 @@ class _PreviewPageState extends State<PreviewPage> {
       for (final slideId in section.slideIds) {
         final slide = _slides.firstWhere((s) => s.id == slideId, orElse: () => null as dynamic);
         if (slide != null) {
+          slide.sectionId = section.id;
           ordered.add(slide);
         }
       }
@@ -576,8 +577,11 @@ class _PreviewPageState extends State<PreviewPage> {
         ordered.add(slide);
         if (_sections.isNotEmpty) {
           _sections.last.slideIds.add(slide.id);
+          slide.sectionId = _sections.last.id;
         } else {
-          _sections.add(SlideSection(id: 'section_fallback', name: 'Section 1', slideIds: [slide.id]));
+          final fallbackSection = SlideSection(id: 'section_fallback', name: 'Section 1', slideIds: [slide.id]);
+          _sections.add(fallbackSection);
+          slide.sectionId = fallbackSection.id;
         }
       }
     }
@@ -1653,47 +1657,265 @@ class _SectionHeaderState extends State<_SectionHeader> {
   }
 
   void _showColorPicker(BuildContext context) {
+    Color selectedColor = widget.section.colorValue != null && widget.section.colorValue != 0
+        ? Color(widget.section.colorValue!)
+        : Colors.blue;
+
     showDialog<void>(
       context: context,
       builder: (context) {
-        final colors = [
-          null,
-          Colors.blue.value,
-          Colors.green.value,
-          Colors.orange.value,
-          Colors.red.value,
-          Colors.purple.value,
-          Colors.teal.value,
-        ];
-        return AlertDialog(
-          title: const Text('Choose Section Color'),
-          content: Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: colors.map((cValue) {
-              return GestureDetector(
-                onTap: () {
-                  widget.onColorChange?.call(cValue ?? 0);
-                  Navigator.of(context).pop();
-                },
-                child: Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: cValue != null ? Color(cValue) : Colors.grey[300],
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: widget.section.colorValue == cValue ? Colors.black : Colors.transparent,
-                      width: 2.5,
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final baseColors = [
+              Colors.red,
+              Colors.pink,
+              Colors.purple,
+              Colors.deepPurple,
+              Colors.indigo,
+              Colors.blue,
+              Colors.lightBlue,
+              Colors.cyan,
+              Colors.teal,
+              Colors.green,
+              Colors.lightGreen,
+              Colors.lime,
+              Colors.yellow,
+              Colors.amber,
+              Colors.orange,
+              Colors.deepOrange,
+              Colors.brown,
+              Colors.blueGrey,
+            ];
+
+            MaterialColor? matchingBase;
+            for (final base in baseColors) {
+              if (base is MaterialColor) {
+                if (base.value == selectedColor.value) {
+                  matchingBase = base;
+                  break;
+                }
+                for (final shade in [50, 100, 200, 300, 400, 500, 600, 700, 800, 900]) {
+                  if (base[shade]?.value == selectedColor.value) {
+                    matchingBase = base;
+                    break;
+                  }
+                }
+                if (matchingBase != null) break;
+              }
+            }
+
+            final shades = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900];
+
+            return AlertDialog(
+              title: const Text('Section Color'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Preview box
+                    Container(
+                      height: 50,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: selectedColor,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey[400]!),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        'Preview: #${selectedColor.value.toRadixString(16).substring(2).toUpperCase()}',
+                        style: TextStyle(
+                          color: ThemeData.estimateBrightnessForColor(selectedColor) == Brightness.dark
+                              ? Colors.white
+                              : Colors.black,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
-                  ),
-                  child: cValue == null
-                      ? const Icon(Icons.block, size: 20, color: Colors.grey)
-                      : null,
+                    const SizedBox(height: 16),
+                    const Text('Base Color', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    // Grid of base colors
+                    SizedBox(
+                      height: 80,
+                      child: GridView.builder(
+                        scrollDirection: Axis.horizontal,
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          mainAxisSpacing: 8,
+                          crossAxisSpacing: 8,
+                        ),
+                        itemCount: baseColors.length,
+                        itemBuilder: (context, index) {
+                          final color = baseColors[index];
+                          final isSelected = matchingBase == color;
+                          return GestureDetector(
+                            onTap: () {
+                              setDialogState(() {
+                                selectedColor = color;
+                                if (color is MaterialColor) {
+                                  matchingBase = color;
+                                } else {
+                                  matchingBase = null;
+                                }
+                              });
+                            },
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: color,
+                                shape: BoxShape.circle,
+                                border: isSelected
+                                    ? Border.all(color: Colors.black, width: 3)
+                                    : null,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.1),
+                                    blurRadius: 2,
+                                    offset: const Offset(0, 1),
+                                  )
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    if (matchingBase != null) ...[
+                      const SizedBox(height: 16),
+                      const Text('Shades', style: TextStyle(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+                      // Shades selection row
+                      SizedBox(
+                        height: 45,
+                        child: ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: shades.length,
+                          itemBuilder: (context, index) {
+                            final shade = shades[index];
+                            final color = matchingBase![shade]!;
+                            final isSelected = selectedColor.value == color.value;
+                            return GestureDetector(
+                              onTap: () {
+                                setDialogState(() {
+                                  selectedColor = color;
+                                });
+                              },
+                              child: Container(
+                                width: 36,
+                                height: 36,
+                                margin: const EdgeInsets.only(right: 8),
+                                decoration: BoxDecoration(
+                                  color: color,
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: isSelected
+                                      ? Border.all(color: Colors.black, width: 2.5)
+                                      : null,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    const Text('Custom Fine-Tuning (HSL)', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    // HSL Sliders
+                    Builder(
+                      builder: (context) {
+                        final hsl = HSLColor.fromColor(selectedColor);
+                        return Column(
+                          children: [
+                            // Hue
+                            Row(
+                              children: [
+                                const SizedBox(width: 30, child: Text('H')),
+                                Expanded(
+                                  child: Slider(
+                                    value: hsl.hue,
+                                    min: 0.0,
+                                    max: 360.0,
+                                    activeColor: Colors.red,
+                                    onChanged: (val) {
+                                      setDialogState(() {
+                                        selectedColor = hsl.withHue(val).toColor();
+                                      });
+                                    },
+                                  ),
+                                ),
+                                Text('${hsl.hue.round()}°'),
+                              ],
+                            ),
+                            // Saturation
+                            Row(
+                              children: [
+                                const SizedBox(width: 30, child: Text('S')),
+                                Expanded(
+                                  child: Slider(
+                                    value: hsl.saturation,
+                                    min: 0.0,
+                                    max: 1.0,
+                                    activeColor: Colors.green,
+                                    onChanged: (val) {
+                                      setDialogState(() {
+                                        selectedColor = hsl.withSaturation(val).toColor();
+                                      });
+                                    },
+                                  ),
+                                ),
+                                Text('${(hsl.saturation * 100).round()}%'),
+                              ],
+                            ),
+                            // Lightness
+                            Row(
+                              children: [
+                                const SizedBox(width: 30, child: Text('L')),
+                                Expanded(
+                                  child: Slider(
+                                    value: hsl.lightness,
+                                    min: 0.0,
+                                    max: 1.0,
+                                    activeColor: Colors.blue,
+                                    onChanged: (val) {
+                                      setDialogState(() {
+                                        selectedColor = hsl.withLightness(val).toColor();
+                                      });
+                                    },
+                                  ),
+                                ),
+                                Text('${(hsl.lightness * 100).round()}%'),
+                              ],
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ],
                 ),
-              );
-            }).toList(),
-          ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    widget.onColorChange?.call(0);
+                    Navigator.of(context).pop();
+                  },
+                  child: const Text('Clear Color'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    widget.onColorChange?.call(selectedColor.value);
+                    Navigator.of(context).pop();
+                  },
+                  child: const Text('Select'),
+                ),
+              ],
+            );
+          },
         );
       },
     );

@@ -50,7 +50,7 @@ class _SongToSlidesPageState extends State<SongToSlidesPage>
     final songTitle = _titleController.text.trim().isEmpty
         ? 'Choir Song'
         : _titleController.text.trim();
-    return parseSongToSlides(text, songTitle, _linesPerSlide).length;
+    return parseSongToSlides(text, songTitle, _linesPerSlide).slides.length;
   }
 
   Future<void> _pickFile() async {
@@ -112,7 +112,7 @@ class _SongToSlidesPageState extends State<SongToSlidesPage>
         ? 'Choir Song'
         : _titleController.text.trim();
 
-    final slides = parseSongToSlides(lyrics, songTitle, _linesPerSlide);
+    final result = parseSongToSlides(lyrics, songTitle, _linesPerSlide);
 
     final presentationId = DateTime.now().millisecondsSinceEpoch.toString();
     Navigator.pushReplacement(
@@ -121,7 +121,8 @@ class _SongToSlidesPageState extends State<SongToSlidesPage>
         builder: (context) => PreviewPage(
           presentationId: presentationId,
           outlineText: lyrics,
-          initialSlides: slides,
+          initialSlides: result.slides,
+          initialSections: result.sections,
           selectedTheme: 'Minimal',
         ),
       ),
@@ -690,17 +691,25 @@ _SongSection? _findMatchingSection(String arrName, List<_SongSection> sections) 
   return null;
 }
 
+class SongParseResult {
+  final List<SlideData> slides;
+  final List<SlideSection> sections;
+  SongParseResult({required this.slides, required this.sections});
+}
+
 /// Top-level song-to-slides parser used by both the full page and sidebar pane.
-List<SlideData> parseSongToSlides(
+SongParseResult parseSongToSlides(
     String lyrics, String title, int linesPerSlide) {
   const String sharedBg =
       'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?w=1280&q=80';
 
   final List<SlideData> slides = [];
+  final List<SlideSection> slideSections = [];
 
   // 1. Add the Title Slide (large title, no lyrics)
+  final titleSlideId = 'slide_title';
   slides.add(SlideData(
-    id: '01',
+    id: titleSlideId,
     title: title,
     subtitle: '',
     imageUrl: sharedBg,
@@ -708,6 +717,13 @@ List<SlideData> parseSongToSlides(
     blur: 8.0,
     titleFontSize: 56.0,
     alignment: TextAlign.center,
+    sectionId: 'sec_title',
+  ));
+
+  slideSections.add(SlideSection(
+    id: 'sec_title',
+    name: 'TITLE',
+    slideIds: [titleSlideId],
   ));
 
   final rawLines = lyrics.split('\n');
@@ -717,7 +733,7 @@ List<SlideData> parseSongToSlides(
     caseSensitive: false,
   );
 
-  final List<_SongSection> sections = [];
+  final List<_SongSection> rawSections = [];
   String currentSectionName = "";
   List<String> currentSectionLines = [];
 
@@ -760,7 +776,7 @@ List<SlideData> parseSongToSlides(
         inArrangement = true;
         // Close current section if any
         if (currentSectionLines.isNotEmpty) {
-          sections.add(_SongSection(currentSectionName, List.from(currentSectionLines)));
+          rawSections.add(_SongSection(currentSectionName, List.from(currentSectionLines)));
           currentSectionLines.clear();
         }
         currentSectionName = "";
@@ -774,7 +790,7 @@ List<SlideData> parseSongToSlides(
         inArrangement = false;
         // Close current section if any
         if (currentSectionLines.isNotEmpty) {
-          sections.add(_SongSection(currentSectionName, List.from(currentSectionLines)));
+          rawSections.add(_SongSection(currentSectionName, List.from(currentSectionLines)));
           currentSectionLines.clear();
         }
         currentSectionName = headerName;
@@ -796,61 +812,64 @@ List<SlideData> parseSongToSlides(
 
   // Close the last section at the end of the loop
   if (currentSectionLines.isNotEmpty) {
-    sections.add(_SongSection(currentSectionName, List.from(currentSectionLines)));
+    rawSections.add(_SongSection(currentSectionName, List.from(currentSectionLines)));
+  }
+
+  // Helper to construct slides and map them to a SlideSection
+  void generateSectionSlides(String name, List<String> lines) {
+    final sectionId = 'sec_${slideSections.length + 1}';
+    final sectionName = name.isNotEmpty ? name.toUpperCase() : 'VERSE';
+    final List<String> sectionSlideIds = [];
+
+    for (int i = 0; i < lines.length; i += linesPerSlide) {
+      final end = (i + linesPerSlide).clamp(0, lines.length);
+      final chunk = lines.sublist(i, end);
+      final subtitleText = chunk.join('\n');
+
+      final slideId = 'slide_${slides.length + 1}';
+      sectionSlideIds.add(slideId);
+
+      slides.add(SlideData(
+        id: slideId,
+        title: '', // Keep title empty as per desired behavior
+        subtitle: subtitleText,
+        imageUrl: sharedBg,
+        opacity: 0.80,
+        blur: 8.0,
+        titleFontSize: 36.0,
+        subtitleFontSize: 24.0,
+        alignment: TextAlign.center,
+        sectionId: sectionId,
+      ));
+    }
+
+    if (sectionSlideIds.isNotEmpty) {
+      slideSections.add(SlideSection(
+        id: sectionId,
+        name: sectionName,
+        slideIds: sectionSlideIds,
+      ));
+    }
   }
 
   // 2. Generate lyric slides from sections (using arrangement list if present)
   if (arrangementTokens.isNotEmpty) {
     for (final token in arrangementTokens) {
       final arrItem = _parseArrangementToken(token);
-      final section = _findMatchingSection(arrItem.sectionName, sections);
+      final section = _findMatchingSection(arrItem.sectionName, rawSections);
       if (section != null) {
         for (int count = 0; count < arrItem.count; count++) {
-          final sectionLines = section.lines;
-          for (int i = 0; i < sectionLines.length; i += linesPerSlide) {
-            final end = (i + linesPerSlide).clamp(0, sectionLines.length);
-            final chunk = sectionLines.sublist(i, end);
-            final subtitleText = chunk.join('\n');
-
-            slides.add(SlideData(
-              id: '${slides.length + 1}'.padLeft(2, '0'),
-              title: section.name.toUpperCase(),
-              subtitle: subtitleText,
-              imageUrl: sharedBg,
-              opacity: 0.80,
-              blur: 8.0,
-              titleFontSize: 36.0,
-              subtitleFontSize: 24.0,
-              alignment: TextAlign.center,
-            ));
-          }
+          generateSectionSlides(section.name, section.lines);
         }
       }
     }
   } else {
-    for (final section in sections) {
-      final sectionLines = section.lines;
-      for (int i = 0; i < sectionLines.length; i += linesPerSlide) {
-        final end = (i + linesPerSlide).clamp(0, sectionLines.length);
-        final chunk = sectionLines.sublist(i, end);
-        final subtitleText = chunk.join('\n');
-
-        slides.add(SlideData(
-          id: '${slides.length + 1}'.padLeft(2, '0'),
-          title: section.name.toUpperCase(),
-          subtitle: subtitleText,
-          imageUrl: sharedBg,
-          opacity: 0.80,
-          blur: 8.0,
-          titleFontSize: 36.0,
-          subtitleFontSize: 24.0,
-          alignment: TextAlign.center,
-        ));
-      }
+    for (final section in rawSections) {
+      generateSectionSlides(section.name, section.lines);
     }
   }
 
-  return slides;
+  return SongParseResult(slides: slides, sections: slideSections);
 }
 
 /// A compact song-to-slides sidebar pane for the Create Presentation page.
@@ -884,7 +903,7 @@ class _SongToSlidesSidebarPaneState extends State<SongToSlidesSidebarPane> {
     final songTitle = _titleController.text.trim().isEmpty
         ? 'Choir Song'
         : _titleController.text.trim();
-    return parseSongToSlides(text, songTitle, _linesPerSlide).length;
+    return parseSongToSlides(text, songTitle, _linesPerSlide).slides.length;
   }
 
   Future<void> _pickFile() async {
@@ -942,7 +961,7 @@ class _SongToSlidesSidebarPaneState extends State<SongToSlidesSidebarPane> {
         ? 'Choir Song'
         : _titleController.text.trim();
 
-    final slides =
+    final result =
         parseSongToSlides(lyrics, songTitle, _linesPerSlide);
 
     final presentationId = DateTime.now().millisecondsSinceEpoch.toString();
@@ -952,7 +971,8 @@ class _SongToSlidesSidebarPaneState extends State<SongToSlidesSidebarPane> {
         builder: (context) => PreviewPage(
           presentationId: presentationId,
           outlineText: lyrics,
-          initialSlides: slides,
+          initialSlides: result.slides,
+          initialSections: result.sections,
           selectedTheme: 'Minimal',
         ),
       ),
