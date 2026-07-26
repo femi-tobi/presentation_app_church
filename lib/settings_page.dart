@@ -133,6 +133,8 @@ class _SettingsPageState extends State<SettingsPage> {
       builder: (ctx) => _LogoPickerDialog(
         selectedPrimary: _selectedPrimary,
         currentLogoUrl: _logoUrl,
+        currentLogoIcon: _logoIcon,
+        currentLogoBytes: _logoBytes,
         onFilePickRequest: () async {
           Navigator.of(ctx).pop();
           await _pickLogoFromSystem();
@@ -148,6 +150,14 @@ class _SettingsPageState extends State<SettingsPage> {
         onUrlApply: (url) {
           setState(() {
             _logoUrl = url;
+            _logoIcon = null;
+            _logoBytes = null;
+          });
+          Navigator.of(ctx).pop();
+        },
+        onLogoClear: () {
+          setState(() {
+            _logoUrl = null;
             _logoIcon = null;
             _logoBytes = null;
           });
@@ -1185,16 +1195,22 @@ class _LogoPreview extends StatelessWidget {
 class _LogoPickerDialog extends StatefulWidget {
   final Color selectedPrimary;
   final String? currentLogoUrl;
+  final IconData? currentLogoIcon;
+  final Uint8List? currentLogoBytes;
   final Future<void> Function() onFilePickRequest;
   final void Function(IconData) onIconPick;
   final void Function(String) onUrlApply;
+  final VoidCallback onLogoClear;
 
   const _LogoPickerDialog({
     required this.selectedPrimary,
     required this.currentLogoUrl,
+    required this.currentLogoIcon,
+    required this.currentLogoBytes,
     required this.onFilePickRequest,
     required this.onIconPick,
     required this.onUrlApply,
+    required this.onLogoClear,
   });
 
   @override
@@ -1394,6 +1410,22 @@ class _LogoPickerDialogState extends State<_LogoPickerDialog> {
                         ),
                       ],
                     ),
+                    if (widget.currentLogoUrl != null || widget.currentLogoIcon != null || widget.currentLogoBytes != null) ...[
+                      const SizedBox(height: 24),
+                      const Divider(height: 1),
+                      const SizedBox(height: 16),
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.redAccent,
+                          side: const BorderSide(color: Colors.redAccent),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        onPressed: widget.onLogoClear,
+                        icon: const Icon(Icons.delete_outline),
+                        label: const Text('Remove Logo'),
+                      ),
+                    ],
                   ],
                 ),
               ),

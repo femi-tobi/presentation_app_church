@@ -11,6 +11,75 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+class _ImageDimension {
+  final int width;
+  final int height;
+  _ImageDimension(this.width, this.height);
+}
+
+_ImageDimension? _getImageDimension(Uint8List bytes) {
+  if (bytes.length < 8) return null;
+  // PNG Check
+  if (bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47) {
+    if (bytes.length >= 24) {
+      final bd = ByteData.sublistView(bytes, 16, 24);
+      final w = bd.getUint32(0, Endian.big);
+      final h = bd.getUint32(4, Endian.big);
+      return _ImageDimension(w, h);
+    }
+  }
+  // GIF Check
+  if (bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46) {
+    if (bytes.length >= 10) {
+      final bd = ByteData.sublistView(bytes, 6, 10);
+      final w = bd.getUint16(0, Endian.little);
+      final h = bd.getUint16(2, Endian.little);
+      return _ImageDimension(w, h);
+    }
+  }
+  // JPEG Check
+  if (bytes[0] == 0xFF && bytes[1] == 0xD8) {
+    int i = 2;
+    while (i < bytes.length - 8) {
+      if (bytes[i] == 0xFF) {
+        final marker = bytes[i + 1];
+        if (marker == 0xC0 || marker == 0xC1 || marker == 0xC2 || marker == 0xC3 ||
+            marker == 0xC5 || marker == 0xC6 || marker == 0xC7 || marker == 0xC9 ||
+            marker == 0xCA || marker == 0xCB || marker == 0xCD || marker == 0xCE ||
+            marker == 0xCF) {
+          final h = (bytes[i + 5] << 8) | bytes[i + 6];
+          final w = (bytes[i + 7] << 8) | bytes[i + 8];
+          return _ImageDimension(w, h);
+        }
+        final length = (bytes[i + 2] << 8) | bytes[i + 3];
+        i += 2 + length;
+      } else {
+        i++;
+      }
+    }
+  }
+  // WebP Check
+  if (bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46) {
+    if (bytes.length >= 30 && bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 && bytes[11] == 0x50) {
+      final chunkType = String.fromCharCodes(bytes.sublist(12, 16));
+      if (chunkType == 'VP8 ') {
+        final w = (bytes[27] << 8) | bytes[26];
+        final h = (bytes[29] << 8) | bytes[28];
+        return _ImageDimension(w & 0x3FFF, h & 0x3FFF);
+      } else if (chunkType == 'VP8L') {
+        final w = ((bytes[22] & 0x3F) << 8) | bytes[21];
+        final h = ((bytes[24] & 0xF) << 10) | (bytes[23] << 2) | ((bytes[22] & 0xC0) >> 6);
+        return _ImageDimension(w + 1, h + 1);
+      } else if (chunkType == 'VP8X') {
+        final w = (bytes[26] << 16) | (bytes[25] << 8) | bytes[24];
+        final h = (bytes[29] << 16) | (bytes[28] << 8) | bytes[27];
+        return _ImageDimension(w + 1, h + 1);
+      }
+    }
+  }
+  return null;
+}
+
 class PptxGenerator {
   static String _generateUuid() {
     final random = Random();
@@ -130,6 +199,17 @@ class PptxGenerator {
       } catch (_) {
         hasImage = false;
       }
+    } else if (backgroundImageUrl != null && backgroundImageUrl.startsWith('assets/')) {
+      try {
+        final ByteData data = await rootBundle.load(backgroundImageUrl);
+        imageBytes = data.buffer.asUint8List();
+        imageExt = backgroundImageUrl.split('.').last.toLowerCase();
+        if (imageExt == 'jpg') imageExt = 'jpeg';
+        imageMimeType = 'image/$imageExt';
+        hasImage = true;
+      } catch (_) {
+        hasImage = false;
+      }
     }
 
     // ── Add the image binary to the archive ──────────────────────────────
@@ -186,6 +266,14 @@ class PptxGenerator {
       }
     }
 
+    double logoAspect = 1.0;
+    if (hasLogo && logoBytes != null) {
+      final dim = _getImageDimension(logoBytes);
+      if (dim != null && dim.width > 0 && dim.height > 0) {
+        logoAspect = dim.width / dim.height;
+      }
+    }
+
     // ── Add the logo binary to the archive ────────────────────────────────
     if (hasLogo && logoBytes != null) {
       archive.addFile(ArchiveFile(
@@ -229,6 +317,7 @@ class PptxGenerator {
         logoX: s.logoX,
         logoY: s.logoY,
         logoSize: s.logoSize,
+        logoAspect: logoAspect,
         textX: s.textX,
         textY: s.textY,
         bgColorValue: s.bgColorValue,
@@ -492,6 +581,7 @@ $extLstXml</p:presentation>''';
     double logoX = 0.85,
     double logoY = 0.05,
     double logoSize = 80.0,
+    double logoAspect = 1.0,
     double textX = 0.0,
     double textY = 0.0,
     int bgColorValue = 0xFF000000,
@@ -530,9 +620,17 @@ $extLstXml</p:presentation>''';
       </p:bgPr>
     </p:bg>''';
 
-    // Compute logo coordinates and size in EMUs (based on 960px design canvas width)
-    final int cx = (logoSize * 9525).round();
-    final int cy = cx;
+    // Compute logo dimensions retaining aspect ratio (constrained within a bounding box of logoSize)
+    double logoW = logoSize;
+    double logoH = logoSize;
+    if (logoAspect > 1.0) {
+      logoH = logoSize / logoAspect;
+    } else {
+      logoW = logoSize * logoAspect;
+    }
+
+    final int cx = (logoW * 9525).round();
+    final int cy = (logoH * 9525).round();
     final int x = (logoX * 9144000).round().clamp(0, 9144000 - cx);
     final int y = (logoY * 5143500).round().clamp(0, 5143500 - cy);
 

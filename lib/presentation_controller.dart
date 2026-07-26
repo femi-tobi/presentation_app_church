@@ -4,6 +4,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'settings_state.dart';
 
+import 'display_manager.dart';
+
 enum PresentationMode { live, rehearsal, auto, locked }
 
 class PresentationController extends ChangeNotifier {
@@ -171,7 +173,21 @@ class PresentationController extends ChangeNotifier {
   // Spawns a completely separate borderless fullscreen native window (process)
   void spawnAudienceWindow() {
     if (_isAudienceProcess) return;
-    Process.start(Platform.executable, ['--audience']).then((process) {
+    final display = DisplayManager.instance.selectedDisplay;
+    final args = ['--audience'];
+    if (display != null) {
+      args.addAll([
+        '--offset-x',
+        display.dx.toInt().toString(),
+        '--offset-y',
+        display.dy.toInt().toString(),
+        '--width',
+        display.width.toString(),
+        '--height',
+        display.height.toString(),
+      ]);
+    }
+    Process.start(Platform.executable, args).then((process) {
       // Successfully launched independent process
     }).catchError((_) {
       // Fallback/Log launch error

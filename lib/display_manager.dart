@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:screen_retriever/screen_retriever.dart';
 
 class DisplayInfo {
   final String id;
@@ -8,6 +10,8 @@ class DisplayInfo {
   final int height;
   final bool isPrimary;
   final int refreshRate;
+  final double dx;
+  final double dy;
 
   DisplayInfo({
     required this.id,
@@ -16,6 +20,8 @@ class DisplayInfo {
     required this.height,
     required this.isPrimary,
     this.refreshRate = 60,
+    this.dx = 0.0,
+    this.dy = 0.0,
   });
 
   String get resolution => '${width}x$height';
@@ -23,10 +29,15 @@ class DisplayInfo {
 
 class DisplayManager extends ChangeNotifier {
   static final DisplayManager instance = DisplayManager._internal();
+  Timer? _refreshTimer;
 
   DisplayManager._internal() {
     _loadSettings();
     _detectDisplays();
+    // Periodically search for connected monitors every 3 seconds
+    _refreshTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      _detectDisplays();
+    });
   }
 
   final List<DisplayInfo> _displays = [];
@@ -52,7 +63,7 @@ class DisplayManager extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     _simulateAudience = prefs.getBool('simulate_audience') ?? false;
     log('Settings loaded. Simulation Mode: $_simulateAudience');
-    notifyListeners();
+    _detectDisplays();
   }
 
   Future<void> setSimulateAudience(bool value) async {
@@ -60,43 +71,133 @@ class DisplayManager extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('simulate_audience', value);
     log('Simulation Mode updated: $value');
-    notifyListeners();
+    _detectDisplays();
   }
 
-  void _detectDisplays() {
-    _displays.clear();
-    // Default Laptop primary display
-    _displays.add(DisplayInfo(
-      id: 'disp_0',
-      name: 'Laptop Integrated Display',
-      width: 1920,
-      height: 1080,
-      isPrimary: true,
-      refreshRate: 60,
-    ));
+  Future<void> refreshDisplays() async {
+    await _detectDisplays();
+  }
 
-    // Simulate extra screens by default to guarantee options are present
-    _displays.add(DisplayInfo(
-      id: 'disp_1',
-      name: 'Dell UltraSharp 4K',
-      width: 3840,
-      height: 2160,
-      isPrimary: false,
-      refreshRate: 60,
-    ));
+  Future<void> _detectDisplays() async {
+    final List<DisplayInfo> newDisplays = [];
+    try {
+      final primary = await screenRetriever.getPrimaryDisplay();
+      final realDisplays = await screenRetriever.getAllDisplays();
+      for (var i = 0; i < realDisplays.length; i++) {
+        final d = realDisplays[i];
+        final size = d.size;
+        final pos = d.visiblePosition ?? const Offset(0, 0);
+        final name = d.name ?? (d.id == primary.id ? 'Laptop Integrated Display' : 'External Display #${i}');
+        newDisplays.add(DisplayInfo(
+          id: d.id.toString(),
+          name: name,
+          width: size.width.toInt(),
+          height: size.height.toInt(),
+          isPrimary: d.id == primary.id,
+          dx: pos.dx,
+          dy: pos.dy,
+        ));
+      }
 
-    _displays.add(DisplayInfo(
-      id: 'disp_2',
-      name: 'Epson Projector H100',
-      width: 1920,
-      height: 1080,
-      isPrimary: false,
-      refreshRate: 60,
-    ));
+      // If we only have the primary display detected, but simulation mode is enabled, add dummy displays
+      if (_simulateAudience && newDisplays.length <= 1) {
+        newDisplays.add(DisplayInfo(
+          id: 'disp_1',
+          name: 'Dell UltraSharp 4K (Simulated)',
+          width: 3840,
+          height: 2160,
+          isPrimary: false,
+          refreshRate: 60,
+          dx: 1920.0,
+          dy: 0.0,
+        ));
 
-    _selectedDisplay = _displays.first;
-    log('Automatic monitor discovery completed. Detected ${_displays.length} displays.');
-    notifyListeners();
+        newDisplays.add(DisplayInfo(
+          id: 'disp_2',
+          name: 'Epson Projector H100 (Simulated)',
+          width: 1920,
+          height: 1080,
+          isPrimary: false,
+          refreshRate: 60,
+          dx: 1920.0,
+          dy: 1080.0,
+        ));
+      }
+    } catch (e) {
+      newDisplays.add(DisplayInfo(
+        id: 'disp_0',
+        name: 'Laptop Integrated Display',
+        width: 1920,
+        height: 1080,
+        isPrimary: true,
+        refreshRate: 60,
+        dx: 0.0,
+        dy: 0.0,
+      ));
+
+      if (_simulateAudience) {
+        newDisplays.add(DisplayInfo(
+          id: 'disp_1',
+          name: 'Dell UltraSharp 4K (Simulated)',
+          width: 3840,
+          height: 2160,
+          isPrimary: false,
+          refreshRate: 60,
+          dx: 1920.0,
+          dy: 0.0,
+        ));
+
+        newDisplays.add(DisplayInfo(
+          id: 'disp_2',
+          name: 'Epson Projector H100 (Simulated)',
+          width: 1920,
+          height: 1080,
+          isPrimary: false,
+          refreshRate: 60,
+          dx: 1920.0,
+          dy: 1080.0,
+        ));
+      }
+    }
+
+    bool changed = false;
+    if (newDisplays.length != _displays.length) {
+      changed = true;
+    } else {
+      for (int i = 0; i < newDisplays.length; i++) {
+        if (newDisplays[i].id != _displays[i].id ||
+            newDisplays[i].name != _displays[i].name ||
+            newDisplays[i].width != _displays[i].width ||
+            newDisplays[i].height != _displays[i].height ||
+            newDisplays[i].dx != _displays[i].dx ||
+            newDisplays[i].dy != _displays[i].dy) {
+          changed = true;
+          break;
+        }
+      }
+    }
+
+    if (changed) {
+      _displays.clear();
+      _displays.addAll(newDisplays);
+
+      if (_displays.isNotEmpty) {
+        if (_selectedDisplay != null) {
+          final matching = _displays.where((d) => d.id == _selectedDisplay!.id);
+          if (matching.isNotEmpty) {
+            _selectedDisplay = matching.first;
+          } else {
+            _selectedDisplay = _displays.first;
+          }
+        } else {
+          _selectedDisplay = _displays.first;
+        }
+      } else {
+        _selectedDisplay = null;
+      }
+      log('Monitor discovery updated. Detected ${_displays.length} displays.');
+      notifyListeners();
+    }
   }
 
   void selectDisplay(String displayId) {
@@ -128,3 +229,4 @@ class DisplayManager extends ChangeNotifier {
     notifyListeners();
   }
 }
+

@@ -35,14 +35,18 @@ class _AudienceWindowState extends State<AudienceWindow> {
   @override
   void initState() {
     super.initState();
-    // Enter native borderless fullscreen and topmost mode
-    _channel.invokeMethod('setFullscreen', {'fullscreen': true}).catchError((_) {});
+    // Enter native borderless fullscreen and topmost mode only for standalone audience process
+    if (PresentationController.instance.isAudienceProcess) {
+      _channel.invokeMethod('setFullscreen', {'fullscreen': true}).catchError((_) {});
+    }
   }
 
   @override
   void dispose() {
     // Restore original window style and topmost state
-    _channel.invokeMethod('setFullscreen', {'fullscreen': false}).catchError((_) {});
+    if (PresentationController.instance.isAudienceProcess) {
+      _channel.invokeMethod('setFullscreen', {'fullscreen': false}).catchError((_) {});
+    }
     super.dispose();
   }
 
