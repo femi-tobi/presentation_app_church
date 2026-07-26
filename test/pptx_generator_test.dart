@@ -17,6 +17,7 @@ void main() {
       double textX,
       double textY,
       int bgColorValue,
+      int textColorValue,
     })> slides = [
       (
         title: 'Slide 1 Title',
@@ -30,6 +31,7 @@ void main() {
         textX: 0.0,
         textY: 0.0,
         bgColorValue: 0xFF000000,
+        textColorValue: 0xFFFFFFFF,
       ),
       (
         title: 'Slide 2 Title',
@@ -43,6 +45,7 @@ void main() {
         textX: 0.0,
         textY: 0.0,
         bgColorValue: 0xFF000000,
+        textColorValue: 0xFFFFFFFF,
       ),
       (
         title: 'Slide 3 Title',
@@ -56,6 +59,7 @@ void main() {
         textX: 0.0,
         textY: 0.0,
         bgColorValue: 0xFF000000,
+        textColorValue: 0xFFFFFFFF,
       ),
     ];
 

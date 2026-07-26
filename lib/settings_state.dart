@@ -315,7 +315,7 @@ class SlideData extends ChangeNotifier {
   }
 
   String? _logoUrl;
-  String? get logoUrl => _logoUrl ?? AppSettings.instance.logoUrl;
+  String? get logoUrl => _logoUrl == "" ? "" : (_logoUrl ?? AppSettings.instance.logoUrl);
   set logoUrl(String? value) {
     if (_logoUrl != value) {
       _logoUrl = value;
@@ -377,6 +377,15 @@ class SlideData extends ChangeNotifier {
     }
   }
 
+  int _textColorValue;
+  int get textColorValue => _textColorValue;
+  set textColorValue(int value) {
+    if (_textColorValue != value) {
+      _textColorValue = value;
+      notifyListeners();
+    }
+  }
+
   SlideData({
     required this.id,
     required String title,
@@ -397,6 +406,7 @@ class SlideData extends ChangeNotifier {
     double textX = 0.0,
     double textY = 0.0,
     int bgColorValue = 0xFF000000,
+    int textColorValue = 0xFFFFFFFF,
     String? sectionId,
   })  : _title = title,
         _subtitle = subtitle,
@@ -416,6 +426,7 @@ class SlideData extends ChangeNotifier {
         _textX = textX,
         _textY = textY,
         _bgColorValue = bgColorValue,
+        _textColorValue = textColorValue,
         _sectionId = sectionId;
 
   Map<String, dynamic> toJson() {
@@ -439,6 +450,7 @@ class SlideData extends ChangeNotifier {
       'textX': textX,
       'textY': textY,
       'bgColorValue': bgColorValue,
+      'textColorValue': textColorValue,
       'sectionId': sectionId,
     };
   }
@@ -467,6 +479,7 @@ class SlideData extends ChangeNotifier {
       textX: (json['textX'] as num?)?.toDouble() ?? 0.0,
       textY: (json['textY'] as num?)?.toDouble() ?? 0.0,
       bgColorValue: json['bgColorValue'] as int? ?? 0xFF000000,
+      textColorValue: json['textColorValue'] as int? ?? 0xFFFFFFFF,
       sectionId: json['sectionId'] as String?,
     );
   }

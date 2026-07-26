@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:screen_retriever/screen_retriever.dart';
 
@@ -29,6 +31,7 @@ class DisplayInfo {
 
 class DisplayManager extends ChangeNotifier {
   static final DisplayManager instance = DisplayManager._internal();
+  static const MethodChannel _channel = MethodChannel('window_control');
   Timer? _refreshTimer;
 
   DisplayManager._internal() {
@@ -81,22 +84,54 @@ class DisplayManager extends ChangeNotifier {
   Future<void> _detectDisplays() async {
     final List<DisplayInfo> newDisplays = [];
     try {
-      final primary = await screenRetriever.getPrimaryDisplay();
-      final realDisplays = await screenRetriever.getAllDisplays();
-      for (var i = 0; i < realDisplays.length; i++) {
-        final d = realDisplays[i];
-        final size = d.size;
-        final pos = d.visiblePosition ?? const Offset(0, 0);
-        final name = d.name ?? (d.id == primary.id ? 'Laptop Integrated Display' : 'External Display #${i}');
-        newDisplays.add(DisplayInfo(
-          id: d.id.toString(),
-          name: name,
-          width: size.width.toInt(),
-          height: size.height.toInt(),
-          isPrimary: d.id == primary.id,
-          dx: pos.dx,
-          dy: pos.dy,
-        ));
+      if (Platform.isWindows) {
+        log('Detecting displays via native Win32 API...');
+        final List<dynamic>? nativeDisplays = await _channel.invokeMethod<List<dynamic>>('getDisplays');
+        if (nativeDisplays != null && nativeDisplays.isNotEmpty) {
+          log('Fetched ${nativeDisplays.length} display(s) from Win32 API');
+          for (var i = 0; i < nativeDisplays.length; i++) {
+            final Map<dynamic, dynamic> d = nativeDisplays[i] as Map<dynamic, dynamic>;
+            final id = d['id'] as String;
+            final name = d['name'] as String;
+            final x = (d['x'] as int).toDouble();
+            final y = (d['y'] as int).toDouble();
+            final w = d['width'] as int;
+            final h = d['height'] as int;
+            final isPrimary = d['isPrimary'] as bool;
+            log('Win32 Display [$i]: ID=$id, Name="$name", Size=${w}x${h}, Offset=$x,$y, isPrimary=$isPrimary');
+            newDisplays.add(DisplayInfo(
+              id: id,
+              name: name,
+              width: w,
+              height: h,
+              isPrimary: isPrimary,
+              dx: x,
+              dy: y,
+            ));
+          }
+        }
+      } else {
+        log('Detecting displays via screenRetriever...');
+        final primary = await screenRetriever.getPrimaryDisplay();
+        log('Primary display detected: ID=${primary.id}, size=${primary.size}');
+        final realDisplays = await screenRetriever.getAllDisplays();
+        log('Fetched ${realDisplays.length} display(s) from OS');
+        for (var i = 0; i < realDisplays.length; i++) {
+          final d = realDisplays[i];
+          final size = d.size;
+          final pos = d.visiblePosition ?? const Offset(0, 0);
+          final name = d.name ?? (d.id == primary.id ? 'Laptop Integrated Display' : 'External Display #${i}');
+          log('Display [$i]: ID=${d.id}, Name="$name", Size=${size.width}x${size.height}, Offset=${pos.dx},${pos.dy}');
+          newDisplays.add(DisplayInfo(
+            id: d.id.toString(),
+            name: name,
+            width: size.width.toInt(),
+            height: size.height.toInt(),
+            isPrimary: d.id == primary.id,
+            dx: pos.dx,
+            dy: pos.dy,
+          ));
+        }
       }
 
       // If we only have the primary display detected, but simulation mode is enabled, add dummy displays
@@ -124,6 +159,7 @@ class DisplayManager extends ChangeNotifier {
         ));
       }
     } catch (e) {
+      log('EXCEPTION during display detection: $e');
       newDisplays.add(DisplayInfo(
         id: 'disp_0',
         name: 'Laptop Integrated Display',

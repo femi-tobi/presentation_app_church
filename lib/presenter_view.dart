@@ -384,7 +384,16 @@ class _ProfessionalPresenterViewState extends State<ProfessionalPresenterView> {
               }).toList(),
             ),
           ),
-
+          const SizedBox(width: 6),
+          IconButton(
+            icon: const Icon(Icons.refresh, size: 16, color: Colors.white70),
+            tooltip: 'Refresh Displays',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            onPressed: () async {
+              await dm.refreshDisplays();
+            },
+          ),
           const SizedBox(width: 12),
 
           // Diagnostics Panel Launcher

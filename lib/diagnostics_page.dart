@@ -18,6 +18,15 @@ class DiagnosticsPage extends StatelessWidget {
           icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () => Navigator.of(context).pop(),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Colors.white),
+            tooltip: 'Rescan Monitors',
+            onPressed: () async {
+              await DisplayManager.instance.refreshDisplays();
+            },
+          ),
+        ],
         elevation: 0,
       ),
       body: ListenableBuilder(

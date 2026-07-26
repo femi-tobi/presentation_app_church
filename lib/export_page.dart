@@ -80,6 +80,7 @@ class _ExportPageState extends State<ExportPage>
               textX: s.textX,
               textY: s.textY,
               bgColorValue: s.bgColorValue,
+              textColorValue: s.textColorValue,
             ))
         .toList();
 

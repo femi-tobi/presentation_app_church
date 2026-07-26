@@ -3316,7 +3316,7 @@ class _SlideThumbnailCardState extends State<_SlideThumbnailCard> {
                                           AppSettings.instance.fontFamily,
                                           textStyle: TextStyle(
                                             fontSize: (widget.slide.titleFontSize * scale).clamp(4.0, 40.0),
-                                            color: Colors.white,
+                                            color: Color(widget.slide.textColorValue),
                                             fontWeight: widget.slide.isBold ? FontWeight.bold : FontWeight.normal,
                                             fontStyle: widget.slide.isItalic ? FontStyle.italic : FontStyle.normal,
                                             shadows: const [
@@ -3346,7 +3346,7 @@ class _SlideThumbnailCardState extends State<_SlideThumbnailCard> {
                                             style: GoogleFonts.inter(
                                               textStyle: TextStyle(
                                                 fontSize: (widget.slide.subtitleFontSize * scale).clamp(3.0, 30.0),
-                                                color: Colors.white.withValues(alpha: 0.9),
+                                                color: Color(widget.slide.textColorValue).withValues(alpha: 0.9),
                                                 fontStyle: FontStyle.italic,
                                                 shadows: const [
                                                   Shadow(
@@ -4317,8 +4317,8 @@ class _PropertiesSidebarState extends State<_PropertiesSidebar> with SingleTicke
                     child: Slider(
                       value: widget.activeSlide.subtitleFontSize,
                       min: 10.0,
-                      max: 48.0,
-                      divisions: 19,
+                      max: 96.0,
+                      divisions: 86,
                       activeColor: SacredColors.primary,
                       inactiveColor: SacredColors.surfaceContainerHighest,
                       onChanged: (val) {
@@ -4443,6 +4443,23 @@ class _PropertiesSidebarState extends State<_PropertiesSidebar> with SingleTicke
               const SizedBox(height: 24),
 
               Text(
+                'TEXT COLOR',
+                style: SacredTypography.labelLg(context).copyWith(
+                  color: SacredColors.onSurfaceVariant,
+                  letterSpacing: 1.0,
+                ),
+              ),
+              const SizedBox(height: 12),
+              _BackgroundColorSelector(
+                selectedColor: Color(widget.activeSlide.textColorValue),
+                onColorChanged: (color) {
+                  widget.activeSlide.textColorValue = color.value;
+                  widget.onSlideChanged();
+                },
+              ),
+              const SizedBox(height: 24),
+
+              Text(
                 'BACKGROUND IMAGE',
                 style: SacredTypography.labelLg(context).copyWith(
                   color: SacredColors.onSurfaceVariant,
@@ -4467,6 +4484,24 @@ class _PropertiesSidebarState extends State<_PropertiesSidebar> with SingleTicke
               _LogoImageEditorCard(
                 logoUrl: widget.activeSlide.logoUrl,
                 onLogoChanged: widget.onLogoChanged,
+              ),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Show Logo on Slide', style: SacredTypography.labelSm(context)),
+                  Switch(
+                    value: widget.activeSlide.logoUrl != null && widget.activeSlide.logoUrl!.isNotEmpty,
+                    activeColor: SacredColors.primary,
+                    onChanged: (val) {
+                      if (val) {
+                        widget.onLogoChanged(AppSettings.instance.logoUrl);
+                      } else {
+                        widget.onLogoChanged('');
+                      }
+                    },
+                  ),
+                ],
               ),
               if (widget.activeSlide.logoUrl != null && widget.activeSlide.logoUrl!.isNotEmpty) ...[
                 const SizedBox(height: 16),
@@ -5817,7 +5852,7 @@ class _DraggableTextLayerState extends State<_DraggableTextLayer> {
                           AppSettings.instance.fontFamily,
                           textStyle: TextStyle(
                             fontSize: (widget.activeSlide.titleFontSize * scale).clamp(8.0, 150.0),
-                            color: Colors.white,
+                            color: Color(widget.activeSlide.textColorValue),
                             fontWeight: widget.activeSlide.isBold ? FontWeight.bold : FontWeight.normal,
                             fontStyle: widget.activeSlide.isItalic ? FontStyle.italic : FontStyle.normal,
                             shadows: const [
@@ -5848,7 +5883,7 @@ class _DraggableTextLayerState extends State<_DraggableTextLayer> {
                               style: GoogleFonts.inter(
                                 textStyle: TextStyle(
                                   fontSize: (widget.activeSlide.subtitleFontSize * scale).clamp(6.0, 100.0),
-                                  color: Colors.white.withValues(alpha: 0.9),
+                                  color: Color(widget.activeSlide.textColorValue).withValues(alpha: 0.9),
                                   fontStyle: FontStyle.italic,
                                   shadows: const [
                                     Shadow(
@@ -5966,7 +6001,7 @@ class _BackgroundColorSelectorState extends State<_BackgroundColorSelector> {
               decoration: BoxDecoration(
                 color: widget.selectedColor,
                 borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: Colors.white24),
+                border: Border.all(color: SacredColors.outlineVariant),
               ),
             ),
             const SizedBox(width: 8),
@@ -5975,12 +6010,12 @@ class _BackgroundColorSelectorState extends State<_BackgroundColorSelector> {
                 height: 36,
                 child: TextField(
                   controller: _hexController,
-                  style: GoogleFonts.firaCode(fontSize: 12, color: Colors.white),
+                  style: GoogleFonts.firaCode(fontSize: 12, color: SacredColors.onSurface),
                   decoration: InputDecoration(
                     hintText: '#000000',
                     contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                     enabledBorder: OutlineInputBorder(
-                      borderSide: const BorderSide(color: Colors.white24),
+                      borderSide: BorderSide(color: SacredColors.outlineVariant),
                       borderRadius: BorderRadius.circular(6),
                     ),
                     focusedBorder: OutlineInputBorder(
@@ -5988,6 +6023,15 @@ class _BackgroundColorSelectorState extends State<_BackgroundColorSelector> {
                       borderRadius: BorderRadius.circular(6),
                     ),
                   ),
+                  onChanged: (val) {
+                    try {
+                      final cleanHex = val.replaceAll('#', '').trim();
+                      if (cleanHex.length == 6) {
+                        final color = Color(int.parse('0xFF$cleanHex'));
+                        widget.onColorChanged(color);
+                      }
+                    } catch (_) {}
+                  },
                   onSubmitted: (val) {
                     try {
                       final cleanHex = val.replaceAll('#', '').trim();
@@ -5999,6 +6043,121 @@ class _BackgroundColorSelectorState extends State<_BackgroundColorSelector> {
                   },
                 ),
               ),
+            ),
+            const SizedBox(width: 8),
+            IconButton(
+              icon: Icon(Icons.palette_outlined, color: SacredColors.onSurfaceVariant),
+              tooltip: 'Custom Color Picker',
+              onPressed: () {
+                showDialog(
+                  context: context,
+                  builder: (ctx) {
+                    Color tempColor = widget.selectedColor;
+                    double hue = HSVColor.fromColor(tempColor).hue;
+                    double saturation = HSVColor.fromColor(tempColor).saturation;
+                    double value = HSVColor.fromColor(tempColor).value;
+
+                    return StatefulBuilder(
+                      builder: (context, setDialogState) {
+                        return AlertDialog(
+                          backgroundColor: const Color(0xFF151528),
+                          title: const Text('Custom Background Color', style: TextStyle(color: Colors.white)),
+                          content: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                height: 80,
+                                width: double.infinity,
+                                decoration: BoxDecoration(
+                                  color: tempColor,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.white24),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    '#${tempColor.value.toRadixString(16).substring(2).toUpperCase()}',
+                                    style: GoogleFonts.firaCode(
+                                      color: tempColor.computeLuminance() > 0.5 ? Colors.black : Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+                              const Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text('Hue', style: TextStyle(color: Colors.white70)),
+                              ),
+                              Slider(
+                                value: hue,
+                                min: 0,
+                                max: 360,
+                                activeColor: Colors.redAccent,
+                                onChanged: (val) {
+                                  setDialogState(() {
+                                    hue = val;
+                                    tempColor = HSVColor.fromAHSV(1.0, hue, saturation, value).toColor();
+                                  });
+                                },
+                              ),
+                              const Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text('Saturation', style: TextStyle(color: Colors.white70)),
+                              ),
+                              Slider(
+                                value: saturation,
+                                min: 0,
+                                max: 1.0,
+                                activeColor: Colors.blueAccent,
+                                onChanged: (val) {
+                                  setDialogState(() {
+                                    saturation = val;
+                                    tempColor = HSVColor.fromAHSV(1.0, hue, saturation, value).toColor();
+                                  });
+                                },
+                              ),
+                              const Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text('Brightness', style: TextStyle(color: Colors.white70)),
+                              ),
+                              Slider(
+                                value: value,
+                                min: 0,
+                                max: 1.0,
+                                activeColor: Colors.white,
+                                onChanged: (val) {
+                                  setDialogState(() {
+                                    value = val;
+                                    tempColor = HSVColor.fromAHSV(1.0, hue, saturation, value).toColor();
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx),
+                              child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+                            ),
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: SacredColors.primary,
+                                foregroundColor: Colors.white,
+                              ),
+                              onPressed: () {
+                                widget.onColorChanged(tempColor);
+                                Navigator.pop(ctx);
+                              },
+                              child: const Text('Select'),
+                            ),
+                          ],
+                        );
+                      },
+                    );
+                  },
+                );
+              },
             ),
           ],
         ),

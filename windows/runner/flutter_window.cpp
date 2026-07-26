@@ -1,6 +1,8 @@
 #include "flutter_window.h"
 
 #include <optional>
+#include <vector>
+#include <string>
 
 #include "flutter/generated_plugin_registrant.h"
 
@@ -72,6 +74,60 @@ bool FlutterWindow::OnCreate() {
                          SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
           }
           result->Success(flutter::EncodableValue(true));
+        } else if (call.method_name() == "getDisplays") {
+          struct MonitorData {
+            std::wstring name;
+            int x;
+            int y;
+            int width;
+            int height;
+            bool is_primary;
+          };
+          std::vector<MonitorData> monitors;
+
+          EnumDisplayMonitors(nullptr, nullptr, [](HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMonitor, LPARAM dwData) -> BOOL {
+            auto* list = reinterpret_cast<std::vector<MonitorData>*>(dwData);
+            MONITORINFOEXW mi;
+            mi.cbSize = sizeof(mi);
+            if (GetMonitorInfoW(hMonitor, &mi)) {
+              MonitorData data;
+              data.name = mi.szDevice;
+              data.x = mi.rcMonitor.left;
+              data.y = mi.rcMonitor.top;
+              data.width = mi.rcMonitor.right - mi.rcMonitor.left;
+              data.height = mi.rcMonitor.bottom - mi.rcMonitor.top;
+              data.is_primary = (mi.dwFlags & MONITORINFOF_PRIMARY) != 0;
+              list->push_back(data);
+            }
+            return TRUE;
+          }, reinterpret_cast<LPARAM>(&monitors));
+
+          flutter::EncodableList list;
+          for (const auto& m : monitors) {
+            std::string name_utf8;
+            if (!m.name.empty()) {
+              int size_needed = WideCharToMultiByte(CP_UTF8, 0, &m.name[0], (int)m.name.size(), NULL, 0, NULL, NULL);
+              name_utf8.resize(size_needed);
+              WideCharToMultiByte(CP_UTF8, 0, &m.name[0], (int)m.name.size(), &name_utf8[0], size_needed, NULL, NULL);
+            }
+
+            std::string display_name = name_utf8;
+            if (display_name.rfind("\\\\.\\", 0) == 0) {
+              display_name = display_name.substr(4);
+            }
+
+            flutter::EncodableMap map;
+            map[flutter::EncodableValue("id")] = flutter::EncodableValue(name_utf8);
+            map[flutter::EncodableValue("name")] = flutter::EncodableValue(display_name);
+            map[flutter::EncodableValue("x")] = flutter::EncodableValue(m.x);
+            map[flutter::EncodableValue("y")] = flutter::EncodableValue(m.y);
+            map[flutter::EncodableValue("width")] = flutter::EncodableValue(m.width);
+            map[flutter::EncodableValue("height")] = flutter::EncodableValue(m.height);
+            map[flutter::EncodableValue("isPrimary")] = flutter::EncodableValue(m.is_primary);
+            list.push_back(flutter::EncodableValue(map));
+          }
+
+          result->Success(flutter::EncodableValue(list));
         } else {
           result->NotImplemented();
         }

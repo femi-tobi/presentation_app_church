@@ -265,7 +265,7 @@ class _FullscreenPresenterPageState extends State<FullscreenPresenterPage> with 
                                                         AppSettings.instance.fontFamily,
                                                         textStyle: TextStyle(
                                                           fontSize: 64,
-                                                          color: Colors.white,
+                                                          color: Color(slide.textColorValue),
                                                           fontWeight: slide.isBold ? FontWeight.bold : FontWeight.normal,
                                                           fontStyle: slide.isItalic ? FontStyle.italic : FontStyle.normal,
                                                           shadows: const [
@@ -296,7 +296,7 @@ class _FullscreenPresenterPageState extends State<FullscreenPresenterPage> with 
                                                             style: GoogleFonts.inter(
                                                               textStyle: TextStyle(
                                                                 fontSize: 28,
-                                                                color: Colors.white.withValues(alpha: 0.9),
+                                                                color: Color(slide.textColorValue).withValues(alpha: 0.9),
                                                                 fontStyle: FontStyle.italic,
                                                                 shadows: const [
                                                                   Shadow(

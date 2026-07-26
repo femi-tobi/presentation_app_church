@@ -106,6 +106,7 @@ class PptxGenerator {
       double textX,
       double textY,
       int bgColorValue,
+      int textColorValue,
     })> slides,
     String filename, {
     String? backgroundImageUrl,
@@ -165,6 +166,7 @@ class PptxGenerator {
       double textX,
       double textY,
       int bgColorValue,
+      int textColorValue,
     })> slides,
     String? backgroundImageUrl,
     String? fontFamily,
@@ -321,6 +323,7 @@ class PptxGenerator {
         textX: s.textX,
         textY: s.textY,
         bgColorValue: s.bgColorValue,
+        textColorValue: s.textColorValue,
       ));
       _add(archive, 'ppt/slides/_rels/slide$n.xml.rels', _slideRels(
         hasImage,
@@ -585,6 +588,7 @@ $extLstXml</p:presentation>''';
     double textX = 0.0,
     double textY = 0.0,
     int bgColorValue = 0xFF000000,
+    int textColorValue = 0xFFFFFFFF,
   }) {
     String esc(String s) => s
         .replaceAll('&', '&amp;')
@@ -600,6 +604,14 @@ $extLstXml</p:presentation>''';
     final String hexColor = '${r.toRadixString(16).padLeft(2, '0')}'
         '${g.toRadixString(16).padLeft(2, '0')}'
         '${b.toRadixString(16).padLeft(2, '0')}'
+        .toUpperCase();
+
+    final int tr = (textColorValue >> 16) & 0xFF;
+    final int tg = (textColorValue >> 8) & 0xFF;
+    final int tb = textColorValue & 0xFF;
+    final String textHexColor = '${tr.toRadixString(16).padLeft(2, '0')}'
+        '${tg.toRadixString(16).padLeft(2, '0')}'
+        '${tb.toRadixString(16).padLeft(2, '0')}'
         .toUpperCase();
 
     // Background: use embedded image if available, otherwise solid background color
@@ -690,7 +702,7 @@ $extLstXml</p:presentation>''';
             <a:pPr algn="ctr"/>
             <a:r>
               <a:rPr lang="en-US" sz="$titleSz" b="0" i="0" dirty="0">
-                <a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>
+                <a:solidFill><a:srgbClr val="$textHexColor"/></a:solidFill>
                 <a:latin typeface="$font"/>
                 <a:effectLst>
                   <a:outerShdw blurRad="50000" dist="38100" dir="5400000" algn="ctr">
@@ -743,7 +755,7 @@ $extLstXml</p:presentation>''';
             <a:pPr algn="ctr"/>
             <a:r>
               <a:rPr lang="en-US" sz="$subtitleSz" b="1" i="0" dirty="0">
-                <a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>
+                <a:solidFill><a:srgbClr val="$textHexColor"/></a:solidFill>
                 <a:latin typeface="$font"/>
               </a:rPr>
               <a:t>${esc(subtitle)}</a:t>
@@ -786,6 +798,7 @@ $extLstXml</p:presentation>''';
       double textX,
       double textY,
       int bgColorValue,
+      int textColorValue,
     })> slides, {
     List<({
       String name,
