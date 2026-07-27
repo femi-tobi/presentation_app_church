@@ -10,6 +10,7 @@ import 'templates_page.dart';
 import 'fullscreen_presenter_page.dart';
 import 'library_page.dart';
 import 'song_to_slides_page.dart';
+import 'bible_show_page.dart';
 
 
 /// Exact Material 3 custom color system derived from the design tailwind config.
@@ -246,7 +247,9 @@ class _DashboardPageState extends State<DashboardPage> {
                         ? TemplatesPage(scaffoldKey: _scaffoldKey)
                         : (_activeTab == 'Library'
                             ? LibraryPage(scaffoldKey: _scaffoldKey)
-                            : Column(
+                            : (_activeTab == 'Bible'
+                                ? BibleShowPage(scaffoldKey: _scaffoldKey)
+                                : Column(
                             children: [
                               TopNavBar(
                                 scaffoldKey: _scaffoldKey,
@@ -273,7 +276,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                 ),
                               ),
                             ],
-                          ))),
+                          )))),
               ),
             ],
           ),
@@ -374,6 +377,14 @@ class SacredSidebar extends StatelessWidget {
                           label: 'Library',
                           isActive: activeTab == 'Library',
                           onTap: () => onTabSelected('Library'),
+                        ),
+                        SizedBox(height: 8),
+                        _SidebarNavigationItem(
+                          icon: Icons.menu_book_outlined,
+                          activeIcon: Icons.menu_book,
+                          label: 'Bible',
+                          isActive: activeTab == 'Bible',
+                          onTap: () => onTabSelected('Bible'),
                         ),
                         SizedBox(height: 8),
                         _SidebarNavigationItem(
