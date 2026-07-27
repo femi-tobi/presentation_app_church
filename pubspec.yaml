@@ -66,6 +66,8 @@ flutter:
   assets:
     - assets/Hymns/
     - assets/app_icon.ico
+    - assets/kjv/
+    - assets/niv/
   # assets:
   #   - images/a_dot_burr.jpeg
   #   - images/a_dot_ham.jpeg

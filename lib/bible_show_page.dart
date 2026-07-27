@@ -234,7 +234,37 @@ class _BibleShowPageState extends State<BibleShowPage> {
       _isSearching = true;
     });
 
-    final results = await BibleService.instance.searchVerses(_selectedTranslation, query);
+    final results = <Map<String, dynamic>>[];
+
+    // Check if query is a Bible reference lookup, e.g. "John 3" or "John 3:16" or "1 Samuel 3"
+    final refRegex = RegExp(r'^(\d?\s*[a-zA-Z\s]+?)\s+(\d+)(?:\s*:\s*(\d+))?$');
+    final match = refRegex.firstMatch(query);
+    if (match != null) {
+      final inputBook = match.group(1)?.trim() ?? '';
+      final chapterStr = match.group(2) ?? '';
+      final verseStr = match.group(3);
+
+      // Find closest book name
+      final matchedBook = _books.firstWhere(
+        (b) => b.replaceAll(' ', '').toLowerCase() == inputBook.replaceAll(' ', '').toLowerCase(),
+        orElse: () => '',
+      );
+
+      if (matchedBook.isNotEmpty) {
+        results.add({
+          'isReference': true,
+          'book': matchedBook,
+          'chapter': chapterStr,
+          'verse': verseStr,
+          'text': 'Go to $matchedBook $chapterStr${verseStr != null ? ':$verseStr' : ''}',
+        });
+      }
+    }
+
+    // Also fetch keyword search results
+    final textResults = await BibleService.instance.searchVerses(_selectedTranslation, query);
+    results.addAll(textResults);
+
     setState(() {
       _searchResults = results;
     });
@@ -566,15 +596,16 @@ class _BibleShowPageState extends State<BibleShowPage> {
       itemCount: _searchResults.length,
       itemBuilder: (context, index) {
         final res = _searchResults[index];
-        final ref = '${res['book']} ${res['chapter']}:${res['verse']}';
+        final isRef = res['isReference'] == true;
+        final ref = isRef ? 'Passage Lookup' : '${res['book']} ${res['chapter']}:${res['verse']}';
         
         return Card(
-          color: SacredColors.surface,
+          color: isRef ? SacredColors.primary.withValues(alpha: 0.1) : SacredColors.surface,
           elevation: 0,
           margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(8),
-            side: BorderSide(color: SacredColors.outlineVariant),
+            side: BorderSide(color: isRef ? SacredColors.primary : SacredColors.outlineVariant),
           ),
           child: InkWell(
             borderRadius: BorderRadius.circular(8),
@@ -584,9 +615,10 @@ class _BibleShowPageState extends State<BibleShowPage> {
               setState(() {
                 _searchController.clear();
                 _isSearching = false;
-                // Highlight target verse
                 _selectedVerseNumbers.clear();
-                _selectedVerseNumbers.add(res['verse']!);
+                if (res['verse'] != null) {
+                  _selectedVerseNumbers.add(res['verse']!);
+                }
               });
             },
             child: Padding(
@@ -594,13 +626,20 @@ class _BibleShowPageState extends State<BibleShowPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    ref,
-                    style: GoogleFonts.inter(
-                      fontWeight: FontWeight.bold,
-                      color: SacredColors.primary,
-                      fontSize: 12,
-                    ),
+                  Row(
+                    children: [
+                      if (isRef)
+                        Icon(Icons.menu_book, size: 14, color: SacredColors.primary),
+                      if (isRef) const SizedBox(width: 6),
+                      Text(
+                        ref,
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.bold,
+                          color: SacredColors.primary,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -609,6 +648,7 @@ class _BibleShowPageState extends State<BibleShowPage> {
                     overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.inter(
                       fontSize: 13,
+                      fontWeight: isRef ? FontWeight.w600 : FontWeight.normal,
                       color: SacredColors.onSurface,
                       height: 1.4,
                     ),
@@ -629,91 +669,82 @@ class _BibleShowPageState extends State<BibleShowPage> {
       children: [
         // Book Grid Panel
         Container(
-          height: 240,
+          height: 260,
           color: SacredColors.surface,
-          child: ListView(
-            padding: const EdgeInsets.all(16),
-            scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Books of the Bible',
-                    style: SacredTypography.labelLg(context).copyWith(
-                      color: SacredColors.onSurfaceVariant,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Expanded(
-                    child: _books.isEmpty
-                        ? const Center(child: CircularProgressIndicator())
-                        : SizedBox(
-                            width: 1100, // Fixed width scrolling grid container
-                            child: GridView.builder(
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 3,
-                                childAspectRatio: 2.2,
-                                mainAxisSpacing: 8,
-                                crossAxisSpacing: 8,
-                              ),
-                              itemCount: _books.length,
-                              itemBuilder: (context, index) {
-                                final book = _books[index];
-                                final isSelected = _selectedBook == book;
-                                final catColor = _getBookCategoryColor(book);
+              Text(
+                'Books of the Bible',
+                style: SacredTypography.labelLg(context).copyWith(
+                  color: SacredColors.onSurfaceVariant,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Expanded(
+                child: _books.isEmpty
+                    ? const Center(child: CircularProgressIndicator())
+                    : GridView.builder(
+                        scrollDirection: Axis.horizontal,
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3,
+                          childAspectRatio: 0.45,
+                          mainAxisSpacing: 8,
+                          crossAxisSpacing: 8,
+                        ),
+                        itemCount: _books.length,
+                        itemBuilder: (context, index) {
+                          final book = _books[index];
+                          final isSelected = _selectedBook == book;
+                          final catColor = _getBookCategoryColor(book);
 
-                                return Material(
-                                  color: isSelected ? catColor : catColor.withValues(alpha: 0.15),
+                          return Material(
+                            color: isSelected ? catColor : catColor.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(8),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(8),
+                              onTap: () => _selectBook(book),
+                              child: Container(
+                                decoration: BoxDecoration(
                                   borderRadius: BorderRadius.circular(8),
-                                  child: InkWell(
-                                    borderRadius: BorderRadius.circular(8),
-                                    onTap: () => _selectBook(book),
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(8),
-                                        border: Border.all(
-                                          color: isSelected ? Colors.transparent : catColor.withValues(alpha: 0.4),
-                                          width: 1,
-                                        ),
-                                      ),
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                      child: Column(
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            _getBookAbbreviation(book),
-                                            style: GoogleFonts.inter(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 16,
-                                              color: isSelected ? Colors.white : catColor,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            book,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: GoogleFonts.inter(
-                                              fontSize: 10,
-                                              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                                              color: isSelected ? Colors.white.withOpacity(0.9) : SacredColors.onSurface.withOpacity(0.8),
-                                            ),
-                                          ),
-                                        ],
+                                  border: Border.all(
+                                    color: isSelected ? Colors.transparent : catColor.withValues(alpha: 0.4),
+                                    width: 1,
+                                  ),
+                                ),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _getBookAbbreviation(book),
+                                      style: GoogleFonts.inter(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                        color: isSelected ? Colors.white : catColor,
                                       ),
                                     ),
-                                  ),
-                                );
-                              },
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      book,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.inter(
+                                        fontSize: 10,
+                                        fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                        color: isSelected ? Colors.white.withValues(alpha: 0.9) : SacredColors.onSurface.withValues(alpha: 0.8),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
-                          ),
-                  ),
-                ],
+                          );
+                        },
+                      ),
               ),
             ],
           ),
