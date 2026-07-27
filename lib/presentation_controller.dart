@@ -69,6 +69,28 @@ class PresentationController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void updateSlides(List<SlideData> slidesList) {
+    _slides = List.from(slidesList);
+    _broadcastSlides();
+    notifyListeners();
+  }
+
+  void _broadcastSlides() {
+    if (_isAudienceProcess) return;
+    for (final client in _connectedClients) {
+      try {
+        final data = {
+          'type': 'slides_update',
+          'liveIndex': _liveIndex,
+          'presenterIndex': _presenterIndex,
+          'mode': _mode.index,
+          'slides': _slides.map((s) => s.toJson()).toList(),
+        };
+        client.write(json.encode(data) + '\n');
+      } catch (_) {}
+    }
+  }
+
   // --- Presenter Server Logic ---
   void _startPresenterServer() async {
     _closePresenterServer();
@@ -79,12 +101,18 @@ class PresentationController extends ChangeNotifier {
         // Send initial handshake with all slides data
         _sendHandshakeToSocket(socket);
 
-        socket.done.then((_) {
-          _connectedClients.remove(socket);
-        });
-        socket.handleError((_) {
-          _connectedClients.remove(socket);
-        });
+        socket.listen(
+          (data) {},
+          onError: (err) {
+            _connectedClients.remove(socket);
+            socket.destroy();
+          },
+          onDone: () {
+            _connectedClients.remove(socket);
+            socket.destroy();
+          },
+          cancelOnError: true,
+        );
       });
     } catch (_) {
       // Server already running or port in use
@@ -143,7 +171,7 @@ class PresentationController extends ChangeNotifier {
           .listen((line) {
         try {
           final data = json.decode(line) as Map<String, dynamic>;
-          if (data['type'] == 'handshake') {
+          if (data['type'] == 'handshake' || data['type'] == 'slides_update') {
             final slidesList = (data['slides'] as List)
                 .map((s) => SlideData.fromJson(s as Map<String, dynamic>))
                 .toList();

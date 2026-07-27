@@ -83,23 +83,34 @@ class _FullscreenPresenterPageState extends State<FullscreenPresenterPage> with 
 
   @override
   Widget build(BuildContext context) {
-    final slides = AppSettings.instance.activeSlides;
+    return ListenableBuilder(
+      listenable: AppSettings.instance,
+      builder: (context, _) {
+        final slides = AppSettings.instance.activeSlides;
 
-    if (slides.isEmpty) {
-      return Scaffold(
-        backgroundColor: Colors.black,
-        body: Center(
-          child: Text(
-            'No slides available to present.',
-            style: GoogleFonts.inter(color: Colors.white, fontSize: 18),
-          ),
-        ),
-      );
-    }
+        if (slides.isEmpty) {
+          return Scaffold(
+            backgroundColor: Colors.black,
+            body: Center(
+              child: Text(
+                'No slides available to present.',
+                style: GoogleFonts.inter(color: Colors.white, fontSize: 18),
+              ),
+            ),
+          );
+        }
 
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: KeyboardListener(
+        // Keep index in bounds in case slides count changed
+        if (_currentIndex >= slides.length) {
+          _currentIndex = slides.length - 1;
+        }
+        if (_currentIndex < 0) {
+          _currentIndex = 0;
+        }
+
+        return Scaffold(
+          backgroundColor: Colors.black,
+          body: KeyboardListener(
         focusNode: _focusNode,
         onKeyEvent: _handleKeyEvent,
         child: GestureDetector(
@@ -232,6 +243,17 @@ class _FullscreenPresenterPageState extends State<FullscreenPresenterPage> with 
                                           color: SacredColors.primary.withValues(alpha: 0.20),
                                         ),
                                       ),
+                                    ),
+                                  // Logo
+                                  if (slide.logoUrl != null && slide.logoUrl!.isNotEmpty)
+                                    Positioned(
+                                      left: slide.logoX * width,
+                                      top: slide.logoY * height,
+                                      width: slide.logoSize * (width / 960.0),
+                                      height: slide.logoSize * (width / 960.0),
+                                      child: slide.logoUrl!.startsWith('data:')
+                                          ? Image.memory(_decodeDataUrl(slide.logoUrl!), fit: BoxFit.contain)
+                                          : Image.network(slide.logoUrl!, fit: BoxFit.contain),
                                     ),
 
                                   // Content Layer
@@ -601,6 +623,8 @@ class _FullscreenPresenterPageState extends State<FullscreenPresenterPage> with 
           ),
         ),
       ),
+    );
+      },
     );
   }
 }

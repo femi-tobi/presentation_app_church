@@ -2494,34 +2494,35 @@ class _SectionHeaderState extends State<_SectionHeader> {
           onSecondaryTapUp: (details) {
             _showSectionContextMenu(context, details.globalPosition);
           },
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
-            decoration: BoxDecoration(
-              color: widget.section.colorValue != null
-                  ? Color(widget.section.colorValue!).withOpacity(_isHovered ? 0.25 : 0.15)
-                  : (_isHovered
-                      ? SacredColors.surfaceContainerHigh.withOpacity(0.95)
-                      : SacredColors.surfaceContainerHigh.withOpacity(0.8)),
-              borderRadius: BorderRadius.circular(6),
-              border: Border(
-                left: BorderSide(
-                  color: accentColor,
-                  width: 4.5,
-                ),
-                bottom: BorderSide(
-                  color: widget.isSelected ? SacredColors.primary : Colors.transparent,
-                  width: 1.5,
-                ),
-                top: BorderSide(
-                  color: widget.isSelected ? SacredColors.primary : Colors.transparent,
-                  width: 1.5,
-                ),
-                right: BorderSide(
-                  color: widget.isSelected ? SacredColors.primary : Colors.transparent,
-                  width: 1.5,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+              decoration: BoxDecoration(
+                color: widget.section.colorValue != null
+                    ? Color(widget.section.colorValue!).withOpacity(_isHovered ? 0.25 : 0.15)
+                    : (_isHovered
+                        ? SacredColors.surfaceContainerHigh.withOpacity(0.95)
+                        : SacredColors.surfaceContainerHigh.withOpacity(0.8)),
+                border: Border(
+                  left: BorderSide(
+                    color: accentColor,
+                    width: 4.5,
+                  ),
+                  bottom: BorderSide(
+                    color: widget.isSelected ? SacredColors.primary : Colors.transparent,
+                    width: 1.5,
+                  ),
+                  top: BorderSide(
+                    color: widget.isSelected ? SacredColors.primary : Colors.transparent,
+                    width: 1.5,
+                  ),
+                  right: BorderSide(
+                    color: widget.isSelected ? SacredColors.primary : Colors.transparent,
+                    width: 1.5,
+                  ),
                 ),
               ),
-            ),
             child: Row(
               children: [
                 IconButton(
@@ -2580,6 +2581,7 @@ class _SectionHeaderState extends State<_SectionHeader> {
             ),
           ),
         ),
+      ),
       ),
     );
 

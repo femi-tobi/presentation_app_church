@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'settings_state.dart';
 import 'presentation_controller.dart';
-import 'dashboard_page.dart';
 
 class CloseIntent extends Intent {
   const CloseIntent();
@@ -109,68 +108,87 @@ class _AudienceWindowState extends State<AudienceWindow> {
                 body: ListenableBuilder(
                   listenable: slide,
                   builder: (context, _) {
-                    return Stack(
-                      children: [
-                        // Slide Background
-                        Positioned.fill(
-                          child: slide.imageUrl.isNotEmpty
-                              ? Image.memory(
-                                  decodeDataUrl(slide.imageUrl),
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (c, e, s) => Container(
-                                    color: Color(slide.bgColorValue),
-                                  ),
-                                )
-                              : Container(
-                                  color: Color(slide.bgColorValue),
-                                ),
-                        ),
-
-                        // Overlay Opacity & Blur
-                        if (slide.opacity > 0.0)
-                          Positioned.fill(
-                            child: Container(
-                              color: Colors.black.withOpacity(slide.opacity),
-                            ),
-                          ),
-
-                        // Lyrics / Content Layout
-                        Positioned.fill(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 64.0, vertical: 48.0),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                if (slide.title.isNotEmpty) ...[
-                                  Text(
-                                    slide.title,
-                                    style: GoogleFonts.inter(
-                                      fontSize: slide.titleFontSize,
-                                      fontWeight: slide.isBold ? FontWeight.bold : FontWeight.normal,
-                                      fontStyle: slide.isItalic ? FontStyle.italic : FontStyle.normal,
-                                      color: Color(slide.textColorValue).withOpacity(0.7),
+                    return LayoutBuilder(
+                      builder: (context, constraints) {
+                        final double width = constraints.maxWidth;
+                        final double height = constraints.maxHeight;
+                        final double scale = width / 960.0;
+                        return Stack(
+                          children: [
+                            // Slide Background
+                            Positioned.fill(
+                              child: slide.imageUrl.isNotEmpty
+                                  ? Image.memory(
+                                      decodeDataUrl(slide.imageUrl),
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (c, e, s) => Container(
+                                        color: Color(slide.bgColorValue),
+                                      ),
+                                    )
+                                  : Container(
+                                      color: Color(slide.bgColorValue),
                                     ),
-                                    textAlign: slide.alignment,
-                                  ),
-                                  const SizedBox(height: 24),
-                                ],
-                                Text(
-                                  slide.subtitle,
-                                  style: GoogleFonts.inter(
-                                    fontSize: slide.subtitleFontSize,
-                                    fontWeight: slide.isBold ? FontWeight.bold : FontWeight.normal,
-                                    fontStyle: slide.isItalic ? FontStyle.italic : FontStyle.normal,
-                                    color: Color(slide.textColorValue),
-                                    height: 1.4,
-                                  ),
-                                  textAlign: slide.alignment,
-                                ),
-                              ],
                             ),
-                          ),
-                        ),
-                      ],
+
+                            // Overlay Opacity & Blur
+                            if (slide.opacity > 0.0)
+                              Positioned.fill(
+                                child: Container(
+                                  color: Colors.black.withOpacity(slide.opacity),
+                                ),
+                              ),
+
+                            // Logo
+                            if (slide.logoUrl != null && slide.logoUrl!.isNotEmpty)
+                              Positioned(
+                                left: slide.logoX * width,
+                                top: slide.logoY * height,
+                                width: slide.logoSize * scale,
+                                height: slide.logoSize * scale,
+                                child: slide.logoUrl!.startsWith('data:')
+                                    ? Image.memory(decodeDataUrl(slide.logoUrl!), fit: BoxFit.contain)
+                                    : Image.network(slide.logoUrl!, fit: BoxFit.contain),
+                              ),
+
+                            // Lyrics / Content Layout
+                            Positioned.fill(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 64.0, vertical: 48.0),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    if (slide.title.isNotEmpty) ...[
+                                      Text(
+                                        slide.title,
+                                        style: GoogleFonts.inter(
+                                          fontSize: slide.titleFontSize,
+                                          fontWeight: slide.isBold ? FontWeight.bold : FontWeight.normal,
+                                          fontStyle: slide.isItalic ? FontStyle.italic : FontStyle.normal,
+                                          color: Color(slide.textColorValue).withOpacity(0.7),
+                                        ),
+                                        textAlign: slide.alignment,
+                                      ),
+                                      const SizedBox(height: 24),
+                                    ],
+                                    Text(
+                                      slide.subtitle,
+                                      style: GoogleFonts.inter(
+                                        fontSize: slide.subtitleFontSize,
+                                        fontWeight: slide.isBold ? FontWeight.bold : FontWeight.normal,
+                                        fontStyle: slide.isItalic ? FontStyle.italic : FontStyle.normal,
+                                        color: Color(slide.textColorValue),
+                                        height: 1.4,
+                                      ),
+                                      textAlign: slide.alignment,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
                     );
                   },
                 ),

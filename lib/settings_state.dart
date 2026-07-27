@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:async';
+import 'presentation_controller.dart';
 
 
 enum SectionType {
@@ -706,6 +707,7 @@ class AppSettings extends ChangeNotifier {
   void updateActiveSlides(List<SlideData> slides) {
     _activeSlides = List.from(slides);
     notifyListeners();
+    PresentationController.instance.updateSlides(slides);
   }
 
   List<SlideSection> _activeSections = [];

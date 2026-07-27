@@ -932,87 +932,112 @@ class _SlidePreviewWidget extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: Colors.white.withOpacity(0.08)),
         ),
-        child: Stack(
-          children: [
-            // Background image
-            if (slide.imageUrl.isNotEmpty)
-              Positioned.fill(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Opacity(
-                    opacity: slide.opacity,
-                    child: slide.blur > 0
-                        ? ImageFiltered(
-                            imageFilter: ImageFilter.blur(
-                              sigmaX: slide.blur * 0.5,
-                              sigmaY: slide.blur * 0.5,
-                            ),
-                            child: _buildImage(slide.imageUrl),
-                          )
-                        : _buildImage(slide.imageUrl),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final double w = constraints.maxWidth;
+            final double h = constraints.maxHeight;
+            final double scale = w / 960.0;
+
+            if (w < 60 || h < 40) {
+              return const SizedBox.shrink();
+            }
+
+            return Stack(
+              children: [
+                // Background image
+                if (slide.imageUrl.isNotEmpty)
+                  Positioned.fill(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Opacity(
+                        opacity: slide.opacity,
+                        child: slide.blur > 0
+                            ? ImageFiltered(
+                                imageFilter: ImageFilter.blur(
+                                  sigmaX: slide.blur * 0.5,
+                                  sigmaY: slide.blur * 0.5,
+                                ),
+                                child: _buildImage(slide.imageUrl),
+                              )
+                            : _buildImage(slide.imageUrl),
+                      ),
+                    ),
+                  ),
+
+                // Logo
+                if (slide.logoUrl != null && slide.logoUrl!.isNotEmpty)
+                  Positioned(
+                    left: slide.logoX * w,
+                    top: slide.logoY * h,
+                    width: slide.logoSize * scale,
+                    height: slide.logoSize * scale,
+                    child: slide.logoUrl!.startsWith('data:')
+                        ? Image.memory(_decodeDataUrlPresenter(slide.logoUrl!), fit: BoxFit.contain)
+                        : Image.network(slide.logoUrl!, fit: BoxFit.contain),
+                  ),
+
+                // Text content
+                Positioned.fill(
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Center(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: SizedBox(
+                          width: w - 16,
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (slide.title.isNotEmpty)
+                                Flexible(
+                                  child: Text(
+                                    slide.title,
+                                    textAlign: slide.alignment,
+                                    maxLines: showDetails ? 4 : 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.inter(
+                                      color: Colors.white,
+                                      fontWeight: slide.isBold ? FontWeight.bold : FontWeight.w600,
+                                      fontStyle: slide.isItalic ? FontStyle.italic : FontStyle.normal,
+                                      fontSize: showDetails ? 20 : 14,
+                                      shadows: const [
+                                        Shadow(color: Colors.black54, offset: Offset(0, 2), blurRadius: 6),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              if (slide.subtitle.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Flexible(
+                                  child: Text(
+                                    slide.subtitle,
+                                    textAlign: slide.alignment,
+                                    maxLines: showDetails ? 8 : 3,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.inter(
+                                      color: Colors.white.withOpacity(0.9),
+                                      fontWeight: slide.isBold ? FontWeight.w600 : FontWeight.normal,
+                                      fontStyle: slide.isItalic ? FontStyle.italic : FontStyle.normal,
+                                      fontSize: showDetails ? 16 : 11,
+                                      height: 1.4,
+                                      shadows: const [
+                                        Shadow(color: Colors.black54, offset: Offset(0, 2), blurRadius: 6),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-              ),
-
-            // Text content
-            Positioned.fill(
-              child: Padding(
-                padding: const EdgeInsets.all(8),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    if (constraints.maxHeight < 40 || constraints.maxWidth < 60) {
-                      return const SizedBox.shrink();
-                    }
-                    return Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (slide.title.isNotEmpty)
-                          Flexible(
-                            child: Text(
-                              slide.title,
-                              textAlign: slide.alignment,
-                              maxLines: showDetails ? 4 : 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.inter(
-                                color: Colors.white,
-                                fontWeight: slide.isBold ? FontWeight.bold : FontWeight.w600,
-                                fontStyle: slide.isItalic ? FontStyle.italic : FontStyle.normal,
-                                fontSize: showDetails ? 20 : 14,
-                                shadows: const [
-                                  Shadow(color: Colors.black54, offset: Offset(0, 2), blurRadius: 6),
-                                ],
-                              ),
-                            ),
-                          ),
-                        if (slide.subtitle.isNotEmpty) ...[
-                          const SizedBox(height: 4),
-                          Flexible(
-                            child: Text(
-                              slide.subtitle,
-                              textAlign: slide.alignment,
-                              maxLines: showDetails ? 8 : 3,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.inter(
-                                color: Colors.white.withOpacity(0.9),
-                                fontWeight: slide.isBold ? FontWeight.w600 : FontWeight.normal,
-                                fontStyle: slide.isItalic ? FontStyle.italic : FontStyle.normal,
-                                fontSize: showDetails ? 16 : 11,
-                                height: 1.4,
-                                shadows: const [
-                                  Shadow(color: Colors.black54, offset: Offset(0, 2), blurRadius: 6),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    );
-                  }
-                ),
-              ),
-            ),
-          ],
+              ],
+            );
+          },
         ),
       ),
     );
