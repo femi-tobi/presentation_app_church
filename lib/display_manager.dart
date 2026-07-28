@@ -218,20 +218,28 @@ class DisplayManager extends ChangeNotifier {
       _displays.addAll(newDisplays);
 
       if (_displays.isNotEmpty) {
+        // Attempt to find a secondary/non-primary external display to automatically target
+        final externalDisplays = _displays.where((d) => !d.isPrimary).toList();
+        
         if (_selectedDisplay != null) {
           final matching = _displays.where((d) => d.id == _selectedDisplay!.id);
           if (matching.isNotEmpty) {
-            _selectedDisplay = matching.first;
+            // If the currently selected display is primary but an external display is now available, pivot to the external display
+            if (_selectedDisplay!.isPrimary && externalDisplays.isNotEmpty) {
+              _selectedDisplay = externalDisplays.first;
+            } else {
+              _selectedDisplay = matching.first;
+            }
           } else {
-            _selectedDisplay = _displays.first;
+            _selectedDisplay = externalDisplays.isNotEmpty ? externalDisplays.first : _displays.first;
           }
         } else {
-          _selectedDisplay = _displays.first;
+          _selectedDisplay = externalDisplays.isNotEmpty ? externalDisplays.first : _displays.first;
         }
       } else {
         _selectedDisplay = null;
       }
-      log('Monitor discovery updated. Detected ${_displays.length} displays.');
+      log('Monitor discovery updated. Detected ${_displays.length} displays. Target: ${_selectedDisplay?.name}');
       notifyListeners();
     }
   }

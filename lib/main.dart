@@ -6,6 +6,9 @@ import 'presentation_controller.dart';
 import 'audience_window.dart';
 import 'connectors/remote_control_service.dart';
 
+/// Global navigator key for remote-triggered navigation
+final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
+
 void main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
   
@@ -37,6 +40,7 @@ class MyApp extends StatelessWidget {
       builder: (context, child) {
         final settings = AppSettings.instance;
         return MaterialApp(
+          navigatorKey: isAudience ? null : appNavigatorKey,
           title: isAudience ? 'LiveDeck - Presentation View' : 'LiveDeck',
           debugShowCheckedModeBanner: false,
           themeMode: settings.isDarkMode ? ThemeMode.dark : ThemeMode.light,

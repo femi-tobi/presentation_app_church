@@ -216,7 +216,7 @@ class _AudienceWindowState extends State<AudienceWindow> {
                                 ),
                               )
                             else
-                              // Standard Fullscreen Layout
+                               // Standard Fullscreen Layout
                               Positioned.fill(
                                 child: Padding(
                                   padding: const EdgeInsets.symmetric(horizontal: 64.0, vertical: 48.0),
@@ -237,16 +237,20 @@ class _AudienceWindowState extends State<AudienceWindow> {
                                         ),
                                         const SizedBox(height: 24),
                                       ],
-                                      Text(
-                                        slide.subtitle,
-                                        style: GoogleFonts.inter(
-                                          fontSize: slide.subtitleFontSize,
-                                          fontWeight: slide.isBold ? FontWeight.bold : FontWeight.normal,
-                                          fontStyle: slide.isItalic ? FontStyle.italic : FontStyle.normal,
-                                          color: Color(slide.textColorValue),
-                                          height: 1.4,
+                                      Expanded(
+                                        child: SingleChildScrollView(
+                                          child: Text(
+                                            slide.subtitle,
+                                            style: GoogleFonts.inter(
+                                              fontSize: slide.subtitleFontSize,
+                                              fontWeight: slide.isBold ? FontWeight.bold : FontWeight.normal,
+                                              fontStyle: slide.isItalic ? FontStyle.italic : FontStyle.normal,
+                                              color: Color(slide.textColorValue),
+                                              height: 1.4,
+                                            ),
+                                            textAlign: slide.alignment,
+                                          ),
                                         ),
-                                        textAlign: slide.alignment,
                                       ),
                                     ],
                                   ),

@@ -199,9 +199,15 @@ class PresentationController extends ChangeNotifier {
     _audienceClientSocket = null;
   }
 
+  Process? _audienceProcess;
+
   // Spawns a completely separate borderless fullscreen native window (process)
   void spawnAudienceWindow() {
     if (_isAudienceProcess) return;
+    if (_audienceProcess != null) {
+      // Already running, do not spawn another one
+      return;
+    }
     final display = DisplayManager.instance.selectedDisplay;
     final args = ['--audience'];
     if (display != null) {
@@ -217,9 +223,13 @@ class PresentationController extends ChangeNotifier {
       ]);
     }
     Process.start(Platform.executable, args).then((process) {
-      // Successfully launched independent process
+      _audienceProcess = process;
+      // Handle process termination to allow spawning again if closed
+      process.exitCode.then((_) {
+        _audienceProcess = null;
+      });
     }).catchError((_) {
-      // Fallback/Log launch error
+      _audienceProcess = null;
     });
   }
 

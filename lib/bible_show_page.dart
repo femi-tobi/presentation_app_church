@@ -8,6 +8,7 @@ import 'settings_state.dart';
 import 'preview_page.dart';
 import 'presentation_controller.dart';
 import 'fullscreen_presenter_page.dart';
+import 'display_manager.dart';
 
 class BibleShowPage extends StatefulWidget {
   final GlobalKey<ScaffoldState> scaffoldKey;
@@ -42,6 +43,8 @@ class _BibleShowPageState extends State<BibleShowPage> {
   final TextEditingController _searchController = TextEditingController();
   List<Map<String, dynamic>> _searchResults = [];
   bool _isSearching = false;
+  ParsedReference? _currentParsedRef;
+  String _autoCompleteSuggestion = '';
 
   // Focus
   final FocusNode _pageFocusNode = FocusNode();
@@ -166,6 +169,162 @@ class _BibleShowPageState extends State<BibleShowPage> {
     });
   }
 
+  void _presentSpecificVerse(BibleVerse v) {
+    if (_selectedChapter == null || _selectedBook == null) return;
+    final settings = AppSettings.instance;
+    final List<String> segments = settings.bibleAutoSplit
+        ? _splitVerseText(v.text, settings.bibleMaxChars, settings.bibleMaxLines)
+        : [v.text];
+
+    final List<SlideData> slides = [];
+    for (int i = 0; i < segments.length; i++) {
+      final id = DateTime.now().microsecondsSinceEpoch.toString() + '_$i';
+      final suffix = segments.length > 1 ? ' (cont. ${i + 1}/${segments.length})' : '';
+      slides.add(SlideData(
+        id: id,
+        title: '${_selectedBook} ${_selectedChapter!.chapterNumber}:${v.verseNumber}$suffix',
+        subtitle: segments[i],
+        imageUrl: '',
+        opacity: 0.0,
+        isBold: settings.bibleIsBold,
+        isItalic: settings.bibleIsItalic,
+        titleFontSize: settings.bibleFontSize,
+        subtitleFontSize: settings.bibleFontSize * 0.8,
+        bgColorValue: settings.bibleBgColor,
+        textColorValue: settings.bibleTextColor,
+      ));
+    }
+
+    final isMultiScreen = DisplayManager.instance.displays.length > 1 || DisplayManager.instance.simulateAudience;
+
+    settings.updateActiveSlides(slides);
+    settings.activeSlideIndex = 0;
+
+    PresentationController.instance.updateSlides(slides);
+    PresentationController.instance.goTo(0);
+    PresentationController.instance.setMode(PresentationMode.live);
+    PresentationController.instance.spawnAudienceWindow();
+
+    if (!isMultiScreen) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const FullscreenPresenterPage(),
+        ),
+      );
+    }
+  }
+
+  // Keyboard navigation helper to move to next or previous verse and handle chapter overflows
+  void _navigateVerses(bool next) async {
+    if (_selectedChapter == null || _selectedBook == null || _currentBookData == null) return;
+    final verses = _selectedChapter!.verses;
+    if (verses.isEmpty) return;
+
+    // Determine current focused verse index (default to first verse or currently highlighted one)
+    int currentIdx = -1;
+    if (_selectedVerseNumbers.isNotEmpty) {
+      final currentSelected = _selectedVerseNumbers.first;
+      currentIdx = verses.indexWhere((v) => v.verseNumber == currentSelected);
+    }
+
+    BibleVerse? targetVerse;
+
+    if (next) {
+      if (currentIdx == -1) {
+        // Highlight first verse if none was selected
+        setState(() {
+          _selectedVerseNumbers.clear();
+          _selectedVerseNumbers.add(verses.first.verseNumber);
+        });
+        targetVerse = verses.first;
+      } else if (currentIdx < verses.length - 1) {
+        // Go to next verse in current chapter
+        setState(() {
+          _selectedVerseNumbers.clear();
+          _selectedVerseNumbers.add(verses[currentIdx + 1].verseNumber);
+        });
+        targetVerse = verses[currentIdx + 1];
+      } else {
+        // Exhausted chapter! Move to next chapter
+        final chapters = _currentBookData!.chapters;
+        final chapIdx = chapters.indexWhere((c) => c.chapterNumber == _selectedChapter!.chapterNumber);
+        if (chapIdx != -1 && chapIdx < chapters.length - 1) {
+          final nextChap = chapters[chapIdx + 1];
+          _selectChapter(nextChap);
+          if (nextChap.verses.isNotEmpty) {
+            setState(() {
+              _selectedVerseNumbers.add(nextChap.verses.first.verseNumber);
+            });
+            targetVerse = nextChap.verses.first;
+          }
+        } else {
+          // Exhausted book! Move to next book in bible list
+          final bookIdx = _books.indexOf(_selectedBook!);
+          if (bookIdx != -1 && bookIdx < _books.length - 1) {
+            await _selectBook(_books[bookIdx + 1]);
+            if (_selectedChapter != null && _selectedChapter!.verses.isNotEmpty) {
+              setState(() {
+                _selectedVerseNumbers.add(_selectedChapter!.verses.first.verseNumber);
+              });
+              targetVerse = _selectedChapter!.verses.first;
+            }
+          }
+        }
+      }
+    } else {
+      // Prev navigation
+      if (currentIdx == -1) {
+        setState(() {
+          _selectedVerseNumbers.clear();
+          _selectedVerseNumbers.add(verses.last.verseNumber);
+        });
+        targetVerse = verses.last;
+      } else if (currentIdx > 0) {
+        setState(() {
+          _selectedVerseNumbers.clear();
+          _selectedVerseNumbers.add(verses[currentIdx - 1].verseNumber);
+        });
+        targetVerse = verses[currentIdx - 1];
+      } else {
+        // Go to previous chapter's last verse
+        final chapters = _currentBookData!.chapters;
+        final chapIdx = chapters.indexWhere((c) => c.chapterNumber == _selectedChapter!.chapterNumber);
+        if (chapIdx > 0) {
+          final prevChap = chapters[chapIdx - 1];
+          _selectChapter(prevChap);
+          if (prevChap.verses.isNotEmpty) {
+            setState(() {
+              _selectedVerseNumbers.add(prevChap.verses.last.verseNumber);
+            });
+            targetVerse = prevChap.verses.last;
+          }
+        } else {
+          // Go to previous book's last chapter's last verse
+          final bookIdx = _books.indexOf(_selectedBook!);
+          if (bookIdx > 0) {
+            await _selectBook(_books[bookIdx - 1]);
+            if (_currentBookData != null && _currentBookData!.chapters.isNotEmpty) {
+              final lastChap = _currentBookData!.chapters.last;
+              _selectChapter(lastChap);
+              if (lastChap.verses.isNotEmpty) {
+                setState(() {
+                  _selectedVerseNumbers.add(lastChap.verses.last.verseNumber);
+                });
+                targetVerse = lastChap.verses.last;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Automatically present the verse we just navigated to
+    if (targetVerse != null) {
+      _presentSpecificVerse(targetVerse);
+    }
+  }
+
   void _copySelectedToClipboard() {
     if (_selectedVerseNumbers.isEmpty || _selectedChapter == null) return;
     final buffer = StringBuffer();
@@ -254,54 +413,88 @@ class _BibleShowPageState extends State<BibleShowPage> {
       ),
     );
   }
-
   Future<void> _performSearch() async {
     final query = _searchController.text.trim();
     if (query.isEmpty) {
       setState(() {
         _searchResults.clear();
         _isSearching = false;
+        _currentParsedRef = null;
+        _autoCompleteSuggestion = '';
       });
       return;
     }
 
+    final results = <Map<String, dynamic>>[];
+    final parsed = await BibleService.instance.parseReference(_selectedTranslation, query);
+
     setState(() {
+      _currentParsedRef = parsed;
       _isSearching = true;
     });
 
-    final results = <Map<String, dynamic>>[];
-
-    // Check if query is a Bible reference lookup, e.g. "John 3" or "John 3:16" or "1 Samuel 3"
-    final refRegex = RegExp(r'^(\d?\s*[a-zA-Z\s]+?)\s+(\d+)(?:\s*:\s*(\d+))?$');
-    final match = refRegex.firstMatch(query);
-    if (match != null) {
-      final inputBook = match.group(1)?.trim() ?? '';
-      final chapterStr = match.group(2) ?? '';
-      final verseStr = match.group(3);
-
-      // Find closest book name
-      final matchedBook = _books.firstWhere(
-        (b) => b.replaceAll(' ', '').toLowerCase() == inputBook.replaceAll(' ', '').toLowerCase(),
+    // Handle autocompletion suggestions
+    String suggestion = '';
+    if (parsed.isValid && parsed.book != null) {
+      if (parsed.chapter != null) {
+        if (parsed.verses.isNotEmpty) {
+          // If range/list is parsed, show it
+          suggestion = parsed.normalizedReference ?? '';
+        } else {
+          // Chapter only
+          suggestion = '${parsed.book} ${parsed.chapter}:';
+        }
+      } else {
+        // Book only
+        suggestion = '${parsed.book} 1';
+      }
+    } else {
+      // Try to find a book suggestion matching prefix fuzzy search
+      final queryLower = query.toLowerCase();
+      final booksList = await BibleService.instance.getBooks(_selectedTranslation);
+      final matchedBook = booksList.firstWhere(
+        (b) => b.toLowerCase().startsWith(queryLower) ||
+               (BibleService.instance.abbreviations[queryLower] != null &&
+                b.toLowerCase() == BibleService.instance.abbreviations[queryLower]!.toLowerCase()),
         orElse: () => '',
       );
-
       if (matchedBook.isNotEmpty) {
-        results.add({
-          'isReference': true,
-          'book': matchedBook,
-          'chapter': chapterStr,
-          'verse': verseStr,
-          'text': 'Go to $matchedBook $chapterStr${verseStr != null ? ':$verseStr' : ''}',
-        });
+        suggestion = '$matchedBook ';
       }
     }
 
-    // Also fetch keyword search results
+    setState(() {
+      _autoCompleteSuggestion = suggestion;
+    });
+
+    // Fetch matches from BibleService searchVerses
     final textResults = await BibleService.instance.searchVerses(_selectedTranslation, query);
     results.addAll(textResults);
 
     setState(() {
       _searchResults = results;
+      _isSearching = query.isNotEmpty;
+    });
+  }
+
+  // Open passage target directly when Enter is pressed
+  Future<void> _openParsedReference() async {
+    final parsed = _currentParsedRef;
+    if (parsed == null || !parsed.isValid || parsed.book == null) return;
+
+    await _selectBook(parsed.book!, targetChapter: parsed.chapter?.toString() ?? '1');
+    setState(() {
+      _selectedVerseNumbers.clear();
+      if (parsed.verses.isNotEmpty) {
+        for (final v in parsed.verses) {
+          _selectedVerseNumbers.add(v.toString());
+        }
+      }
+      // Clear search box to restore chapter detail view
+      _searchController.clear();
+      _isSearching = false;
+      _currentParsedRef = null;
+      _autoCompleteSuggestion = '';
     });
   }
 
@@ -374,6 +567,39 @@ class _BibleShowPageState extends State<BibleShowPage> {
       autofocus: true,
       onKeyEvent: (node, event) {
         if (event is KeyDownEvent && !_searchFocusNode.hasFocus) {
+          // Present highlighted verse on Enter key press
+          if (event.logicalKey == LogicalKeyboardKey.enter && _selectedVerseNumbers.isNotEmpty && _selectedChapter != null) {
+            final activeVerseNum = _selectedVerseNumbers.first;
+            final match = _selectedChapter!.verses.firstWhere((v) => v.verseNumber == activeVerseNum, orElse: () => BibleVerse(verseNumber: '', text: ''));
+            if (match.verseNumber.isNotEmpty) {
+              _presentSpecificVerse(match);
+              return KeyEventResult.handled;
+            }
+          }
+
+          // Navigate verses on ArrowUp / ArrowDown keypress
+          if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+            _navigateVerses(true);
+            return KeyEventResult.handled;
+          }
+          if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+            _navigateVerses(false);
+            return KeyEventResult.handled;
+          }
+
+          // Bind Ctrl+G or slash (/) shortcut focus keys
+          final isCtrlG = (HardwareKeyboard.instance.isControlPressed && event.logicalKey == LogicalKeyboardKey.keyG);
+          final isSlash = (event.logicalKey == LogicalKeyboardKey.slash);
+
+          if (isCtrlG || isSlash) {
+            _searchFocusNode.requestFocus();
+            _searchController.selection = TextSelection(
+              baseOffset: 0,
+              extentOffset: _searchController.text.length,
+            );
+            return KeyEventResult.handled;
+          }
+
           final character = event.character;
           if (character != null && character.isNotEmpty) {
             // Check if it is a printable alphanumeric key or punctuation
@@ -393,6 +619,14 @@ class _BibleShowPageState extends State<BibleShowPage> {
               _performSearch();
               return KeyEventResult.handled;
             }
+          }
+        } else if (event is KeyDownEvent && _searchFocusNode.hasFocus) {
+          // Clear and exit search mode on Escape keypress
+          if (event.logicalKey == LogicalKeyboardKey.escape) {
+            _searchController.clear();
+            _performSearch();
+            _pageFocusNode.requestFocus();
+            return KeyEventResult.handled;
           }
         }
         return KeyEventResult.ignored;
@@ -570,26 +804,86 @@ class _BibleShowPageState extends State<BibleShowPage> {
           // Search Box
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: TextField(
-              controller: _searchController,
-              focusNode: _searchFocusNode,
-              autofocus: true,
-              decoration: InputDecoration(
-                hintText: 'Search scriptures...',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _searchController.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _searchController.clear();
-                          _performSearch();
-                        },
-                      )
-                    : null,
-                contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            child: Focus(
+              onKeyEvent: (node, event) {
+                if (event is KeyDownEvent) {
+                  if (event.logicalKey == LogicalKeyboardKey.enter) {
+                    _openParsedReference();
+                    return KeyEventResult.handled;
+                  }
+                  if (event.logicalKey == LogicalKeyboardKey.tab && _autoCompleteSuggestion.isNotEmpty) {
+                    setState(() {
+                      _searchController.text = _autoCompleteSuggestion;
+                      _searchController.selection = TextSelection.fromPosition(
+                        TextPosition(offset: _autoCompleteSuggestion.length),
+                      );
+                    });
+                    _performSearch();
+                    return KeyEventResult.handled;
+                  }
+                }
+                return KeyEventResult.ignored;
+              },
+              child: Stack(
+                alignment: Alignment.centerLeft,
+                children: [
+                  // Hint Auto-complete suggestion layout background
+                  if (_searchController.text.isNotEmpty &&
+                      _autoCompleteSuggestion.isNotEmpty &&
+                      _autoCompleteSuggestion.toLowerCase().startsWith(_searchController.text.toLowerCase()))
+                    Padding(
+                      padding: const EdgeInsets.only(left: 40, bottom: 2),
+                      child: Text(
+                        _autoCompleteSuggestion,
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          color: Colors.grey.withValues(alpha: 0.6),
+                        ),
+                      ),
+                    ),
+                  
+                  // Primary input field with green/red status color borders
+                  TextField(
+                    controller: _searchController,
+                    focusNode: _searchFocusNode,
+                    autofocus: true,
+                    style: GoogleFonts.inter(fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: 'Search scriptures...',
+                      prefixIcon: const Icon(Icons.search),
+                      suffixIcon: _searchController.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear),
+                              onPressed: () {
+                                _searchController.clear();
+                                _performSearch();
+                              },
+                            )
+                          : null,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(
+                          color: _searchController.text.isEmpty
+                              ? SacredColors.outline
+                              : (_currentParsedRef?.isValid == true ? Colors.green : Colors.red),
+                          width: _searchController.text.isEmpty ? 1.0 : 1.8,
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(
+                          color: _searchController.text.isEmpty
+                              ? SacredColors.primary
+                              : (_currentParsedRef?.isValid == true ? Colors.green : Colors.red),
+                          width: 2.0,
+                        ),
+                      ),
+                    ),
+                    onChanged: (_) => _performSearch(),
+                  ),
+                ],
               ),
-              onChanged: (_) => _performSearch(),
             ),
           ),
           const SizedBox(height: 16),
@@ -678,16 +972,15 @@ class _BibleShowPageState extends State<BibleShowPage> {
       itemCount: _searchResults.length,
       itemBuilder: (context, index) {
         final res = _searchResults[index];
-        final isRef = res['isReference'] == true;
-        final ref = isRef ? 'Passage Lookup' : '${res['book']} ${res['chapter']}:${res['verse']}';
+        final ref = '${res['book']} ${res['chapter']}:${res['verse']}';
         
         return Card(
-          color: isRef ? SacredColors.primary.withValues(alpha: 0.1) : SacredColors.surface,
+          color: SacredColors.surface,
           elevation: 0,
           margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(8),
-            side: BorderSide(color: isRef ? SacredColors.primary : SacredColors.outlineVariant),
+            side: BorderSide(color: SacredColors.outlineVariant),
           ),
           child: InkWell(
             borderRadius: BorderRadius.circular(8),
@@ -708,20 +1001,13 @@ class _BibleShowPageState extends State<BibleShowPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      if (isRef)
-                        Icon(Icons.menu_book, size: 14, color: SacredColors.primary),
-                      if (isRef) const SizedBox(width: 6),
-                      Text(
-                        ref,
-                        style: GoogleFonts.inter(
-                          fontWeight: FontWeight.bold,
-                          color: SacredColors.primary,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
+                  Text(
+                    ref,
+                    style: GoogleFonts.inter(
+                      fontWeight: FontWeight.bold,
+                      color: SacredColors.primary,
+                      fontSize: 12,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -730,7 +1016,7 @@ class _BibleShowPageState extends State<BibleShowPage> {
                     overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.inter(
                       fontSize: 13,
-                      fontWeight: isRef ? FontWeight.w600 : FontWeight.normal,
+                      fontWeight: FontWeight.normal,
                       color: SacredColors.onSurface,
                       height: 1.4,
                     ),
@@ -1056,92 +1342,22 @@ class _BibleShowPageState extends State<BibleShowPage> {
                                 padding: const EdgeInsets.all(20),
                                 child: SingleChildScrollView(
                                   physics: const BouncingScrollPhysics(),
-                                  child: RichText(
-                                    text: TextSpan(
-                                      children: _selectedChapter!.verses.map((v) {
-                                        final isSelected = _selectedVerseNumbers.contains(v.verseNumber);
-                                        final themeColor = _getBookCategoryColor(_selectedBook ?? '');
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: _selectedChapter!.verses.map((v) {
+                                      final isSelected = _selectedVerseNumbers.contains(v.verseNumber);
+                                      final themeColor = _getBookCategoryColor(_selectedBook ?? '');
 
-                                        return WidgetSpan(
-                                          child: GestureDetector(
-                                            onTap: () => _toggleVerseSelection(v.verseNumber),
-                                              onDoubleTap: () {
-                                                // Instantly present this verse live
-                                                final settings = AppSettings.instance;
-                                                final List<String> segments = settings.bibleAutoSplit
-                                                    ? _splitVerseText(v.text, settings.bibleMaxChars, settings.bibleMaxLines)
-                                                    : [v.text];
-
-                                                final List<SlideData> slides = [];
-                                                for (int i = 0; i < segments.length; i++) {
-                                                  final id = DateTime.now().microsecondsSinceEpoch.toString() + '_$i';
-                                                  final suffix = segments.length > 1 ? ' (cont. ${i + 1}/${segments.length})' : '';
-                                                  slides.add(SlideData(
-                                                    id: id,
-                                                    title: '${_selectedBook} ${_selectedChapter!.chapterNumber}:${v.verseNumber}$suffix',
-                                                    subtitle: segments[i],
-                                                    imageUrl: '',
-                                                    opacity: 0.0,
-                                                    isBold: settings.bibleIsBold,
-                                                    isItalic: settings.bibleIsItalic,
-                                                    titleFontSize: settings.bibleFontSize,
-                                                    subtitleFontSize: settings.bibleFontSize * 0.8,
-                                                    bgColorValue: settings.bibleBgColor,
-                                                    textColorValue: settings.bibleTextColor,
-                                                  ));
-                                                }
-
-                                                // Load these slide(s) into the active slides settings
-                                                settings.updateActiveSlides(slides);
-                                                settings.activeSlideIndex = 0;
-
-                                                // Push the FullscreenPresenterPage view on top
-                                                Navigator.push(
-                                                  context,
-                                                  MaterialPageRoute(
-                                                    builder: (context) => FullscreenPresenterPage(),
-                                                  ),
-                                                );
-
-                                                // Setup the presentation controller for live mode
-                                                PresentationController.instance.updateSlides(slides);
-                                                PresentationController.instance.goTo(0);
-                                                PresentationController.instance.setMode(PresentationMode.live);
-                                                PresentationController.instance.spawnAudienceWindow();
-                                              },
-                                            child: Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                                              decoration: BoxDecoration(
-                                                color: isSelected ? themeColor.withValues(alpha: 0.15) : Colors.transparent,
-                                                borderRadius: BorderRadius.circular(4),
-                                              ),
-                                              child: Text.rich(
-                                                TextSpan(
-                                                  children: [
-                                                    TextSpan(
-                                                      text: '${v.verseNumber} ',
-                                                      style: GoogleFonts.inter(
-                                                        fontWeight: FontWeight.bold,
-                                                        color: isSelected ? themeColor : SacredColors.primary,
-                                                        fontSize: 14,
-                                                      ),
-                                                    ),
-                                                    TextSpan(
-                                                      text: '${v.text}  ',
-                                                      style: GoogleFonts.inter(
-                                                        color: isSelected ? themeColor : SacredColors.onSurface,
-                                                        fontSize: 16,
-                                                        height: 1.6,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        );
-                                      }).toList(),
-                                    ),
+                                      // Use a StatefulWidget helper class to manage hover state cleanly without throwing build cycle exceptions
+                                      return VerseRowItem(
+                                        verse: v,
+                                        isSelected: isSelected,
+                                        themeColor: themeColor,
+                                        onTap: () => _toggleVerseSelection(v.verseNumber),
+                                        onDoubleTap: () => _presentSpecificVerse(v),
+                                        onPresent: () => _presentSpecificVerse(v),
+                                      );
+                                    }).toList(),
                                   ),
                                 ),
                               ),
@@ -1573,3 +1789,90 @@ class _BibleShowPageState extends State<BibleShowPage> {
     );
   }
 }
+
+class VerseRowItem extends StatefulWidget {
+  final BibleVerse verse;
+  final bool isSelected;
+  final Color themeColor;
+  final VoidCallback onTap;
+  final VoidCallback onDoubleTap;
+  final VoidCallback onPresent;
+
+  const VerseRowItem({
+    super.key,
+    required this.verse,
+    required this.isSelected,
+    required this.themeColor,
+    required this.onTap,
+    required this.onDoubleTap,
+    required this.onPresent,
+  });
+
+  @override
+  State<VerseRowItem> createState() => _VerseRowItemState();
+}
+
+class _VerseRowItemState extends State<VerseRowItem> {
+  bool _isHovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovering = true),
+      onExit: (_) => setState(() => _isHovering = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        onDoubleTap: widget.onDoubleTap,
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: BoxDecoration(
+            color: widget.isSelected ? widget.themeColor.withValues(alpha: 0.12) : Colors.transparent,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(
+                        text: '${widget.verse.verseNumber} ',
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.bold,
+                          color: widget.isSelected ? widget.themeColor : SacredColors.primary,
+                          fontSize: 14,
+                        ),
+                      ),
+                      TextSpan(
+                        text: widget.verse.text,
+                        style: GoogleFonts.inter(
+                          color: widget.isSelected ? widget.themeColor : SacredColors.onSurface,
+                          fontSize: 16,
+                          height: 1.6,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Opacity(
+                opacity: _isHovering ? 1.0 : 0.0,
+                child: IconButton(
+                  icon: Icon(Icons.play_circle_fill, color: widget.themeColor, size: 22),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  tooltip: 'Present this verse instantly',
+                  onPressed: widget.onPresent,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
