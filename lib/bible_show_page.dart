@@ -171,6 +171,10 @@ class _BibleShowPageState extends State<BibleShowPage> {
 
   void _presentSpecificVerse(BibleVerse v) {
     if (_selectedChapter == null || _selectedBook == null) return;
+    setState(() {
+      _selectedVerseNumbers.clear();
+      _selectedVerseNumbers.add(v.verseNumber);
+    });
     final settings = AppSettings.instance;
     final List<String> segments = settings.bibleAutoSplit
         ? _splitVerseText(v.text, settings.bibleMaxChars, settings.bibleMaxLines)
@@ -179,10 +183,10 @@ class _BibleShowPageState extends State<BibleShowPage> {
     final List<SlideData> slides = [];
     for (int i = 0; i < segments.length; i++) {
       final id = DateTime.now().microsecondsSinceEpoch.toString() + '_$i';
-      final suffix = segments.length > 1 ? ' (cont. ${i + 1}/${segments.length})' : '';
+      final letterSuffix = segments.length > 1 ? String.fromCharCode(97 + i) : ''; // 97 is ASCII code for 'a'
       slides.add(SlideData(
         id: id,
-        title: '${_selectedBook} ${_selectedChapter!.chapterNumber}:${v.verseNumber}$suffix',
+        title: '${_selectedBook} ${_selectedChapter!.chapterNumber}:${v.verseNumber}$letterSuffix',
         subtitle: segments[i],
         imageUrl: '',
         opacity: 0.0,
@@ -362,10 +366,10 @@ class _BibleShowPageState extends State<BibleShowPage> {
 
         for (int i = 0; i < segments.length; i++) {
           final id = DateTime.now().microsecondsSinceEpoch.toString() + v.verseNumber + '_$i';
-          final suffix = segments.length > 1 ? ' (cont. ${i + 1}/${segments.length})' : '';
+          final letterSuffix = segments.length > 1 ? String.fromCharCode(97 + i) : ''; // 97 is ASCII code for 'a'
           final slide = SlideData(
             id: id,
-            title: '${_selectedBook} ${_selectedChapter!.chapterNumber}:${v.verseNumber}$suffix',
+            title: '${_selectedBook} ${_selectedChapter!.chapterNumber}:${v.verseNumber}$letterSuffix',
             subtitle: segments[i],
             imageUrl: '',
             opacity: 0.0,
@@ -626,6 +630,13 @@ class _BibleShowPageState extends State<BibleShowPage> {
             _searchController.clear();
             _performSearch();
             _pageFocusNode.requestFocus();
+            PresentationController.instance.closeAudienceWindow();
+            return KeyEventResult.handled;
+          }
+        } else if (event is KeyDownEvent && !_searchFocusNode.hasFocus) {
+          // Close audience window on Escape if not searching
+          if (event.logicalKey == LogicalKeyboardKey.escape) {
+            PresentationController.instance.closeAudienceWindow();
             return KeyEventResult.handled;
           }
         }
@@ -738,10 +749,80 @@ class _BibleShowPageState extends State<BibleShowPage> {
               ),
             ),
 
-          IconButton(
+           IconButton(
             icon: const Icon(Icons.tune),
             tooltip: 'Bible Presentation Settings',
             onPressed: () => _showBibleSettingsDialog(context),
+          ),
+          const SizedBox(width: 8),
+
+          // Display Target Selector synced with DisplayManager
+          AnimatedBuilder(
+            animation: DisplayManager.instance,
+            builder: (context, child) {
+              final dm = DisplayManager.instance;
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                height: 38,
+                decoration: BoxDecoration(
+                  color: SacredColors.surfaceVariant.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: SacredColors.outlineVariant),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Present To: ',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: SacredColors.onSurfaceVariant,
+                      ),
+                    ),
+                    Flexible(
+                      child: DropdownButton<String>(
+                        value: dm.selectedDisplay?.id,
+                        dropdownColor: SacredColors.surfaceContainer,
+                        underline: const SizedBox(),
+                        isExpanded: false,
+                        icon: Icon(Icons.arrow_drop_down, size: 16, color: SacredColors.onSurfaceVariant),
+                        style: GoogleFonts.inter(color: SacredColors.onSurface, fontSize: 12),
+                        onChanged: (val) {
+                          if (val != null) {
+                            dm.selectDisplay(val);
+                          }
+                        },
+                        items: dm.displays.map((disp) {
+                          return DropdownMenuItem<String>(
+                            value: disp.id,
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 150),
+                              child: Text(
+                                disp.name,
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                                style: GoogleFonts.inter(fontSize: 12),
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    IconButton(
+                      icon: Icon(Icons.refresh, size: 14, color: SacredColors.onSurfaceVariant),
+                      tooltip: 'Refresh Displays',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      onPressed: () async {
+                        await dm.refreshDisplays();
+                      },
+                    ),
+                  ],
+                ),
+              );
+            },
           ),
           const SizedBox(width: 8),
 

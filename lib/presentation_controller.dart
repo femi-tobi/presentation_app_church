@@ -14,6 +14,7 @@ class PresentationController extends ChangeNotifier {
 
   PresentationController._internal() {
     _startElapsedTimeTimer();
+    _startPresenterServer();
   }
 
   List<SlideData> _slides = [];
@@ -335,6 +336,14 @@ class PresentationController extends ChangeNotifier {
   void _stopAutoplayTimer() {
     _autoplayTimer?.cancel();
     _autoplayTimer = null;
+  }
+
+  void closeAudienceWindow() {
+    if (_audienceProcess != null) {
+      _audienceProcess!.kill();
+      _audienceProcess = null;
+      notifyListeners();
+    }
   }
 
   @override
