@@ -252,6 +252,43 @@ class _AudienceWindowState extends State<AudienceWindow> {
                                   ),
                                 ),
                               ),
+                            // Countdown Timer Overlay Layer
+                            if (AppSettings.instance.showTimerOnAudience)
+                              Positioned(
+                                left: 24,
+                                top: 24,
+                                child: ListenableBuilder(
+                                  listenable: AppSettings.instance,
+                                  builder: (context, _) {
+                                    final settings = AppSettings.instance;
+                                    final minutes = (settings.timerRemainingSeconds / 60).floor().toString().padLeft(2, '0');
+                                    final seconds = (settings.timerRemainingSeconds % 60).toString().padLeft(2, '0');
+                                    return Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black54,
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(color: Colors.white24),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(Icons.timer, color: Colors.orangeAccent, size: 16),
+                                          const SizedBox(width: 6),
+                                          Text(
+                                            '$minutes:$seconds',
+                                            style: GoogleFonts.firaCode(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 16,
+                                              color: Colors.orangeAccent,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }
+                                ),
+                              ),
                           ],
                         );
                       },

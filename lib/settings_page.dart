@@ -854,6 +854,75 @@ class _SettingsContent extends StatelessWidget {
                       ),
                     ],
                   );
+                }
+              ),
+              Divider(height: 32, color: SacredColors.outlineVariant),
+              ListenableBuilder(
+                listenable: AppSettings.instance,
+                builder: (context, _) {
+                  final settings = AppSettings.instance;
+                  return Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.timer, color: SacredColors.outline),
+                              SizedBox(width: 16),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Show Countdown Timer', style: SacredTypography.labelLg(context)),
+                                  SizedBox(height: 2),
+                                  Text('Overlay countdown timer on live presentation screen.', style: SacredTypography.labelSm(context).copyWith(color: SacredColors.onSurfaceVariant)),
+                                ],
+                              ),
+                            ],
+                          ),
+                          Switch(
+                            value: settings.showTimerOnAudience,
+                            onChanged: (val) => settings.showTimerOnAudience = val,
+                            activeThumbColor: selectedPrimary,
+                          ),
+                        ],
+                      ),
+                      if (settings.showTimerOnAudience) ...[
+                        const SizedBox(height: 16),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('Timer Duration (Minutes)', style: SacredTypography.labelSm(context)),
+                            DropdownButton<int>(
+                              value: (settings.timerDurationSeconds / 60).round(),
+                              dropdownColor: SacredColors.surfaceContainerLow,
+                              items: [1, 2, 3, 5, 10, 15, 20, 30].map((mins) {
+                                return DropdownMenuItem(
+                                  value: mins,
+                                  child: Text('$mins Min', style: SacredTypography.bodyMd(context)),
+                                );
+                              }).toList(),
+                              onChanged: (val) {
+                                if (val != null) {
+                                  settings.timerDurationSeconds = val * 60;
+                                }
+                              },
+                            ),
+                            const SizedBox(width: 12),
+                            ElevatedButton(
+                              onPressed: settings.isTimerRunning ? settings.stopCountdown : settings.startCountdown,
+                              child: Text(settings.isTimerRunning ? 'Pause' : 'Start'),
+                            ),
+                            ElevatedButton(
+                              onPressed: settings.resetCountdown,
+                              child: const Text('Reset'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  );
+                }
               ),
               Divider(height: 32, color: SacredColors.outlineVariant),
               ListenableBuilder(

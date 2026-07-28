@@ -302,7 +302,6 @@ class PresentationController extends ChangeNotifier {
       return null;
     }
   }
-  }
 
   void _startElapsedTimeTimer() {
     _elapsedTimer?.cancel();

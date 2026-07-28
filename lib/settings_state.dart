@@ -724,6 +724,58 @@ class AppSettings extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Countdown Timer Logic
+  int _timerDurationSeconds = 300; // Default to 5 minutes
+  int _timerRemainingSeconds = 300;
+  bool _isTimerRunning = false;
+  Timer? _countdownTimer;
+  bool _showTimerOnAudience = true;
+
+  int get timerRemainingSeconds => _timerRemainingSeconds;
+  bool get isTimerRunning => _isTimerRunning;
+  bool get showTimerOnAudience => _showTimerOnAudience;
+  int get timerDurationSeconds => _timerDurationSeconds;
+
+  set showTimerOnAudience(bool val) {
+    _showTimerOnAudience = val;
+    saveSettings();
+    notifyListeners();
+  }
+
+  set timerDurationSeconds(int val) {
+    _timerDurationSeconds = val;
+    _timerRemainingSeconds = val;
+    saveSettings();
+    notifyListeners();
+  }
+
+  void startCountdown() {
+    if (_isTimerRunning) return;
+    _isTimerRunning = true;
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_timerRemainingSeconds > 0) {
+        _timerRemainingSeconds--;
+        notifyListeners();
+      } else {
+        stopCountdown();
+      }
+    });
+    notifyListeners();
+  }
+
+  void stopCountdown() {
+    _countdownTimer?.cancel();
+    _countdownTimer = null;
+    _isTimerRunning = false;
+    notifyListeners();
+  }
+
+  void resetCountdown() {
+    stopCountdown();
+    _timerRemainingSeconds = _timerDurationSeconds;
+    notifyListeners();
+  }
+
   bool _isOffline = false;
   bool get isOffline => _isOffline;
   set isOffline(bool value) {

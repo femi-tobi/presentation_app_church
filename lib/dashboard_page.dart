@@ -1291,7 +1291,7 @@ class MainCanvasContent extends StatelessWidget {
         // Premium Glassmorphic Daily Verse Greeting Card
         Container(
           width: double.infinity,
-          margin: const EdgeInsets.bottom(32),
+          margin: const EdgeInsets.only(bottom: 32),
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
             gradient: LinearGradient(
