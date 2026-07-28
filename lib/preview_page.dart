@@ -38,6 +38,7 @@ class PreviewPage extends StatefulWidget {
   final String selectedTheme;
   final List<SlideData>? initialSlides;
   final List<SlideSection>? initialSections;
+  final bool isBiblePassage;
 
   const PreviewPage({
     super.key,
@@ -46,6 +47,7 @@ class PreviewPage extends StatefulWidget {
     this.selectedTheme = 'Minimal',
     this.initialSlides,
     this.initialSections,
+    this.isBiblePassage = false,
   });
 
   @override
@@ -279,6 +281,7 @@ class _PreviewPageState extends State<PreviewPage> {
   }
 
   void _saveToRecentList() {
+    if (widget.isBiblePassage) return;
     final firstTitle = _slides.isNotEmpty ? _slides.first.title : 'Presentation';
     final thumbUrl = _slides.isNotEmpty ? _slides.first.imageUrl : '';
     AppSettings.instance.addRecentPresentation(PresentationRecord(

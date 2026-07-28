@@ -27,7 +27,9 @@ class _BibleShowPageState extends State<BibleShowPage> {
   final Set<String> _selectedVerseNumbers = {};
   final List<SlideData> _presentationQueue = [];
 
-  // Collapsible sidebar
+  // Resizable layout sizes
+  double _sidebarWidth = 320.0;
+  double _booksSectionHeight = 370.0; // 260 for books + 110 for chapters
   bool _isSidebarCollapsed = false;
 
   // Search
@@ -215,6 +217,7 @@ class _BibleShowPageState extends State<BibleShowPage> {
           initialSlides: List.from(_presentationQueue),
           initialSections: [],
           selectedTheme: 'Minimal',
+          isBiblePassage: true,
         ),
       ),
     );
@@ -346,10 +349,10 @@ class _BibleShowPageState extends State<BibleShowPage> {
             child: Row(
               children: [
                 // Left Panel: Collapsible Scripture Explorer
-                if (!_isSidebarCollapsed)
+                if (!_isSidebarCollapsed) ...[
                   _buildLeftSidebar(context),
-                
-                VerticalDivider(width: 1, color: SacredColors.outlineVariant),
+                  _buildVerticalResizer(context),
+                ],
                 
                 // Middle Panel: Grid navigation + Verse detail
                 Expanded(
@@ -450,7 +453,7 @@ class _BibleShowPageState extends State<BibleShowPage> {
   // --- Left Panel Widget: Scripture Explorer ---
   Widget _buildLeftSidebar(BuildContext context) {
     return Container(
-      width: 320,
+      width: _sidebarWidth,
       color: SacredColors.surfaceContainerLow,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -492,6 +495,7 @@ class _BibleShowPageState extends State<BibleShowPage> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: TextField(
               controller: _searchController,
+              autofocus: true,
               decoration: InputDecoration(
                 hintText: 'Search scriptures...',
                 prefixIcon: const Icon(Icons.search),
@@ -664,12 +668,15 @@ class _BibleShowPageState extends State<BibleShowPage> {
 
   // --- Middle Panel Widget: Books Grid, Chapters Grid, Verse Presentation Workspace ---
   Widget _buildMiddlePanel(BuildContext context) {
+    final hasChapters = _currentBookData != null;
+    final double booksHeight = (hasChapters ? _booksSectionHeight - 110.0 : _booksSectionHeight).clamp(100.0, 500.0);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // Book Grid Panel
         Container(
-          height: 260,
+          height: booksHeight,
           color: SacredColors.surface,
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -818,7 +825,7 @@ class _BibleShowPageState extends State<BibleShowPage> {
             ),
           ),
           
-        Divider(height: 1, color: SacredColors.outlineVariant),
+        _buildHorizontalResizer(context),
         
         // Main Verse presentation/reading display workspace
         Expanded(
@@ -882,6 +889,26 @@ class _BibleShowPageState extends State<BibleShowPage> {
                                   return WidgetSpan(
                                     child: GestureDetector(
                                       onTap: () => _toggleVerseSelection(v.verseNumber),
+                                      onDoubleTap: () {
+                                        // Instantly present this verse live
+                                        final id = DateTime.now().microsecondsSinceEpoch.toString();
+                                        final slide = SlideData(
+                                          id: id,
+                                          title: '${_selectedBook} ${_selectedChapter!.chapterNumber}:${v.verseNumber}',
+                                          subtitle: v.text,
+                                          imageUrl: '',
+                                          opacity: 0.0,
+                                          isBold: false,
+                                          isItalic: false,
+                                          titleFontSize: 36,
+                                          subtitleFontSize: 28,
+                                        );
+
+                                        PresentationController.instance.updateSlides([slide]);
+                                        PresentationController.instance.goTo(0);
+                                        PresentationController.instance.setMode(PresentationMode.live);
+                                        PresentationController.instance.spawnAudienceWindow();
+                                      },
                                       child: Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                                         decoration: BoxDecoration(
@@ -1049,6 +1076,54 @@ class _BibleShowPageState extends State<BibleShowPage> {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildVerticalResizer(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeLeftRight,
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onHorizontalDragUpdate: (details) {
+          setState(() {
+            _sidebarWidth = (_sidebarWidth + details.delta.dx).clamp(240.0, 500.0);
+          });
+        },
+        child: Container(
+          width: 8,
+          color: Colors.transparent,
+          child: Center(
+            child: Container(
+              width: 1,
+              color: SacredColors.outlineVariant,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHorizontalResizer(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeUpDown,
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onVerticalDragUpdate: (details) {
+          setState(() {
+            _booksSectionHeight = (_booksSectionHeight + details.delta.dy).clamp(180.0, 550.0);
+          });
+        },
+        child: Container(
+          height: 8,
+          color: Colors.transparent,
+          child: Center(
+            child: Container(
+              height: 1,
+              color: SacredColors.outlineVariant,
+            ),
+          ),
+        ),
       ),
     );
   }

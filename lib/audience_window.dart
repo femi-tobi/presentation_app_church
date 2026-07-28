@@ -61,9 +61,6 @@ class _AudienceWindowState extends State<AudienceWindow> {
         if (slides.isEmpty || index >= slides.length) {
           return const Scaffold(
             backgroundColor: Colors.black,
-            body: Center(
-              child: CircularProgressIndicator(color: Colors.white24),
-            ),
           );
         }
 
