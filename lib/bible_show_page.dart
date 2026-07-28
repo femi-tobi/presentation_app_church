@@ -37,6 +37,10 @@ class _BibleShowPageState extends State<BibleShowPage> {
   List<Map<String, dynamic>> _searchResults = [];
   bool _isSearching = false;
 
+  // Focus
+  final FocusNode _pageFocusNode = FocusNode();
+  final FocusNode _searchFocusNode = FocusNode();
+
   // Undo/Redo queues for navigation
   final List<Map<String, String>> _navigationHistory = [];
   int _historyIndex = -1;
@@ -45,6 +49,13 @@ class _BibleShowPageState extends State<BibleShowPage> {
   void initState() {
     super.initState();
     _loadInitialData();
+  }
+
+  @override
+  void dispose() {
+    _pageFocusNode.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
   }
 
   Future<void> _loadInitialData() async {
@@ -172,6 +183,7 @@ class _BibleShowPageState extends State<BibleShowPage> {
         .where((v) => _selectedVerseNumbers.contains(v.verseNumber))
         .toList();
 
+    final settings = AppSettings.instance;
     setState(() {
       for (final v in sortedVerses) {
         final id = DateTime.now().microsecondsSinceEpoch.toString() + v.verseNumber;
@@ -181,10 +193,12 @@ class _BibleShowPageState extends State<BibleShowPage> {
           subtitle: v.text,
           imageUrl: '',
           opacity: 0.0,
-          isBold: false,
-          isItalic: false,
-          titleFontSize: 32,
-          subtitleFontSize: 24,
+          isBold: settings.bibleIsBold,
+          isItalic: settings.bibleIsItalic,
+          titleFontSize: settings.bibleFontSize,
+          subtitleFontSize: settings.bibleFontSize * 0.8,
+          bgColorValue: settings.bibleBgColor,
+          textColorValue: settings.bibleTextColor,
         );
         _presentationQueue.add(slide);
       }
@@ -337,37 +351,66 @@ class _BibleShowPageState extends State<BibleShowPage> {
     final double screenWidth = MediaQuery.of(context).size.width;
     final bool isDesktop = screenWidth >= 1024;
 
-    return Container(
-      color: SacredColors.background,
-      child: Column(
-        children: [
-          // Top Toolbar
-          _buildTopToolbar(context),
-          Divider(height: 1, color: SacredColors.outlineVariant),
-          
-          Expanded(
-            child: Row(
-              children: [
-                // Left Panel: Collapsible Scripture Explorer
-                if (!_isSidebarCollapsed) ...[
-                  _buildLeftSidebar(context),
-                  _buildVerticalResizer(context),
+    return Focus(
+      focusNode: _pageFocusNode,
+      autofocus: true,
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent && !_searchFocusNode.hasFocus) {
+          final character = event.character;
+          if (character != null && character.isNotEmpty) {
+            // Check if it is a printable alphanumeric key or punctuation
+            final codeUnit = character.codeUnitAt(0);
+            final isAlphanumeric = (codeUnit >= 48 && codeUnit <= 57) || // 0-9
+                                   (codeUnit >= 65 && codeUnit <= 90) || // A-Z
+                                   (codeUnit >= 97 && codeUnit <= 122) || // a-z
+                                   (codeUnit == 32) || // space
+                                   (codeUnit == 58); // colon
+
+            if (isAlphanumeric) {
+              _searchFocusNode.requestFocus();
+              _searchController.text = _searchController.text + character;
+              _searchController.selection = TextSelection.fromPosition(
+                TextPosition(offset: _searchController.text.length),
+              );
+              _performSearch();
+              return KeyEventResult.handled;
+            }
+          }
+        }
+        return KeyEventResult.ignored;
+      },
+      child: Container(
+        color: SacredColors.background,
+        child: Column(
+          children: [
+            // Top Toolbar
+            _buildTopToolbar(context),
+            Divider(height: 1, color: SacredColors.outlineVariant),
+            
+            Expanded(
+              child: Row(
+                children: [
+                  // Left Panel: Collapsible Scripture Explorer
+                  if (!_isSidebarCollapsed) ...[
+                    _buildLeftSidebar(context),
+                    _buildVerticalResizer(context),
+                  ],
+                  
+                  // Middle Panel: Grid navigation + Verse detail
+                  Expanded(
+                    child: _buildMiddlePanel(context),
+                  ),
+                  
+                  VerticalDivider(width: 1, color: SacredColors.outlineVariant),
+                  
+                  // Right Panel: Presentation Queue
+                  if (isDesktop)
+                    _buildRightQueuePanel(context),
                 ],
-                
-                // Middle Panel: Grid navigation + Verse detail
-                Expanded(
-                  child: _buildMiddlePanel(context),
-                ),
-                
-                VerticalDivider(width: 1, color: SacredColors.outlineVariant),
-                
-                // Right Panel: Presentation Queue
-                if (isDesktop)
-                  _buildRightQueuePanel(context),
-              ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -389,14 +432,17 @@ class _BibleShowPageState extends State<BibleShowPage> {
             },
           ),
           const SizedBox(width: 16),
-          Text(
-            'Scripture Studio',
-            style: SacredTypography.headlineMd(context).copyWith(
-              fontWeight: FontWeight.bold,
-              color: SacredColors.primary,
+          Flexible(
+            child: Text(
+              'Scripture Studio',
+              overflow: TextOverflow.ellipsis,
+              style: SacredTypography.headlineMd(context).copyWith(
+                fontWeight: FontWeight.bold,
+                color: SacredColors.primary,
+              ),
             ),
           ),
-          const SizedBox(width: 32),
+          const SizedBox(width: 16),
           
           // History Navigation
           IconButton(
@@ -414,25 +460,38 @@ class _BibleShowPageState extends State<BibleShowPage> {
           if (_selectedVerseNumbers.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(right: 16),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: SacredColors.primary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: SacredColors.primary.withValues(alpha: 0.3)),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.check_circle, size: 16, color: SacredColors.primary),
-                    const SizedBox(width: 6),
-                    Text(
-                      '${_selectedVerseNumbers.length} Selected',
-                      style: TextStyle(color: SacredColors.primary, fontWeight: FontWeight.w600, fontSize: 12),
-                    ),
-                  ],
+              child: Flexible(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: SacredColors.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: SacredColors.primary.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.check_circle, size: 16, color: SacredColors.primary),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          '${_selectedVerseNumbers.length} Selected',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: SacredColors.primary, fontWeight: FontWeight.w600, fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
+
+          IconButton(
+            icon: const Icon(Icons.tune),
+            tooltip: 'Bible Presentation Settings',
+            onPressed: () => _showBibleSettingsDialog(context),
+          ),
+          const SizedBox(width: 8),
 
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
@@ -495,6 +554,7 @@ class _BibleShowPageState extends State<BibleShowPage> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: TextField(
               controller: _searchController,
+              focusNode: _searchFocusNode,
               autofocus: true,
               decoration: InputDecoration(
                 hintText: 'Search scriptures...',
@@ -840,11 +900,14 @@ class _BibleShowPageState extends State<BibleShowPage> {
                       // Header reference
                       Row(
                         children: [
-                          Text(
-                            '${_selectedBook} ${_selectedChapter!.chapterNumber}',
-                            style: SacredTypography.headlineMd(context).copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: SacredColors.onSurface,
+                          Flexible(
+                            child: Text(
+                              '${_selectedBook} ${_selectedChapter!.chapterNumber}',
+                              overflow: TextOverflow.ellipsis,
+                              style: SacredTypography.headlineMd(context).copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: SacredColors.onSurface,
+                              ),
                             ),
                           ),
                           const Spacer(),
@@ -891,6 +954,7 @@ class _BibleShowPageState extends State<BibleShowPage> {
                                       onTap: () => _toggleVerseSelection(v.verseNumber),
                                       onDoubleTap: () {
                                         // Instantly present this verse live
+                                        final settings = AppSettings.instance;
                                         final id = DateTime.now().microsecondsSinceEpoch.toString();
                                         final slide = SlideData(
                                           id: id,
@@ -898,10 +962,12 @@ class _BibleShowPageState extends State<BibleShowPage> {
                                           subtitle: v.text,
                                           imageUrl: '',
                                           opacity: 0.0,
-                                          isBold: false,
-                                          isItalic: false,
-                                          titleFontSize: 36,
-                                          subtitleFontSize: 28,
+                                          isBold: settings.bibleIsBold,
+                                          isItalic: settings.bibleIsItalic,
+                                          titleFontSize: settings.bibleFontSize,
+                                          subtitleFontSize: settings.bibleFontSize * 0.8,
+                                          bgColorValue: settings.bibleBgColor,
+                                          textColorValue: settings.bibleTextColor,
                                         );
 
                                         PresentationController.instance.updateSlides([slide]);
@@ -1121,6 +1187,183 @@ class _BibleShowPageState extends State<BibleShowPage> {
             child: Container(
               height: 1,
               color: SacredColors.outlineVariant,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showBibleSettingsDialog(BuildContext context) {
+    final settings = AppSettings.instance;
+    final themeColor = _getBookCategoryColor(_selectedBook ?? '');
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Row(
+                children: [
+                  Icon(Icons.tune, color: SacredColors.primary),
+                  const SizedBox(width: 12),
+                  const Text('Bible Presentation Styles'),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Background Color Selection
+                    const Text('Background Style', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        _bgColorOption(setDialogState, 'Deep Purple', 0xFF2E0052),
+                        _bgColorOption(setDialogState, 'Dark Charcoal', 0xFF121212),
+                        _bgColorOption(setDialogState, 'Deep Blue', 0xFF0D1B2A),
+                        _bgColorOption(setDialogState, 'Sacred Red', 0xFF3D0C11),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Text Color Selection
+                    const Text('Text Style', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        _textColorOption(setDialogState, 'White', 0xFFFFFFFF),
+                        _textColorOption(setDialogState, 'Cream', 0xFFFDF0D5),
+                        _textColorOption(setDialogState, 'Soft Yellow', 0xFFFFF275),
+                        _textColorOption(setDialogState, 'Gold', 0xFFFFD700),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Font Size Slider
+                    Row(
+                      children: [
+                        const Text('Font Size: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                        Text('${settings.bibleFontSize.toInt()} px'),
+                      ],
+                    ),
+                    Slider(
+                      value: settings.bibleFontSize,
+                      min: 24.0,
+                      max: 72.0,
+                      activeColor: themeColor,
+                      onChanged: (val) {
+                        setDialogState(() {
+                          settings.bibleFontSize = val;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Bold & Italic Switches
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Bold Text', style: TextStyle(fontWeight: FontWeight.w600)),
+                        Switch(
+                          value: settings.bibleIsBold,
+                          activeColor: themeColor,
+                          onChanged: (val) {
+                            setDialogState(() {
+                              settings.bibleIsBold = val;
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Italic Text', style: TextStyle(fontWeight: FontWeight.w600)),
+                        Switch(
+                          value: settings.bibleIsItalic,
+                          activeColor: themeColor,
+                          onChanged: (val) {
+                            setDialogState(() {
+                              settings.bibleIsItalic = val;
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Done'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _bgColorOption(StateSetter setDialogState, String label, int hexValue) {
+    final settings = AppSettings.instance;
+    final isSelected = settings.bibleBgColor == hexValue;
+    return GestureDetector(
+      onTap: () {
+        setDialogState(() {
+          settings.bibleBgColor = hexValue;
+        });
+      },
+      child: Container(
+        width: 54,
+        height: 54,
+        decoration: BoxDecoration(
+          color: Color(hexValue),
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: isSelected ? Colors.white : Colors.grey.withOpacity(0.5),
+            width: isSelected ? 3.0 : 1.5,
+          ),
+          boxShadow: isSelected ? [BoxShadow(color: Colors.black26, blurRadius: 4, spreadRadius: 1)] : null,
+        ),
+        child: isSelected ? const Icon(Icons.check, color: Colors.white) : null,
+      ),
+    );
+  }
+
+  Widget _textColorOption(StateSetter setDialogState, String label, int hexValue) {
+    final settings = AppSettings.instance;
+    final isSelected = settings.bibleTextColor == hexValue;
+    return GestureDetector(
+      onTap: () {
+        setDialogState(() {
+          settings.bibleTextColor = hexValue;
+        });
+      },
+      child: Container(
+        width: 54,
+        height: 54,
+        decoration: BoxDecoration(
+          color: Colors.black87,
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: isSelected ? Color(hexValue) : Colors.grey.withOpacity(0.5),
+            width: isSelected ? 3.0 : 1.5,
+          ),
+        ),
+        child: Center(
+          child: Text(
+            'Aa',
+            style: TextStyle(
+              color: Color(hexValue),
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
             ),
           ),
         ),

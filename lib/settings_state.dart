@@ -590,6 +590,66 @@ class AppSettings extends ChangeNotifier {
     }
   }
 
+  int _bibleBgColor = 0xFF2E0052; // Default to deep primary purple
+  int get bibleBgColor => _bibleBgColor;
+  set bibleBgColor(int value) {
+    if (_bibleBgColor != value) {
+      _bibleBgColor = value;
+      saveSettings();
+      notifyListeners();
+    }
+  }
+
+  int _bibleTextColor = 0xFFFFFFFF; // Default to white
+  int get bibleTextColor => _bibleTextColor;
+  set bibleTextColor(int value) {
+    if (_bibleTextColor != value) {
+      _bibleTextColor = value;
+      saveSettings();
+      notifyListeners();
+    }
+  }
+
+  double _bibleFontSize = 36.0;
+  double get bibleFontSize => _bibleFontSize;
+  set bibleFontSize(double value) {
+    if (_bibleFontSize != value) {
+      _bibleFontSize = value;
+      saveSettings();
+      notifyListeners();
+    }
+  }
+
+  String _bibleFontFamily = 'Libre Caslon Text';
+  String get bibleFontFamily => _bibleFontFamily;
+  set bibleFontFamily(String value) {
+    if (_bibleFontFamily != value) {
+      _bibleFontFamily = value;
+      saveSettings();
+      notifyListeners();
+    }
+  }
+
+  bool _bibleIsBold = false;
+  bool get bibleIsBold => _bibleIsBold;
+  set bibleIsBold(bool value) {
+    if (_bibleIsBold != value) {
+      _bibleIsBold = value;
+      saveSettings();
+      notifyListeners();
+    }
+  }
+
+  bool _bibleIsItalic = false;
+  bool get bibleIsItalic => _bibleIsItalic;
+  set bibleIsItalic(bool value) {
+    if (_bibleIsItalic != value) {
+      _bibleIsItalic = value;
+      saveSettings();
+      notifyListeners();
+    }
+  }
+
   bool _isOffline = false;
   bool get isOffline => _isOffline;
   set isOffline(bool value) {
@@ -859,6 +919,15 @@ class AppSettings extends ChangeNotifier {
       _slidesGptApiKey = (prefs.getString('slidesGptApiKey') ?? _slidesGptApiKey).trim();
       _gammaApiKey = (prefs.getString('gammaApiKey') ?? _gammaApiKey).trim();
       _presentationsAiApiKey = (prefs.getString('presentationsAiApiKey') ?? _presentationsAiApiKey).trim();
+      
+      // Load Bible custom styles
+      _bibleBgColor = prefs.getInt('bibleBgColor') ?? _bibleBgColor;
+      _bibleTextColor = prefs.getInt('bibleTextColor') ?? _bibleTextColor;
+      _bibleFontSize = prefs.getDouble('bibleFontSize') ?? _bibleFontSize;
+      _bibleFontFamily = prefs.getString('bibleFontFamily') ?? _bibleFontFamily;
+      _bibleIsBold = prefs.getBool('bibleIsBold') ?? _bibleIsBold;
+      _bibleIsItalic = prefs.getBool('bibleIsItalic') ?? _bibleIsItalic;
+
       final lastPdfTimeStr = prefs.getString('lastPdfConversionTime');
       if (lastPdfTimeStr != null) {
         _lastPdfConversionTime = DateTime.parse(lastPdfTimeStr);
@@ -918,6 +987,14 @@ class AppSettings extends ChangeNotifier {
       await prefs.setString('slidesGptApiKey', _slidesGptApiKey);
       await prefs.setString('gammaApiKey', _gammaApiKey);
       await prefs.setString('presentationsAiApiKey', _presentationsAiApiKey);
+
+      // Save Bible custom styles
+      await prefs.setInt('bibleBgColor', _bibleBgColor);
+      await prefs.setInt('bibleTextColor', _bibleTextColor);
+      await prefs.setDouble('bibleFontSize', _bibleFontSize);
+      await prefs.setString('bibleFontFamily', _bibleFontFamily);
+      await prefs.setBool('bibleIsBold', _bibleIsBold);
+      await prefs.setBool('bibleIsItalic', _bibleIsItalic);
 
       if (_lastPdfConversionTime != null) {
         await prefs.setString('lastPdfConversionTime', _lastPdfConversionTime!.toIso8601String());

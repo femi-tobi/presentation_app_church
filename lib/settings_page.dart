@@ -7,6 +7,7 @@ import 'dashboard_page.dart'; // Reuse SacredColors, SacredTypography, SacredSha
 import 'settings_state.dart';
 import 'create_presentation_page.dart';
 import 'connectivity_badge.dart';
+import 'display_manager.dart';
 
 class SettingsPage extends StatefulWidget {
   final GlobalKey<ScaffoldState>? scaffoldKey;
@@ -733,7 +734,6 @@ class _SettingsContent extends StatelessWidget {
                   ),
                 ],
               ),
-              Divider(height: 32, color: SacredColors.outlineVariant),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -757,6 +757,37 @@ class _SettingsContent extends StatelessWidget {
                     activeThumbColor: selectedPrimary,
                   ),
                 ],
+              ),
+              Divider(height: 32, color: SacredColors.outlineVariant),
+              ListenableBuilder(
+                listenable: DisplayManager.instance,
+                builder: (context, _) {
+                  final dm = DisplayManager.instance;
+                  return Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.screenshot_monitor, color: SacredColors.outline),
+                          SizedBox(width: 16),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Simulate Audience Display', style: SacredTypography.labelLg(context)),
+                              SizedBox(height: 2),
+                              Text('Simulate external screens directly on your laptop display.', style: SacredTypography.labelSm(context).copyWith(color: SacredColors.onSurfaceVariant)),
+                            ],
+                          ),
+                        ],
+                      ),
+                      Switch(
+                        value: dm.simulateAudience,
+                        onChanged: (val) => dm.setSimulateAudience(val),
+                        activeThumbColor: selectedPrimary,
+                      ),
+                    ],
+                  );
+                }
               ),
               Divider(height: 32, color: SacredColors.outlineVariant),
               // ── Storage: live reactive read from AppSettings ──────────────
