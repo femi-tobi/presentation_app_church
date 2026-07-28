@@ -1273,9 +1273,20 @@ class _SettingsContent extends StatelessWidget {
                     Container(
                       width: 80,
                       height: 80,
-                      color: Colors.white,
-                      child: const Center(
-                        child: Icon(Icons.qr_code, size: 64, color: Colors.black87),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: Image.network(
+                          'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${Uri.encodeComponent(RemoteControlService.instance.pairingUrl)}',
+                          fit: BoxFit.cover,
+                          errorBuilder: (c, e, s) => const Center(
+                            child: Icon(Icons.qr_code, size: 48, color: Colors.black87),
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 20),
