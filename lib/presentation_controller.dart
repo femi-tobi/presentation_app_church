@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'settings_state.dart';
 
 import 'display_manager.dart';
+import 'connectors/remote_control_service.dart';
 
 enum PresentationMode { live, rehearsal, auto, locked }
 
@@ -282,7 +283,25 @@ class PresentationController extends ChangeNotifier {
     }
 
     _broadcastState();
+    try {
+      // Import lazily at runtime or via simple condition to avoid circular dependency
+      // Broadcast state to remote websocket clients
+      final remote = _getRemoteService();
+      if (remote != null) {
+        remote.broadcastStateChange();
+      }
+    } catch (_) {}
     notifyListeners();
+  }
+
+  // Dynamic helper to fetch the RemoteControlService without circular dependencies
+  dynamic _getRemoteService() {
+    try {
+      return RemoteControlService.instance;
+    } catch (_) {
+      return null;
+    }
+  }
   }
 
   void _startElapsedTimeTimer() {

@@ -4,6 +4,7 @@ import 'dashboard_page.dart';
 import 'settings_state.dart';
 import 'presentation_controller.dart';
 import 'audience_window.dart';
+import 'connectors/remote_control_service.dart';
 
 void main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -17,6 +18,9 @@ void main(List<String> args) async {
   if (isAudience) {
     // Initialize presentation controller as audience client process
     PresentationController.instance.initialize([], [], 0, isAudience: true);
+  } else {
+    // Start Remote Control server on startup
+    RemoteControlService.instance.start().catchError((_) {});
   }
 
   runApp(MyApp(isAudience: isAudience));

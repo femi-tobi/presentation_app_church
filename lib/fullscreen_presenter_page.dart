@@ -66,18 +66,51 @@ class _FullscreenPresenterPageState extends State<FullscreenPresenterPage> with 
   }
 
   void _handleKeyEvent(KeyEvent event) {
-    if (event is KeyDownEvent) {
-      if (event.logicalKey == LogicalKeyboardKey.arrowRight ||
-          event.logicalKey == LogicalKeyboardKey.space ||
-          event.logicalKey == LogicalKeyboardKey.enter ||
-          event.logicalKey == LogicalKeyboardKey.pageDown) {
-        _nextSlide();
-      } else if (event.logicalKey == LogicalKeyboardKey.arrowLeft ||
-                 event.logicalKey == LogicalKeyboardKey.pageUp) {
-        _prevSlide();
-      } else if (event.logicalKey == LogicalKeyboardKey.escape) {
-        Navigator.pop(context);
+    if (event is! KeyDownEvent) return;
+
+    final settings = AppSettings.instance;
+    final shortcuts = settings.customShortcuts;
+
+    String getKeyName(LogicalKeyboardKey key) {
+      if (key == LogicalKeyboardKey.arrowRight) return 'Arrow Right';
+      if (key == LogicalKeyboardKey.arrowLeft) return 'Arrow Left';
+      if (key == LogicalKeyboardKey.space) return 'Space';
+      if (key == LogicalKeyboardKey.backspace) return 'Backspace';
+      if (key == LogicalKeyboardKey.home) return 'Home';
+      if (key == LogicalKeyboardKey.end) return 'End';
+      if (key == LogicalKeyboardKey.escape) return 'Escape';
+      return key.keyLabel;
+    }
+
+    final keyLabel = getKeyName(event.logicalKey);
+
+    // Resolve which action corresponds to the pressed key label
+    String? matchedAction;
+    shortcuts.forEach((action, bindName) {
+      if (bindName.toLowerCase() == keyLabel.toLowerCase()) {
+        matchedAction = action;
       }
+    });
+
+    if (matchedAction == 'nextSlide') {
+      _nextSlide();
+    } else if (matchedAction == 'prevSlide') {
+      _prevSlide();
+    } else if (matchedAction == 'firstSlide') {
+      setState(() {
+        _currentIndex = 0;
+      });
+      _pageController.jumpToPage(0);
+      AppSettings.instance.activeSlideIndex = 0;
+    } else if (matchedAction == 'lastSlide') {
+      final lastIdx = AppSettings.instance.activeSlides.length - 1;
+      setState(() {
+        _currentIndex = lastIdx;
+      });
+      _pageController.jumpToPage(lastIdx);
+      AppSettings.instance.activeSlideIndex = lastIdx;
+    } else if (matchedAction == 'exitPresentation') {
+      Navigator.pop(context);
     }
   }
 

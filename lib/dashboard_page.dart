@@ -1288,6 +1288,65 @@ class MainCanvasContent extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Premium Glassmorphic Daily Verse Greeting Card
+        Container(
+          width: double.infinity,
+          margin: const EdgeInsets.bottom(32),
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                SacredColors.primary.withValues(alpha: 0.15),
+                SacredColors.surfaceContainerLow.withValues(alpha: 0.8),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: SacredColors.outlineVariant.withValues(alpha: 0.3),
+              width: 1.0,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.spa, color: SacredColors.primary, size: 24),
+                  const SizedBox(width: 12),
+                  Text(
+                    'DAILY VERSE OF THE DAY',
+                    style: SacredTypography.labelLg(context).copyWith(
+                      color: SacredColors.primary,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Text(
+                '"The Lord is my shepherd; I shall not want. He makes me lie down in green pastures. He leads me beside still waters. He restores my soul."',
+                style: GoogleFonts.libreCaslonText(
+                  fontSize: 22,
+                  fontStyle: FontStyle.italic,
+                  color: SacredColors.onSurface,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '— Psalm 23:1-3 (NIV)',
+                style: SacredTypography.bodyLg(context).copyWith(
+                  color: SacredColors.onSurfaceVariant,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ),
+
         // Hero Section Layout
         if (useVerticalHero) ...[
           const CreateNewPresentationCard(),

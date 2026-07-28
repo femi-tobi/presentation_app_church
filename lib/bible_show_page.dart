@@ -7,6 +7,7 @@ import 'dashboard_page.dart'; // SacredColors, SacredTypography, SacredShadows
 import 'settings_state.dart';
 import 'preview_page.dart';
 import 'presentation_controller.dart';
+import 'fullscreen_presenter_page.dart';
 
 class BibleShowPage extends StatefulWidget {
   final GlobalKey<ScaffoldState> scaffoldKey;
@@ -22,6 +23,11 @@ class _BibleShowPageState extends State<BibleShowPage> {
   String? _selectedBook;
   BibleBook? _currentBookData;
   BibleChapter? _selectedChapter;
+  
+  // Translation Comparison
+  bool _isComparing = false;
+  BibleBook? _comparisonBookData;
+  String _comparisonTranslation = 'NIV';
   
   // Selection
   final Set<String> _selectedVerseNumbers = {};
@@ -71,10 +77,15 @@ class _BibleShowPageState extends State<BibleShowPage> {
 
   Future<void> _selectBook(String bookName, {bool pushHistory = true, String? targetChapter}) async {
     final bookData = await BibleService.instance.loadBook(_selectedTranslation, bookName);
+    BibleBook? compData;
+    if (_isComparing) {
+      compData = await BibleService.instance.loadBook(_comparisonTranslation, bookName);
+    }
     if (bookData != null) {
       setState(() {
         _selectedBook = bookName;
         _currentBookData = bookData;
+        _comparisonBookData = compData;
         _selectedVerseNumbers.clear();
         
         // Select specified chapter or default to chapter 1
@@ -186,21 +197,28 @@ class _BibleShowPageState extends State<BibleShowPage> {
     final settings = AppSettings.instance;
     setState(() {
       for (final v in sortedVerses) {
-        final id = DateTime.now().microsecondsSinceEpoch.toString() + v.verseNumber;
-        final slide = SlideData(
-          id: id,
-          title: '${_selectedBook} ${_selectedChapter!.chapterNumber}:${v.verseNumber}',
-          subtitle: v.text,
-          imageUrl: '',
-          opacity: 0.0,
-          isBold: settings.bibleIsBold,
-          isItalic: settings.bibleIsItalic,
-          titleFontSize: settings.bibleFontSize,
-          subtitleFontSize: settings.bibleFontSize * 0.8,
-          bgColorValue: settings.bibleBgColor,
-          textColorValue: settings.bibleTextColor,
-        );
-        _presentationQueue.add(slide);
+        final List<String> segments = settings.bibleAutoSplit
+            ? _splitVerseText(v.text, settings.bibleMaxChars, settings.bibleMaxLines)
+            : [v.text];
+
+        for (int i = 0; i < segments.length; i++) {
+          final id = DateTime.now().microsecondsSinceEpoch.toString() + v.verseNumber + '_$i';
+          final suffix = segments.length > 1 ? ' (cont. ${i + 1}/${segments.length})' : '';
+          final slide = SlideData(
+            id: id,
+            title: '${_selectedBook} ${_selectedChapter!.chapterNumber}:${v.verseNumber}$suffix',
+            subtitle: segments[i],
+            imageUrl: '',
+            opacity: 0.0,
+            isBold: settings.bibleIsBold,
+            isItalic: settings.bibleIsItalic,
+            titleFontSize: settings.bibleFontSize,
+            subtitleFontSize: settings.bibleFontSize * 0.8,
+            bgColorValue: settings.bibleBgColor,
+            textColorValue: settings.bibleTextColor,
+          );
+          _presentationQueue.add(slide);
+        }
       }
       _selectedVerseNumbers.clear();
     });
@@ -458,9 +476,9 @@ class _BibleShowPageState extends State<BibleShowPage> {
           
           // Selection Indicator
           if (_selectedVerseNumbers.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(right: 16),
-              child: Flexible(
+            Flexible(
+              child: Padding(
+                padding: const EdgeInsets.only(right: 16),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
@@ -911,6 +929,22 @@ class _BibleShowPageState extends State<BibleShowPage> {
                             ),
                           ),
                           const Spacer(),
+                          IconButton(
+                            icon: Icon(_isComparing ? Icons.compare : Icons.compare_arrows, color: _isComparing ? SacredColors.primary : SacredColors.outline),
+                            tooltip: 'Compare translations',
+                            onPressed: () async {
+                              final nextCompare = !_isComparing;
+                              BibleBook? compData;
+                              if (nextCompare && _selectedBook != null) {
+                                compData = await BibleService.instance.loadBook(_comparisonTranslation, _selectedBook!);
+                              }
+                              setState(() {
+                                _isComparing = nextCompare;
+                                _comparisonBookData = compData;
+                              });
+                            },
+                          ),
+                          const SizedBox(width: 8),
                           TextButton.icon(
                             icon: Icon(Icons.select_all, color: SacredColors.primary),
                             label: const Text('Select All'),
@@ -934,83 +968,183 @@ class _BibleShowPageState extends State<BibleShowPage> {
                       
                       // Verse Text display
                       Expanded(
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: SacredColors.surface,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: SacredColors.outlineVariant),
-                          ),
-                          padding: const EdgeInsets.all(20),
-                          child: SingleChildScrollView(
-                            physics: const BouncingScrollPhysics(),
-                            child: RichText(
-                              text: TextSpan(
-                                children: _selectedChapter!.verses.map((v) {
-                                  final isSelected = _selectedVerseNumbers.contains(v.verseNumber);
-                                  final themeColor = _getBookCategoryColor(_selectedBook ?? '');
-
-                                  return WidgetSpan(
-                                    child: GestureDetector(
-                                      onTap: () => _toggleVerseSelection(v.verseNumber),
-                                      onDoubleTap: () {
-                                        // Instantly present this verse live
-                                        final settings = AppSettings.instance;
-                                        final id = DateTime.now().microsecondsSinceEpoch.toString();
-                                        final slide = SlideData(
-                                          id: id,
-                                          title: '${_selectedBook} ${_selectedChapter!.chapterNumber}:${v.verseNumber}',
-                                          subtitle: v.text,
-                                          imageUrl: '',
-                                          opacity: 0.0,
-                                          isBold: settings.bibleIsBold,
-                                          isItalic: settings.bibleIsItalic,
-                                          titleFontSize: settings.bibleFontSize,
-                                          subtitleFontSize: settings.bibleFontSize * 0.8,
-                                          bgColorValue: settings.bibleBgColor,
-                                          textColorValue: settings.bibleTextColor,
-                                        );
-
-                                        PresentationController.instance.updateSlides([slide]);
-                                        PresentationController.instance.goTo(0);
-                                        PresentationController.instance.setMode(PresentationMode.live);
-                                        PresentationController.instance.spawnAudienceWindow();
-                                      },
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: isSelected ? themeColor.withValues(alpha: 0.15) : Colors.transparent,
-                                          borderRadius: BorderRadius.circular(4),
-                                        ),
-                                        child: Text.rich(
-                                          TextSpan(
-                                            children: [
-                                              TextSpan(
-                                                text: '${v.verseNumber} ',
-                                                style: GoogleFonts.inter(
-                                                  fontWeight: FontWeight.bold,
-                                                  color: isSelected ? themeColor : SacredColors.primary,
-                                                  fontSize: 14,
-                                                ),
-                                              ),
-                                              TextSpan(
-                                                text: '${v.text}  ',
-                                                style: GoogleFonts.inter(
-                                                  color: isSelected ? themeColor : SacredColors.onSurface,
-                                                  fontSize: 16,
-                                                  height: 1.6,
-                                                ),
-                                              ),
-                                            ],
+                        child: _isComparing
+                            ? Row(
+                                children: [
+                                  // Left Column: Selected Translation
+                                  Expanded(
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        color: SacredColors.surface,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(color: SacredColors.outlineVariant),
+                                      ),
+                                      padding: const EdgeInsets.all(16),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Padding(
+                                            padding: const EdgeInsets.only(bottom: 8.0),
+                                            child: Text('Translation: $_selectedTranslation', style: SacredTypography.labelLg(context).copyWith(fontWeight: FontWeight.bold, color: SacredColors.primary)),
                                           ),
-                                        ),
+                                          Expanded(
+                                            child: SingleChildScrollView(
+                                              physics: const BouncingScrollPhysics(),
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: _selectedChapter!.verses.map((v) {
+                                                  final isSelected = _selectedVerseNumbers.contains(v.verseNumber);
+                                                  return Padding(
+                                                    padding: const EdgeInsets.symmetric(vertical: 4.0),
+                                                    child: Text('${v.verseNumber} ${v.text}', style: GoogleFonts.inter(fontSize: 15, color: isSelected ? SacredColors.primary : SacredColors.onSurface)),
+                                                  );
+                                                }).toList(),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
-                                  );
-                                }).toList(),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  // Right Column: Comparison Translation
+                                  Expanded(
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        color: SacredColors.surface,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(color: SacredColors.outlineVariant),
+                                      ),
+                                      padding: const EdgeInsets.all(16),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Padding(
+                                            padding: const EdgeInsets.only(bottom: 8.0),
+                                            child: Text('Comparison: $_comparisonTranslation', style: SacredTypography.labelLg(context).copyWith(fontWeight: FontWeight.bold, color: SacredColors.primary)),
+                                          ),
+                                          Expanded(
+                                            child: SingleChildScrollView(
+                                              physics: const BouncingScrollPhysics(),
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: (_comparisonBookData != null &&
+                                                        _comparisonBookData!.chapters.any((c) => c.chapterNumber == _selectedChapter!.chapterNumber))
+                                                    ? _comparisonBookData!.chapters.firstWhere((c) => c.chapterNumber == _selectedChapter!.chapterNumber).verses.map((v) {
+                                                        final isSelected = _selectedVerseNumbers.contains(v.verseNumber);
+                                                        return Padding(
+                                                          padding: const EdgeInsets.symmetric(vertical: 4.0),
+                                                          child: Text('${v.verseNumber} ${v.text}', style: GoogleFonts.inter(fontSize: 15, color: isSelected ? SacredColors.primary : SacredColors.onSurface)),
+                                                        );
+                                                      }).toList()
+                                                    : [const Text('No comparison version text loaded.')],
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : Container(
+                                decoration: BoxDecoration(
+                                  color: SacredColors.surface,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: SacredColors.outlineVariant),
+                                ),
+                                padding: const EdgeInsets.all(20),
+                                child: SingleChildScrollView(
+                                  physics: const BouncingScrollPhysics(),
+                                  child: RichText(
+                                    text: TextSpan(
+                                      children: _selectedChapter!.verses.map((v) {
+                                        final isSelected = _selectedVerseNumbers.contains(v.verseNumber);
+                                        final themeColor = _getBookCategoryColor(_selectedBook ?? '');
+
+                                        return WidgetSpan(
+                                          child: GestureDetector(
+                                            onTap: () => _toggleVerseSelection(v.verseNumber),
+                                              onDoubleTap: () {
+                                                // Instantly present this verse live
+                                                final settings = AppSettings.instance;
+                                                final List<String> segments = settings.bibleAutoSplit
+                                                    ? _splitVerseText(v.text, settings.bibleMaxChars, settings.bibleMaxLines)
+                                                    : [v.text];
+
+                                                final List<SlideData> slides = [];
+                                                for (int i = 0; i < segments.length; i++) {
+                                                  final id = DateTime.now().microsecondsSinceEpoch.toString() + '_$i';
+                                                  final suffix = segments.length > 1 ? ' (cont. ${i + 1}/${segments.length})' : '';
+                                                  slides.add(SlideData(
+                                                    id: id,
+                                                    title: '${_selectedBook} ${_selectedChapter!.chapterNumber}:${v.verseNumber}$suffix',
+                                                    subtitle: segments[i],
+                                                    imageUrl: '',
+                                                    opacity: 0.0,
+                                                    isBold: settings.bibleIsBold,
+                                                    isItalic: settings.bibleIsItalic,
+                                                    titleFontSize: settings.bibleFontSize,
+                                                    subtitleFontSize: settings.bibleFontSize * 0.8,
+                                                    bgColorValue: settings.bibleBgColor,
+                                                    textColorValue: settings.bibleTextColor,
+                                                  ));
+                                                }
+
+                                                // Load these slide(s) into the active slides settings
+                                                settings.updateActiveSlides(slides);
+                                                settings.activeSlideIndex = 0;
+
+                                                // Push the FullscreenPresenterPage view on top
+                                                Navigator.push(
+                                                  context,
+                                                  MaterialPageRoute(
+                                                    builder: (context) => FullscreenPresenterPage(),
+                                                  ),
+                                                );
+
+                                                // Setup the presentation controller for live mode
+                                                PresentationController.instance.updateSlides(slides);
+                                                PresentationController.instance.goTo(0);
+                                                PresentationController.instance.setMode(PresentationMode.live);
+                                                PresentationController.instance.spawnAudienceWindow();
+                                              },
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: isSelected ? themeColor.withValues(alpha: 0.15) : Colors.transparent,
+                                                borderRadius: BorderRadius.circular(4),
+                                              ),
+                                              child: Text.rich(
+                                                TextSpan(
+                                                  children: [
+                                                    TextSpan(
+                                                      text: '${v.verseNumber} ',
+                                                      style: GoogleFonts.inter(
+                                                        fontWeight: FontWeight.bold,
+                                                        color: isSelected ? themeColor : SacredColors.primary,
+                                                        fontSize: 14,
+                                                      ),
+                                                    ),
+                                                    TextSpan(
+                                                      text: '${v.text}  ',
+                                                      style: GoogleFonts.inter(
+                                                        color: isSelected ? themeColor : SacredColors.onSurface,
+                                                        fontSize: 16,
+                                                        height: 1.6,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      }).toList(),
+                                    ),
+                                  ),
+                                ),
                               ),
-                            ),
-                          ),
-                        ),
                       ),
                     ],
                   ),
@@ -1335,6 +1469,74 @@ class _BibleShowPageState extends State<BibleShowPage> {
         child: isSelected ? const Icon(Icons.check, color: Colors.white) : null,
       ),
     );
+  }
+
+  List<String> _splitVerseText(String text, int maxChars, int maxLines) {
+    if (text.length <= maxChars && text.split('\n').length <= maxLines) {
+      return [text];
+    }
+
+    final List<String> segments = [];
+    final RegExp sentenceEnd = RegExp(r'(?<=[.!?])\s+');
+    final RegExp punctuationEnd = RegExp(r'(?<=[,;:])\s+');
+
+    // Helper to estimate if lines fit
+    bool fits(String block) {
+      if (block.length > maxChars) return false;
+      // rough line estimation by width or character count
+      final linesCount = (block.length / (maxChars / maxLines).clamp(30, 80)).ceil();
+      return linesCount <= maxLines;
+    }
+
+    // Try splitting by sentence first
+    final sentences = text.split(sentenceEnd);
+    String currentBlock = '';
+
+    for (final s in sentences) {
+      final candidate = currentBlock.isEmpty ? s : '$currentBlock $s';
+      if (fits(candidate)) {
+        currentBlock = candidate;
+      } else {
+        if (currentBlock.isNotEmpty) {
+          segments.add(currentBlock.trim());
+          currentBlock = s;
+        } else {
+          // A single sentence is too long! Try splitting by punctuation
+          final clauses = s.split(punctuationEnd);
+          for (final c in clauses) {
+            final subCandidate = currentBlock.isEmpty ? c : '$currentBlock $c';
+            if (fits(subCandidate)) {
+              currentBlock = subCandidate;
+            } else {
+              if (currentBlock.isNotEmpty) {
+                segments.add(currentBlock.trim());
+                currentBlock = c;
+              } else {
+                // A single clause is too long! Split by word
+                final words = c.split(' ');
+                for (final w in words) {
+                  final wordCandidate = currentBlock.isEmpty ? w : '$currentBlock $w';
+                  if (fits(wordCandidate)) {
+                    currentBlock = wordCandidate;
+                  } else {
+                    if (currentBlock.isNotEmpty) {
+                      segments.add(currentBlock.trim());
+                    }
+                    currentBlock = w;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (currentBlock.isNotEmpty) {
+      segments.add(currentBlock.trim());
+    }
+
+    return segments;
   }
 
   Widget _textColorOption(StateSetter setDialogState, String label, int hexValue) {

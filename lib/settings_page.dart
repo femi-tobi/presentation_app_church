@@ -8,6 +8,7 @@ import 'settings_state.dart';
 import 'create_presentation_page.dart';
 import 'connectivity_badge.dart';
 import 'display_manager.dart';
+import 'connectors/remote_control_service.dart';
 
 class SettingsPage extends StatefulWidget {
   final GlobalKey<ScaffoldState>? scaffoldKey;
@@ -790,6 +791,148 @@ class _SettingsContent extends StatelessWidget {
                 }
               ),
               Divider(height: 32, color: SacredColors.outlineVariant),
+              ListenableBuilder(
+                listenable: AppSettings.instance,
+                builder: (context, _) {
+                  final settings = AppSettings.instance;
+                  return Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.layers, color: SacredColors.outline),
+                              SizedBox(width: 16),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Lower Third Scripture Overlay', style: SacredTypography.labelLg(context)),
+                                  SizedBox(height: 2),
+                                  Text('Overlay scripture on the bottom third of the presentation window.', style: SacredTypography.labelSm(context).copyWith(color: SacredColors.onSurfaceVariant)),
+                                ],
+                              ),
+                            ],
+                          ),
+                          Switch(
+                            value: settings.useLowerThird,
+                            onChanged: (val) {
+                              settings.useLowerThird = val;
+                              if (val) settings.usePiP = false;
+                            },
+                            activeThumbColor: selectedPrimary,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.picture_in_picture, color: SacredColors.outline),
+                              SizedBox(width: 16),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Picture-in-Picture Layout', style: SacredTypography.labelLg(context)),
+                                  SizedBox(height: 2),
+                                  Text('Position scripture overlay in a floating overlay corner panel.', style: SacredTypography.labelSm(context).copyWith(color: SacredColors.onSurfaceVariant)),
+                                ],
+                              ),
+                            ],
+                          ),
+                          Switch(
+                            value: settings.usePiP,
+                            onChanged: (val) {
+                              settings.usePiP = val;
+                              if (val) settings.useLowerThird = false;
+                            },
+                            activeThumbColor: selectedPrimary,
+                          ),
+                        ],
+                      ),
+                    ],
+                  );
+              ),
+              Divider(height: 32, color: SacredColors.outlineVariant),
+              ListenableBuilder(
+                listenable: AppSettings.instance,
+                builder: (context, _) {
+                  final settings = AppSettings.instance;
+                  return Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.content_cut, color: SacredColors.outline),
+                              SizedBox(width: 16),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Auto Split Long Scripture', style: SacredTypography.labelLg(context)),
+                                  SizedBox(height: 2),
+                                  Text('Automatically segment verses exceeding length constraints.', style: SacredTypography.labelSm(context).copyWith(color: SacredColors.onSurfaceVariant)),
+                                ],
+                              ),
+                            ],
+                          ),
+                          Switch(
+                            value: settings.bibleAutoSplit,
+                            onChanged: (val) => settings.bibleAutoSplit = val,
+                            activeThumbColor: selectedPrimary,
+                          ),
+                        ],
+                      ),
+                      if (settings.bibleAutoSplit) ...[
+                        const SizedBox(height: 16),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Max Characters per Slide', style: SacredTypography.labelSm(context)),
+                                  Slider(
+                                    min: 50,
+                                    max: 300,
+                                    divisions: 10,
+                                    label: '${settings.bibleMaxChars}',
+                                    value: settings.bibleMaxChars.toDouble(),
+                                    onChanged: (val) => settings.bibleMaxChars = val.toInt(),
+                                    activeColor: selectedPrimary,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 24),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Max Lines per Slide', style: SacredTypography.labelSm(context)),
+                                  Slider(
+                                    min: 2,
+                                    max: 10,
+                                    divisions: 8,
+                                    label: '${settings.bibleMaxLines}',
+                                    value: settings.bibleMaxLines.toDouble(),
+                                    onChanged: (val) => settings.bibleMaxLines = val.toInt(),
+                                    activeColor: selectedPrimary,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  );
+                }
+              ),
+              Divider(height: 32, color: SacredColors.outlineVariant),
               // ── Storage: live reactive read from AppSettings ──────────────
               ListenableBuilder(
                 listenable: AppSettings.instance,
@@ -1028,6 +1171,120 @@ class _SettingsContent extends StatelessWidget {
                 ],
               ),
             ],
+          ),
+        ),
+        _GlassCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.sensors, color: selectedPrimary),
+                  const SizedBox(width: 16),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Presentation Remote Control', style: SacredTypography.labelLg(context)),
+                      const SizedBox(height: 2),
+                      Text('Control presentation slides wirelessly from a mobile or tablet.', style: SacredTypography.labelSm(context).copyWith(color: SacredColors.onSurfaceVariant)),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: SacredColors.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: SacredColors.outlineVariant),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 80,
+                      height: 80,
+                      color: Colors.white,
+                      child: const Center(
+                        child: Icon(Icons.qr_code, size: 64, color: Colors.black87),
+                      ),
+                    ),
+                    const SizedBox(width: 20),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('QR Pairing Link', style: SacredTypography.labelLg(context).copyWith(fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 4),
+                          SelectableText(
+                            RemoteControlService.instance.pairingUrl,
+                            style: GoogleFonts.firaCode(fontSize: 12, color: selectedPrimary),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Ensure both devices are connected to the same local Wi-Fi subnet.',
+                            style: SacredTypography.labelSm(context).copyWith(color: SacredColors.onSurfaceVariant),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        SizedBox(height: 48),
+        Row(
+          children: [
+            Icon(Icons.keyboard, color: selectedPrimary),
+            SizedBox(width: 12),
+            Text('Custom Keyboard Shortcuts', style: SacredTypography.headlineLg(context)),
+          ],
+        ),
+        SizedBox(height: 8),
+        Divider(color: SacredColors.outlineVariant),
+        SizedBox(height: 24),
+        _GlassCard(
+          child: ListenableBuilder(
+            listenable: AppSettings.instance,
+            builder: (context, _) {
+              final settings = AppSettings.instance;
+              return Column(
+                children: settings.customShortcuts.entries.map((entry) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          entry.key.replaceAllMapped(RegExp(r'([A-Z])'), (match) => ' ${match.group(0)}').toUpperCase(),
+                          style: SacredTypography.labelLg(context),
+                        ),
+                        DropdownButton<String>(
+                          value: entry.value,
+                          dropdownColor: SacredColors.surfaceContainerLow,
+                          items: [
+                            'Arrow Right', 'Arrow Left', 'Space', 'Backspace', 'Home', 'End',
+                            'F', 'Escape', 'B', 'W', 'P', 'T', 'L', 'O', 'C', 'D'
+                          ].map((keyName) {
+                            return DropdownMenuItem(
+                              value: keyName,
+                              child: Text(keyName, style: SacredTypography.bodyMd(context)),
+                            );
+                          }).toList(),
+                          onChanged: (val) {
+                            if (val != null) {
+                              settings.updateShortcut(entry.key, val);
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              );
+            }
           ),
         ),
         SizedBox(height: 100),

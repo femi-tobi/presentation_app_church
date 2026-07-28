@@ -650,6 +650,80 @@ class AppSettings extends ChangeNotifier {
     }
   }
 
+  // Automatic Verse Splitting
+  bool _bibleAutoSplit = true;
+  bool get bibleAutoSplit => _bibleAutoSplit;
+  set bibleAutoSplit(bool value) {
+    if (_bibleAutoSplit != value) {
+      _bibleAutoSplit = value;
+      saveSettings();
+      notifyListeners();
+    }
+  }
+
+  int _bibleMaxLines = 4;
+  int get bibleMaxLines => _bibleMaxLines;
+  set bibleMaxLines(int value) {
+    if (_bibleMaxLines != value) {
+      _bibleMaxLines = value;
+      saveSettings();
+      notifyListeners();
+    }
+  }
+
+  int _bibleMaxChars = 150;
+  int get bibleMaxChars => _bibleMaxChars;
+  set bibleMaxChars(int value) {
+    if (_bibleMaxChars != value) {
+      _bibleMaxChars = value;
+      saveSettings();
+      notifyListeners();
+    }
+  }
+
+  // Customizable Keyboard Shortcuts Map (Action Name -> Key Name / Code)
+  Map<String, String> _customShortcuts = {
+    'nextSlide': 'Arrow Right',
+    'prevSlide': 'Arrow Left',
+    'firstSlide': 'Home',
+    'lastSlide': 'End',
+    'toggleFullscreen': 'F',
+    'exitPresentation': 'Escape',
+    'blackScreen': 'B',
+    'whiteScreen': 'W',
+    'pausePresentation': 'P',
+    'toggleTimer': 'T',
+    'toggleLowerThird': 'L',
+    'togglePiP': 'O',
+    'openComparison': 'C',
+    'showDailyVerse': 'D',
+  };
+
+  Map<String, String> get customShortcuts => _customShortcuts;
+
+  void updateShortcut(String action, String keyName) {
+    _customShortcuts[action] = keyName;
+    saveSettings();
+    notifyListeners();
+  }
+
+  // Livestream Overlays & Display settings
+  bool _useLowerThird = false;
+  bool get useLowerThird => _useLowerThird;
+  set useLowerThird(bool val) {
+    _useLowerThird = val;
+    saveSettings();
+    notifyListeners();
+  }
+
+  bool _usePiP = false;
+  bool get usePiP => _usePiP;
+  set usePiP(bool val) {
+    _usePiP = val;
+    saveSettings();
+    notifyListeners();
+  }
+
   bool _isOffline = false;
   bool get isOffline => _isOffline;
   set isOffline(bool value) {
@@ -927,6 +1001,19 @@ class AppSettings extends ChangeNotifier {
       _bibleFontFamily = prefs.getString('bibleFontFamily') ?? _bibleFontFamily;
       _bibleIsBold = prefs.getBool('bibleIsBold') ?? _bibleIsBold;
       _bibleIsItalic = prefs.getBool('bibleIsItalic') ?? _bibleIsItalic;
+      _bibleAutoSplit = prefs.getBool('bibleAutoSplit') ?? _bibleAutoSplit;
+      _bibleMaxLines = prefs.getInt('bibleMaxLines') ?? _bibleMaxLines;
+      _bibleMaxChars = prefs.getInt('bibleMaxChars') ?? _bibleMaxChars;
+
+      final shortcutsJson = prefs.getString('customShortcuts');
+      if (shortcutsJson != null) {
+        try {
+          final Map<String, dynamic> map = json.decode(shortcutsJson);
+          map.forEach((k, v) {
+            _customShortcuts[k] = v.toString();
+          });
+        } catch (_) {}
+      }
 
       final lastPdfTimeStr = prefs.getString('lastPdfConversionTime');
       if (lastPdfTimeStr != null) {
@@ -995,6 +1082,10 @@ class AppSettings extends ChangeNotifier {
       await prefs.setString('bibleFontFamily', _bibleFontFamily);
       await prefs.setBool('bibleIsBold', _bibleIsBold);
       await prefs.setBool('bibleIsItalic', _bibleIsItalic);
+      await prefs.setBool('bibleAutoSplit', _bibleAutoSplit);
+      await prefs.setInt('bibleMaxLines', _bibleMaxLines);
+      await prefs.setInt('bibleMaxChars', _bibleMaxChars);
+      await prefs.setString('customShortcuts', json.encode(_customShortcuts));
 
       if (_lastPdfConversionTime != null) {
         await prefs.setString('lastPdfConversionTime', _lastPdfConversionTime!.toIso8601String());

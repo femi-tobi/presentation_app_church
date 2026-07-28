@@ -147,42 +147,111 @@ class _AudienceWindowState extends State<AudienceWindow> {
                                     : Image.network(slide.logoUrl!, fit: BoxFit.contain),
                               ),
 
-                            // Lyrics / Content Layout
-                            Positioned.fill(
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 64.0, vertical: 48.0),
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                                  children: [
-                                    if (slide.title.isNotEmpty) ...[
+                            // Lower Third Layout Mode
+                            if (AppSettings.instance.useLowerThird)
+                              Positioned(
+                                left: 32,
+                                right: 32,
+                                bottom: 32,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withOpacity(0.75),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: Colors.white24),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (slide.title.isNotEmpty)
+                                        Text(
+                                          slide.title,
+                                          style: GoogleFonts.inter(
+                                            fontSize: slide.titleFontSize * 0.7,
+                                            fontWeight: FontWeight.bold,
+                                            color: Color(slide.textColorValue).withOpacity(0.8),
+                                          ),
+                                        ),
+                                      Text(
+                                        slide.subtitle,
+                                        style: GoogleFonts.inter(
+                                          fontSize: slide.subtitleFontSize * 0.75,
+                                          color: Color(slide.textColorValue),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              )
+                            // Picture in Picture Overlay Layout Mode
+                            else if (AppSettings.instance.usePiP)
+                              Positioned(
+                                right: 24,
+                                top: 24,
+                                width: width * 0.35,
+                                child: Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black87,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: Color(slide.textColorValue).withOpacity(0.3)),
+                                    boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 10)],
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
                                       Text(
                                         slide.title,
+                                        style: GoogleFonts.inter(fontSize: 12, color: Color(slide.textColorValue).withOpacity(0.6)),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        slide.subtitle,
+                                        style: GoogleFonts.inter(fontSize: 14, color: Color(slide.textColorValue)),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              )
+                            else
+                              // Standard Fullscreen Layout
+                              Positioned.fill(
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 64.0, vertical: 48.0),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                                    children: [
+                                      if (slide.title.isNotEmpty) ...[
+                                        Text(
+                                          slide.title,
+                                          style: GoogleFonts.inter(
+                                            fontSize: slide.titleFontSize,
+                                            fontWeight: slide.isBold ? FontWeight.bold : FontWeight.normal,
+                                            fontStyle: slide.isItalic ? FontStyle.italic : FontStyle.normal,
+                                            color: Color(slide.textColorValue).withOpacity(0.7),
+                                          ),
+                                          textAlign: slide.alignment,
+                                        ),
+                                        const SizedBox(height: 24),
+                                      ],
+                                      Text(
+                                        slide.subtitle,
                                         style: GoogleFonts.inter(
-                                          fontSize: slide.titleFontSize,
+                                          fontSize: slide.subtitleFontSize,
                                           fontWeight: slide.isBold ? FontWeight.bold : FontWeight.normal,
                                           fontStyle: slide.isItalic ? FontStyle.italic : FontStyle.normal,
-                                          color: Color(slide.textColorValue).withOpacity(0.7),
+                                          color: Color(slide.textColorValue),
+                                          height: 1.4,
                                         ),
                                         textAlign: slide.alignment,
                                       ),
-                                      const SizedBox(height: 24),
                                     ],
-                                    Text(
-                                      slide.subtitle,
-                                      style: GoogleFonts.inter(
-                                        fontSize: slide.subtitleFontSize,
-                                        fontWeight: slide.isBold ? FontWeight.bold : FontWeight.normal,
-                                        fontStyle: slide.isItalic ? FontStyle.italic : FontStyle.normal,
-                                        color: Color(slide.textColorValue),
-                                        height: 1.4,
-                                      ),
-                                      textAlign: slide.alignment,
-                                    ),
-                                  ],
+                                  ),
                                 ),
                               ),
-                            ),
                           ],
                         );
                       },
