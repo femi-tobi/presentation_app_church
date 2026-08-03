@@ -730,11 +730,35 @@ class AppSettings extends ChangeNotifier {
   bool _isTimerRunning = false;
   Timer? _countdownTimer;
   bool _showTimerOnAudience = true;
+  double _timerOverlayWidth = 180.0;
+  double _timerOverlayHeight = 70.0;
+  double _timerOverlayFontSize = 24.0;
 
   int get timerRemainingSeconds => _timerRemainingSeconds;
   bool get isTimerRunning => _isTimerRunning;
   bool get showTimerOnAudience => _showTimerOnAudience;
   int get timerDurationSeconds => _timerDurationSeconds;
+  double get timerOverlayWidth => _timerOverlayWidth;
+  double get timerOverlayHeight => _timerOverlayHeight;
+  double get timerOverlayFontSize => _timerOverlayFontSize;
+
+  set timerOverlayWidth(double val) {
+    _timerOverlayWidth = val;
+    saveSettings();
+    notifyListeners();
+  }
+
+  set timerOverlayHeight(double val) {
+    _timerOverlayHeight = val;
+    saveSettings();
+    notifyListeners();
+  }
+
+  set timerOverlayFontSize(double val) {
+    _timerOverlayFontSize = val;
+    saveSettings();
+    notifyListeners();
+  }
 
   set showTimerOnAudience(bool val) {
     _showTimerOnAudience = val;
@@ -1057,6 +1081,10 @@ class AppSettings extends ChangeNotifier {
       _bibleMaxLines = prefs.getInt('bibleMaxLines') ?? _bibleMaxLines;
       _bibleMaxChars = prefs.getInt('bibleMaxChars') ?? _bibleMaxChars;
 
+      _timerOverlayWidth = prefs.getDouble('timerOverlayWidth') ?? _timerOverlayWidth;
+      _timerOverlayHeight = prefs.getDouble('timerOverlayHeight') ?? _timerOverlayHeight;
+      _timerOverlayFontSize = prefs.getDouble('timerOverlayFontSize') ?? _timerOverlayFontSize;
+
       final shortcutsJson = prefs.getString('customShortcuts');
       if (shortcutsJson != null) {
         try {
@@ -1138,6 +1166,10 @@ class AppSettings extends ChangeNotifier {
       await prefs.setInt('bibleMaxLines', _bibleMaxLines);
       await prefs.setInt('bibleMaxChars', _bibleMaxChars);
       await prefs.setString('customShortcuts', json.encode(_customShortcuts));
+
+      await prefs.setDouble('timerOverlayWidth', _timerOverlayWidth);
+      await prefs.setDouble('timerOverlayHeight', _timerOverlayHeight);
+      await prefs.setDouble('timerOverlayFontSize', _timerOverlayFontSize);
 
       if (_lastPdfConversionTime != null) {
         await prefs.setString('lastPdfConversionTime', _lastPdfConversionTime!.toIso8601String());

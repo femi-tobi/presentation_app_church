@@ -258,40 +258,47 @@ class _AudienceWindowState extends State<AudienceWindow> {
                               ),
                             // Countdown Timer Overlay Layer
                             if (AppSettings.instance.showTimerOnAudience)
-                              Positioned(
-                                left: 24,
-                                top: 24,
-                                child: ListenableBuilder(
-                                  listenable: AppSettings.instance,
-                                  builder: (context, _) {
-                                    final settings = AppSettings.instance;
-                                    final minutes = (settings.timerRemainingSeconds / 60).floor().toString().padLeft(2, '0');
-                                    final seconds = (settings.timerRemainingSeconds % 60).toString().padLeft(2, '0');
-                                    return Container(
+                              ListenableBuilder(
+                                listenable: AppSettings.instance,
+                                builder: (context, _) {
+                                  final settings = AppSettings.instance;
+                                  if (!settings.isTimerRunning || settings.timerRemainingSeconds <= 0) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  final minutes = (settings.timerRemainingSeconds / 60).floor().toString().padLeft(2, '0');
+                                  final seconds = (settings.timerRemainingSeconds % 60).toString().padLeft(2, '0');
+                                  return Positioned(
+                                    right: 24,
+                                    top: 24,
+                                    child: Container(
+                                      width: settings.timerOverlayWidth,
+                                      height: settings.timerOverlayHeight,
+                                      alignment: Alignment.center,
                                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                                       decoration: BoxDecoration(
-                                        color: Colors.black54,
-                                        borderRadius: BorderRadius.circular(8),
-                                        border: Border.all(color: Colors.white24),
+                                        color: Colors.black.withOpacity(0.85),
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(color: Color(slide.textColorValue).withOpacity(0.3)),
+                                        boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 10)],
                                       ),
                                       child: Row(
-                                        mainAxisSize: MainAxisSize.min,
+                                        mainAxisAlignment: MainAxisAlignment.center,
                                         children: [
-                                          const Icon(Icons.timer, color: Colors.orangeAccent, size: 16),
-                                          const SizedBox(width: 6),
+                                          Icon(Icons.timer, color: Colors.orangeAccent, size: settings.timerOverlayFontSize * 0.9),
+                                          const SizedBox(width: 8),
                                           Text(
                                             '$minutes:$seconds',
                                             style: GoogleFonts.firaCode(
                                               fontWeight: FontWeight.bold,
-                                              fontSize: 16,
+                                              fontSize: settings.timerOverlayFontSize,
                                               color: Colors.orangeAccent,
                                             ),
                                           ),
                                         ],
                                       ),
-                                    );
-                                  }
-                                ),
+                                    ),
+                                  );
+                                },
                               ),
                           ],
                         );

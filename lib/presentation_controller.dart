@@ -229,6 +229,10 @@ class PresentationController extends ChangeNotifier {
       process.exitCode.then((_) {
         _audienceProcess = null;
       });
+      // Force broadcast active slides to any connected clients including this newly spawned one
+      Future.delayed(const Duration(milliseconds: 600), () {
+        _broadcastSlides();
+      });
     }).catchError((_) {
       _audienceProcess = null;
     });

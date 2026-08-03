@@ -11,7 +11,7 @@ import 'fullscreen_presenter_page.dart';
 import 'library_page.dart';
 import 'song_to_slides_page.dart';
 import 'bible_show_page.dart';
-
+import 'timer_page.dart';
 
 /// Exact Material 3 custom color system derived from the design tailwind config.
 class SacredColors {
@@ -249,7 +249,9 @@ class _DashboardPageState extends State<DashboardPage> {
                             ? LibraryPage(scaffoldKey: _scaffoldKey)
                             : (_activeTab == 'Bible'
                                 ? BibleShowPage(scaffoldKey: _scaffoldKey)
-                                : Column(
+                                : (_activeTab == 'Timer'
+                                    ? TimerPage(scaffoldKey: _scaffoldKey)
+                                    : Column(
                             children: [
                               TopNavBar(
                                 scaffoldKey: _scaffoldKey,
@@ -276,8 +278,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                 ),
                               ),
                             ],
-                          )))),
-              ),
+                          )))))),
             ],
           ),
         ),
@@ -393,6 +394,14 @@ class SacredSidebar extends StatelessWidget {
                           label: 'Templates',
                           isActive: activeTab == 'Templates',
                           onTap: () => onTabSelected('Templates'),
+                        ),
+                        SizedBox(height: 8),
+                        _SidebarNavigationItem(
+                          icon: Icons.timer_outlined,
+                          activeIcon: Icons.timer,
+                          label: 'Timer',
+                          isActive: activeTab == 'Timer',
+                          onTap: () => onTabSelected('Timer'),
                         ),
                         SizedBox(height: 8),
                         _SidebarNavigationItem(
