@@ -540,8 +540,79 @@ class AppSettings extends ChangeNotifier {
     ];
   }
 
+  bool _isOnboarded = false;
+  bool get isOnboarded => _isOnboarded;
+  set isOnboarded(bool value) {
+    if (_isOnboarded != value) {
+      _isOnboarded = value;
+      saveSettings();
+      notifyListeners();
+    }
+  }
+
+  String _userName = '';
+  String get userName => _userName;
+  set userName(String value) {
+    if (_userName != value) {
+      _userName = value;
+      saveSettings();
+      notifyListeners();
+    }
+  }
+
+  String _userMinistry = '';
+  String get userMinistry => _userMinistry;
+  set userMinistry(String value) {
+    if (_userMinistry != value) {
+      _userMinistry = value;
+      saveSettings();
+      notifyListeners();
+    }
+  }
+
+  String _userChurch = '';
+  String get userChurch => _userChurch;
+  set userChurch(String value) {
+    if (_userChurch != value) {
+      _userChurch = value;
+      saveSettings();
+      notifyListeners();
+    }
+  }
+
+  String _userEmail = '';
+  String get userEmail => _userEmail;
+  set userEmail(String value) {
+    if (_userEmail != value) {
+      _userEmail = value;
+      saveSettings();
+      notifyListeners();
+    }
+  }
+
+  String _userPhone = '';
+  String get userPhone => _userPhone;
+  set userPhone(String value) {
+    if (_userPhone != value) {
+      _userPhone = value;
+      saveSettings();
+      notifyListeners();
+    }
+  }
+
+  DateTime? _lastFeedbackPromptTime;
+  DateTime? get lastFeedbackPromptTime => _lastFeedbackPromptTime;
+  set lastFeedbackPromptTime(DateTime? value) {
+    if (_lastFeedbackPromptTime != value) {
+      _lastFeedbackPromptTime = value;
+      saveSettings();
+      notifyListeners();
+    }
+  }
+
   bool _isDarkMode = false;
   bool get isDarkMode => _isDarkMode;
+
   set isDarkMode(bool value) {
     if (_isDarkMode != value) {
       _isDarkMode = value;
@@ -946,12 +1017,15 @@ class AppSettings extends ChangeNotifier {
   }
 
   // ── Recent Presentations ───────────────────────────────────────────────────
+  bool _recentPresentationsDirty = false;
   final List<PresentationRecord> _recentPresentations = [];
   List<PresentationRecord> get recentPresentations =>
       List.unmodifiable(_recentPresentations);
 
   void addRecentPresentation(PresentationRecord record) {
+    _recentPresentationsDirty = true;
     // Remove duplicate IDs before adding
+
     _recentPresentations.removeWhere((r) => r.id == record.id);
     _recentPresentations.insert(0, record); // newest first
     if (_recentPresentations.length > 12) _recentPresentations.removeLast();
@@ -960,6 +1034,7 @@ class AppSettings extends ChangeNotifier {
   }
 
   void deleteRecentPresentation(String id) {
+    _recentPresentationsDirty = true;
     _recentPresentations.removeWhere((r) => r.id == id);
     saveSettings();
     notifyListeners();
@@ -968,6 +1043,7 @@ class AppSettings extends ChangeNotifier {
   void renameRecentPresentation(String id, String newTitle) {
     final index = _recentPresentations.indexWhere((r) => r.id == id);
     if (index != -1) {
+      _recentPresentationsDirty = true;
       final oldRecord = _recentPresentations[index];
       _recentPresentations[index] = PresentationRecord(
         id: oldRecord.id,
@@ -1017,12 +1093,14 @@ class AppSettings extends ChangeNotifier {
         outlineText: oldRecord.outlineText,
       );
       _recentPresentations.insert(index + 1, newRecord);
+      _recentPresentationsDirty = true;
       saveSettings();
       notifyListeners();
     }
   }
 
   void clearCache() {
+    _recentPresentationsDirty = true;
     _recentPresentations.clear();
     saveSettings();
     notifyListeners();
@@ -1056,6 +1134,17 @@ class AppSettings extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       _isDarkMode = prefs.getBool('isDarkMode') ?? _isDarkMode;
       _isOffline = prefs.getBool('isOffline') ?? _isOffline;
+      _isOnboarded = prefs.getBool('isOnboarded') ?? _isOnboarded;
+      _userName = prefs.getString('userName') ?? _userName;
+      _userMinistry = prefs.getString('userMinistry') ?? _userMinistry;
+      _userChurch = prefs.getString('userChurch') ?? _userChurch;
+      _userEmail = prefs.getString('userEmail') ?? _userEmail;
+      _userPhone = prefs.getString('userPhone') ?? _userPhone;
+      final lastFeedbackTimeStr = prefs.getString('lastFeedbackPromptTime');
+      if (lastFeedbackTimeStr != null) {
+        _lastFeedbackPromptTime = DateTime.parse(lastFeedbackTimeStr);
+      }
+
       final colorVal = prefs.getInt('primaryColor');
       if (colorVal != null) {
         _primaryColor = Color(colorVal);
@@ -1139,6 +1228,18 @@ class AppSettings extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('isDarkMode', _isDarkMode);
       await prefs.setBool('isOffline', _isOffline);
+      await prefs.setBool('isOnboarded', _isOnboarded);
+      await prefs.setString('userName', _userName);
+      await prefs.setString('userMinistry', _userMinistry);
+      await prefs.setString('userChurch', _userChurch);
+      await prefs.setString('userEmail', _userEmail);
+      await prefs.setString('userPhone', _userPhone);
+      if (_lastFeedbackPromptTime != null) {
+        await prefs.setString('lastFeedbackPromptTime', _lastFeedbackPromptTime!.toIso8601String());
+      } else {
+        await prefs.remove('lastFeedbackPromptTime');
+      }
+
       await prefs.setInt('primaryColor', _primaryColor.value);
       await prefs.setString('fontFamily', _fontFamily);
       await prefs.setString('churchName', _churchName);
@@ -1177,21 +1278,24 @@ class AppSettings extends ChangeNotifier {
         await prefs.remove('lastPdfConversionTime');
       }
 
-      // Loop to try saving, removing oldest presentation if QuotaExceededError or write failure occurs
-      while (true) {
-        try {
-          final List<Map<String, dynamic>> recentListJson =
-              _recentPresentations.map((r) => r.toJson()).toList();
-          await prefs.setString('recentPresentations', json.encode(recentListJson));
-          break; // successfully saved!
-        } catch (e) {
-          // If it is a QuotaExceededError or save failure, and we have presentations to remove, remove the oldest one
-          if (_recentPresentations.isNotEmpty) {
-            debugPrint('Storage quota exceeded. Evicting oldest presentation: ${_recentPresentations.last.title}');
-            _recentPresentations.removeLast();
-          } else {
-            // Nothing left to evict, rethrow
-            rethrow;
+      if (_recentPresentationsDirty) {
+        // Loop to try saving, removing oldest presentation if QuotaExceededError or write failure occurs
+        while (true) {
+          try {
+            final List<Map<String, dynamic>> recentListJson =
+                _recentPresentations.map((r) => r.toJson()).toList();
+            await prefs.setString('recentPresentations', json.encode(recentListJson));
+            _recentPresentationsDirty = false;
+            break; // successfully saved!
+          } catch (e) {
+            // If it is a QuotaExceededError or save failure, and we have presentations to remove, remove the oldest one
+            if (_recentPresentations.isNotEmpty) {
+              debugPrint('Storage quota exceeded. Evicting oldest presentation: ${_recentPresentations.last.title}');
+              _recentPresentations.removeLast();
+            } else {
+              // Nothing left to evict, rethrow
+              rethrow;
+            }
           }
         }
       }

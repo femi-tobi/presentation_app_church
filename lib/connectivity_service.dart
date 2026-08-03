@@ -2,6 +2,8 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 
+import 'dart:io';
+
 // Web-only: check browser navigator.onLine
 bool _browserIsOnline() {
   if (kIsWeb) {
@@ -28,10 +30,19 @@ class ConnectivityService extends ChangeNotifier {
 
   bool get isOnline => _isOnline;
 
-  void _checkNow() {
-    // On non-web platforms we have no reliable sync API for connectivity
-    // without a package. Default to true (connected) on desktop/mobile.
-    final online = kIsWeb ? _webNavigatorOnline() : true;
+  Future<void> _checkNow() async {
+    bool online = true;
+    if (kIsWeb) {
+      online = _webNavigatorOnline();
+    } else {
+      try {
+        final result = await InternetAddress.lookup('google.com')
+            .timeout(const Duration(seconds: 3));
+        online = result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+      } catch (_) {
+        online = false;
+      }
+    }
     if (online != _isOnline) {
       _isOnline = online;
       notifyListeners();

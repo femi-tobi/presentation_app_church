@@ -12,6 +12,9 @@ import 'library_page.dart';
 import 'song_to_slides_page.dart';
 import 'bible_show_page.dart';
 import 'timer_page.dart';
+import 'onboarding_dialog.dart';
+import 'feedback_dialog.dart';
+
 
 /// Exact Material 3 custom color system derived from the design tailwind config.
 class SacredColors {
@@ -173,7 +176,24 @@ class _DashboardPageState extends State<DashboardPage> {
   void initState() {
     super.initState();
     _activeTab = widget.initialTab;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkOnboardingAndFeedback();
+    });
   }
+
+  void _checkOnboardingAndFeedback() {
+    final settings = AppSettings.instance;
+    if (!settings.isOnboarded) {
+      OnboardingDialog.show(context);
+    } else {
+      final lastPrompt = settings.lastFeedbackPromptTime;
+      final now = DateTime.now();
+      if (lastPrompt == null || now.difference(lastPrompt).inDays >= 30) {
+        FeedbackDialog.show(context);
+      }
+    }
+  }
+
 
   @override
   void didUpdateWidget(covariant DashboardPage oldWidget) {
@@ -1351,6 +1371,36 @@ class MainCanvasContent extends StatelessWidget {
                   color: SacredColors.onSurfaceVariant,
                   fontWeight: FontWeight.bold,
                 ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: SacredColors.primary,
+                      foregroundColor: Colors.white,
+                    ),
+                    icon: const Icon(Icons.person_add_alt),
+                    label: const Text("Test Profile Form"),
+                    onPressed: () => showDialog(
+                      context: context,
+                      builder: (context) => const OnboardingDialog(),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: SacredColors.primary.withOpacity(0.2),
+                      foregroundColor: SacredColors.primary,
+                    ),
+                    icon: const Icon(Icons.feedback_outlined),
+                    label: const Text("Test Feedback Form"),
+                    onPressed: () => showDialog(
+                      context: context,
+                      builder: (context) => const FeedbackDialog(),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
