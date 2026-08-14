@@ -1,6 +1,7 @@
 // lib/create_presentation_page.dart
 import 'dart:io';
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:file_picker/file_picker.dart';
@@ -1297,28 +1298,9 @@ class _PptxGeneratorPaneState extends State<_PptxGeneratorPane> {
       barrierDismissible: false,
       builder: (loadingCtx) {
         loadingDialogContext = loadingCtx;
-        return AlertDialog(
-          backgroundColor: SacredColors.surface,
-          content: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(color: widget.primaryColor),
-                const SizedBox(height: 20),
-                Text(
-                  'Generating Presentation...',
-                  style: SacredTypography.labelLg(loadingCtx).copyWith(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Connecting to ${connector.name} API. Please wait.',
-                  style: SacredTypography.labelSm(loadingCtx).copyWith(color: SacredColors.outline),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          ),
+        return _AiGenerationProgressDialog(
+          connectorName: connector.name,
+          primaryColor: widget.primaryColor,
         );
       },
     );
@@ -1702,6 +1684,153 @@ class _PptxGeneratorPaneState extends State<_PptxGeneratorPane> {
                     ? 'Generates local editable preview in 10-15s.'
                     : 'Downloads raw .pptx directly in 20-30s.',
                 style: TextStyle(color: SacredColors.outline, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AiGenerationProgressDialog extends StatefulWidget {
+  final String connectorName;
+  final Color primaryColor;
+
+  const _AiGenerationProgressDialog({
+    required this.connectorName,
+    required this.primaryColor,
+  });
+
+  @override
+  State<_AiGenerationProgressDialog> createState() => _AiGenerationProgressDialogState();
+}
+
+class _AiGenerationProgressDialogState extends State<_AiGenerationProgressDialog> {
+  Timer? _timer;
+  int _currentStepIndex = 0;
+  double _progressValue = 0.05;
+
+  final List<String> _steps = [
+    'Establishing secure handshake with AI service...',
+    'Analyzing liturgy and sermon outline structures...',
+    'Synthesizing slide layout blueprints...',
+    'Applying custom visual typography and colors...',
+    'Rendering high-fidelity background vectors...',
+    'Configuring slide transition presets...',
+    'Assembling final slide data packages...',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 2), (timer) {
+      if (!mounted) return;
+      setState(() {
+        if (_currentStepIndex < _steps.length - 1) {
+          _currentStepIndex++;
+        }
+        if (_progressValue < 0.95) {
+          _progressValue += (0.95 - _progressValue) * 0.15;
+        }
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: SacredColors.surfaceContainerHigh,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      content: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                SizedBox(
+                  width: 80,
+                  height: 80,
+                  child: CircularProgressIndicator(
+                    value: _progressValue,
+                    strokeWidth: 6,
+                    color: widget.primaryColor,
+                    backgroundColor: widget.primaryColor.withOpacity(0.1),
+                  ),
+                ),
+                Text(
+                  '${(_progressValue * 100).toInt()}%',
+                  style: SacredTypography.labelLg(context).copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: widget.primaryColor,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 32),
+            Text(
+              'Generating Presentation...',
+              style: SacredTypography.headlineMd(context).copyWith(
+                fontWeight: FontWeight.bold,
+                color: SacredColors.onSurface,
+              ),
+            ),
+            const SizedBox(height: 12),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              transitionBuilder: (child, anim) => FadeTransition(
+                opacity: anim,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0.0, 0.2),
+                    end: Offset.zero,
+                  ).animate(anim),
+                  child: child,
+                ),
+              ),
+              child: SizedBox(
+                height: 48,
+                child: Center(
+                  child: Text(
+                    _steps[_currentStepIndex],
+                    key: ValueKey<int>(_currentStepIndex),
+                    style: SacredTypography.bodyMd(context).copyWith(
+                      color: SacredColors.onSurfaceVariant,
+                      height: 1.5,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+              decoration: BoxDecoration(
+                color: widget.primaryColor.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(30),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.cloud_sync, size: 16, color: widget.primaryColor),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Using ${widget.connectorName}',
+                    style: SacredTypography.labelSm(context).copyWith(
+                      color: widget.primaryColor,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],

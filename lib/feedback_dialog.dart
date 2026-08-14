@@ -41,12 +41,12 @@ class _FeedbackDialogState extends State<FeedbackDialog> {
 
     // Prepare payload (combines stored profile details for identification)
     final Map<String, String> payload = {
-      'entry.1018809924': settings.userName,
-      'entry.2069631626': settings.userMinistry,
-      'entry.848809228': settings.userChurch,
-      'entry.1802905149': settings.userEmail,
-      'entry.1118608889': settings.userPhone,
-      'entry.200104713': feedbackText, // FEEDBACK
+      'entry.1731333237': settings.userName,
+      'entry.2122975167': settings.userMinistry,
+      'entry.104166914': settings.userChurch,
+      'entry.1128775980': settings.userEmail,
+      'entry.1519689275': settings.userPhone,
+      'entry.1364902059': feedbackText, // FEEDBACK
     };
 
     // Queue submission

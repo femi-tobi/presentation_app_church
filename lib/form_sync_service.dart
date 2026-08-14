@@ -38,7 +38,7 @@ class FormSyncService extends ChangeNotifier {
     debugPrint('[FormSyncService] Queued new submission. Total pending: ${queue.length}');
     
     if (ConnectivityService.instance.isOnline) {
-      await syncPendingSubmissions();
+      unawaited(syncPendingSubmissions());
     }
   }
 
@@ -84,11 +84,21 @@ class FormSyncService extends ChangeNotifier {
   Future<bool> _sendToGoogleForm(Map<String, String> data) async {
     try {
       final url = Uri.parse(
-          'https://docs.google.com/forms/d/e/1FAIpQLSfCUDuzLB8RagbxISGlWkRXan5nVhMOZqcXpE9V7uH3sYjS4rT_4Q/formResponse');
+          'https://docs.google.com/forms/d/e/1FAIpQLSfCUDuzLB8RagbxISGlWkRXan5nVhMOZqcXpE9VRPh3ccoMQg/formResponse');
       
+      // Map old entry keys to new entry keys to heal any pending local queue submissions
+      final Map<String, String> mappedData = {
+        'entry.1731333237': data['entry.1731333237'] ?? data['entry.1018809924'] ?? '',
+        'entry.2122975167': data['entry.2122975167'] ?? data['entry.2069631626'] ?? '',
+        'entry.104166914': data['entry.104166914'] ?? data['entry.848809228'] ?? '',
+        'entry.1128775980': data['entry.1128775980'] ?? data['entry.1802905149'] ?? '',
+        'entry.1519689275': data['entry.1519689275'] ?? data['entry.1118608889'] ?? '',
+        'entry.1364902059': data['entry.1364902059'] ?? data['entry.200104713'] ?? '',
+      };
+
       final request = http.Request('POST', url)
         ..headers.addAll({'Content-Type': 'application/x-www-form-urlencoded'})
-        ..bodyFields = data
+        ..bodyFields = mappedData
         ..followRedirects = false;
 
       final streamedResponse = await request.send().timeout(const Duration(seconds: 15));

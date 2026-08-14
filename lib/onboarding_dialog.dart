@@ -64,12 +64,12 @@ class _OnboardingDialogState extends State<OnboardingDialog> {
 
     // 2. Prepare payload for Google Form sync
     final Map<String, String> payload = {
-      'entry.1018809924': name,      // FULL NAME
-      'entry.2069631626': ministry,  // MINISTRY / DEPARTMENT
-      'entry.848809228': church,     // NAME OF CHURCH
-      'entry.1802905149': email,     // EMAIL ADDRESS
-      'entry.1118608889': phone,     // PHONE NUMBER (WHATSAPP)
-      'entry.200104713': '',         // FEEDBACK (empty on onboarding)
+      'entry.1731333237': name,      // FULL NAME
+      'entry.2122975167': ministry,  // MINISTRY / DEPARTMENT
+      'entry.104166914': church,     // NAME OF CHURCH
+      'entry.1128775980': email,     // EMAIL ADDRESS
+      'entry.1519689275': phone,     // PHONE NUMBER (WHATSAPP)
+      'entry.1364902059': '',         // FEEDBACK (empty on onboarding)
     };
 
     // Queue submission

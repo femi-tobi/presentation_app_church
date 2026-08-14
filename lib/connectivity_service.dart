@@ -36,11 +36,21 @@ class ConnectivityService extends ChangeNotifier {
       online = _webNavigatorOnline();
     } else {
       try {
-        final result = await InternetAddress.lookup('google.com')
-            .timeout(const Duration(seconds: 3));
-        online = result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+        final socket = await Socket.connect(
+          '8.8.8.8',
+          53,
+          timeout: const Duration(seconds: 2),
+        );
+        socket.destroy();
+        online = true;
       } catch (_) {
-        online = false;
+        try {
+          final result = await InternetAddress.lookup('google.com')
+              .timeout(const Duration(seconds: 2));
+          online = result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+        } catch (__) {
+          online = false;
+        }
       }
     }
     if (online != _isOnline) {

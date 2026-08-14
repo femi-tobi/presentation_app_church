@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 
 class ParsedReference {
   final bool isValid;
@@ -348,8 +349,7 @@ class BibleService {
       try {
         final path = 'assets/$tKey/$name.json';
         final jsonStr = await rootBundle.loadString(path);
-        final Map<String, dynamic> data = json.decode(jsonStr);
-        final book = BibleBook.fromJson(data);
+        final book = await compute(_parseBibleBook, jsonStr);
         _loadedBooksCache[tKey]![bookName] = book;
         return book;
       } catch (_) {
@@ -407,4 +407,10 @@ class BibleService {
 
     return results;
   }
+}
+
+/// Helper top-level function to parse a Bible book in a background isolate
+BibleBook _parseBibleBook(String jsonStr) {
+  final Map<String, dynamic> data = json.decode(jsonStr);
+  return BibleBook.fromJson(data);
 }
