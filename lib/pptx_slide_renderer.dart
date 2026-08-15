@@ -17,6 +17,8 @@ import 'settings_state.dart';
   final double width;
   final double height;
   final Function(int shapeIndex, double left, double top)? onShapePositionChanged;
+  final Set<int> selectedShapeIndices;
+  final Function(int shapeIndex)? onShapeTap;
 
   const PptxSlideRenderer({
     super.key,
@@ -24,6 +26,8 @@ import 'settings_state.dart';
     required this.width,
     required this.height,
     this.onShapePositionChanged,
+    this.selectedShapeIndices = const {},
+    this.onShapeTap,
   });
 
   /// 1 pt = 12700 EMU.
@@ -51,10 +55,10 @@ import 'settings_state.dart';
             // ── Shapes in document order ─────────────────────────────────
             for (int k = 0; k < slide.pptxShapes.length; k++)
               Positioned(
-                left:   (slide.pptxShapes[k].left   * width).clamp(0, width),
-                top:    (slide.pptxShapes[k].top    * height).clamp(0, height),
-                width:  (slide.pptxShapes[k].width  * width).clamp(1, width),
-                height: (slide.pptxShapes[k].height * height).clamp(1, height),
+                left:   slide.pptxShapes[k].left   * width,
+                top:    slide.pptxShapes[k].top    * height,
+                width:  slide.pptxShapes[k].width  * width,
+                height: slide.pptxShapes[k].height * height,
                 child:  _buildShapeWrapper(k, slide.pptxShapes[k]),
               ),
           ],
@@ -71,6 +75,8 @@ import 'settings_state.dart';
       shape: shape,
       width: width,
       height: height,
+      isSelected: selectedShapeIndices.contains(index),
+      onTap: () => onShapeTap?.call(index),
       onPositionChanged: (newLeft, newTop) {
         onShapePositionChanged?.call(index, newLeft, newTop);
       },
@@ -81,6 +87,16 @@ import 'settings_state.dart';
   // ── Background ────────────────────────────────────────────────────────────
 
   Widget _buildBackground() {
+    if (slide.bgImageBytes != null && slide.bgImageBytes!.isNotEmpty) {
+      return Positioned.fill(
+        child: Image.memory(
+          slide.bgImageBytes!,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) =>
+              ColoredBox(color: Color(slide.bgColorValue)),
+        ),
+      );
+    }
     if (slide.imageUrl.isNotEmpty) {
       return Positioned.fill(
         child: slide.imageUrl.startsWith('data:')
@@ -132,9 +148,17 @@ import 'settings_state.dart';
   // ── Image shape ───────────────────────────────────────────────────────────
 
   Widget _buildImage(PptxShape shape) {
+    if (shape.imageBytes != null && shape.imageBytes!.isNotEmpty) {
+      return Image.memory(
+        shape.imageBytes!,
+        fit: BoxFit.cover, // preservation of aspect ratio for background/large pictures
+        gaplessPlayback: true,
+        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+      );
+    }
     return Image.memory(
       _decodeUri(shape.imageDataUri),
-      fit: BoxFit.fill, // fill the exact PowerPoint bounding box
+      fit: BoxFit.cover, // preservation of aspect ratio for background/large pictures
       gaplessPlayback: true,
       errorBuilder: (_, __, ___) => const SizedBox.shrink(),
     );
@@ -200,6 +224,8 @@ class _InteractiveShapeContainer extends StatefulWidget {
   final PptxShape shape;
   final double width;
   final double height;
+  final bool isSelected;
+  final VoidCallback? onTap;
   final Function(double left, double top) onPositionChanged;
   final Widget child;
 
@@ -207,6 +233,8 @@ class _InteractiveShapeContainer extends StatefulWidget {
     required this.shape,
     required this.width,
     required this.height,
+    this.isSelected = false,
+    this.onTap,
     required this.onPositionChanged,
     required this.child,
   });
@@ -221,11 +249,16 @@ class _InteractiveShapeContainerState extends State<_InteractiveShapeContainer> 
 
   @override
   Widget build(BuildContext context) {
+    final bool showBorder = widget.isSelected || _isHovered || _isDragging;
+    final borderCol = widget.isSelected ? Colors.blue : Colors.blueAccent.withValues(alpha: 0.6);
+    final borderWidth = widget.isSelected ? 2.0 : 1.5;
+
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
       child: GestureDetector(
         behavior: HitTestBehavior.translucent,
+        onTap: widget.onTap,
         onPanStart: (_) => setState(() => _isDragging = true),
         onPanUpdate: (details) {
           final double deltaX = details.delta.dx / widget.width;
@@ -239,10 +272,8 @@ class _InteractiveShapeContainerState extends State<_InteractiveShapeContainer> 
         child: Container(
           decoration: BoxDecoration(
             border: Border.all(
-              color: (_isHovered || _isDragging)
-                  ? Colors.blueAccent.withValues(alpha: 0.8)
-                  : Colors.transparent,
-              width: 1.5,
+              color: showBorder ? borderCol : Colors.transparent,
+              width: borderWidth,
             ),
           ),
           child: widget.child,

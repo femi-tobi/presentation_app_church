@@ -13,9 +13,9 @@ class PptxParser {
   static const double _defaultSlideWidthEmu  = 9144000;
   static const double _defaultSlideHeightEmu = 6858000;
 
-  static List<SlideData> parsePptx(Uint8List bytes, String title) {
+  static List<ParsedSlide> parsePptx(Uint8List bytes, String title) {
     final archive = ZipDecoder().decodeBytes(bytes);
-    final List<SlideData> slides = [];
+    final List<ParsedSlide> slides = [];
 
     // ── 1. Slide dimensions ────────────────────────────────────────────────
     double slideW = _defaultSlideWidthEmu;
@@ -93,6 +93,7 @@ class PptxParser {
       int    bgColor    = 0xFFFFFFFF;
       String bgImageUri = '';
       bool   hasBgImage = false;
+      Uint8List? bgImageBytes;
 
       final bgBlock = RegExp(r'<p:bg>(.*?)</p:bg>', dotAll: true).firstMatch(content);
       if (bgBlock != null) {
@@ -116,7 +117,16 @@ class PptxParser {
         final em = RegExp(r'r:embed="([^"]+)"').firstMatch(bgXml);
         if (em != null) {
           final uri = relToDataUri(em.group(1)!);
-          if (uri != null) { bgImageUri = uri; hasBgImage = true; }
+          if (uri != null) {
+            bgImageUri = uri;
+            hasBgImage = true;
+            try {
+              final comma = uri.indexOf(',');
+              if (comma != -1) {
+                bgImageBytes = base64Decode(uri.substring(comma + 1));
+              }
+            } catch (_) {}
+          }
         }
       }
 
@@ -135,9 +145,19 @@ class PptxParser {
         if (em == null) continue;
         final uri = relToDataUri(em.group(1)!);
         if (uri == null) continue;
+        
+        Uint8List? imgBytes;
+        try {
+          final comma = uri.indexOf(',');
+          if (comma != -1) {
+            imgBytes = base64Decode(uri.substring(comma + 1));
+          }
+        } catch (_) {}
+
         shapes.add(PptxShape(
           left: pos.$1, top: pos.$2, width: pos.$3, height: pos.$4,
           imageDataUri: uri,
+          imageBytes: imgBytes,
         ));
       }
 
@@ -360,57 +380,41 @@ class PptxParser {
           return s;
         }).toList();
 
-        slides.add(SlideData(
+        slides.add(ParsedSlide(
           id:                 'imported_${(i + 1).toString().padLeft(2, '0')}',
           title:              _slideTitle(correctedShapes, i),
           subtitle:           _slideSubtitle(correctedShapes),
           imageUrl:           bgImageUri,
           bgColorValue:       bgColor,
-          opacity:            1.0,
-          blur:               0.0,
-          isBold:             false,
-          isItalic:           false,
-          titleFontSize:      36.0,
-          subtitleFontSize:   20.0,
           textColorValue:     0xFF000000,
-          logoUrl:            '',
           pptxShapes:         correctedShapes,
           pptxSlideHeightEmu: slideH,
+          bgImageBytes:       bgImageBytes,
         ));
       } else {
-        slides.add(SlideData(
+        slides.add(ParsedSlide(
           id:                 'imported_${(i + 1).toString().padLeft(2, '0')}',
           title:              _slideTitle(shapes, i),
           subtitle:           _slideSubtitle(shapes),
           imageUrl:           bgImageUri,
           bgColorValue:       bgColor,
-          opacity:            1.0,
-          blur:               0.0,
-          isBold:             false,
-          isItalic:           false,
-          titleFontSize:      36.0,
-          subtitleFontSize:   20.0,
           textColorValue:     0xFF000000,
-          logoUrl:            '',
           pptxShapes:         shapes,
           pptxSlideHeightEmu: slideH,
+          bgImageBytes:       bgImageBytes,
         ));
       }
     }
 
     if (slides.isEmpty) {
-      slides.add(SlideData(
+      slides.add(ParsedSlide(
         id:                 'imported_01',
         title:              title,
         subtitle:           'No slide content parsed.',
         imageUrl:           '',
         bgColorValue:       0xFFFFFFFF,
-        opacity:            1.0,
-        blur:               0.0,
-        titleFontSize:      36.0,
-        subtitleFontSize:   20.0,
         textColorValue:     0xFF000000,
-        logoUrl:            '',
+        pptxShapes:         [],
         pptxSlideHeightEmu: slideH,
       ));
     }
@@ -584,4 +588,29 @@ class PptxParser {
     final ts = shapes.where((s) => s.text.isNotEmpty).toList();
     return ts.length > 1 ? ts.sublist(1).map((s) => s.text).join('\n') : '';
   }
+}
+
+/// Lightweight plain data slide class to transfer across isolates without ChangeNotifier exceptions.
+class ParsedSlide {
+  final String id;
+  final String title;
+  final String subtitle;
+  final String imageUrl;
+  final int bgColorValue;
+  final int textColorValue;
+  final List<PptxShape> pptxShapes;
+  final double pptxSlideHeightEmu;
+  final Uint8List? bgImageBytes;
+
+  ParsedSlide({
+    required this.id,
+    required this.title,
+    required this.subtitle,
+    required this.imageUrl,
+    required this.bgColorValue,
+    required this.textColorValue,
+    required this.pptxShapes,
+    required this.pptxSlideHeightEmu,
+    this.bgImageBytes,
+  });
 }

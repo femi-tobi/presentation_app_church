@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dashboard_page.dart';
@@ -14,6 +15,26 @@ void main(List<String> args) async {
   
   // Enable runtime fetching of Google Fonts to load fonts dynamically when online
   GoogleFonts.config.allowRuntimeFetching = true;
+
+  // Global handler for synchronous errors
+  FlutterError.onError = (FlutterErrorDetails details) {
+    final errStr = details.exception.toString();
+    if (errStr.contains('Failed to load font') || errStr.contains('fonts.gstatic.com')) {
+      debugPrint('Silently caught and ignored font loading exception: ${details.exception}');
+      return; // Handled, fallback automatically
+    }
+    FlutterError.presentError(details);
+  };
+
+  // Global handler for asynchronous errors (like background HTTP fetch crashes)
+  PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
+    final errStr = error.toString();
+    if (errStr.contains('Failed to load font') || errStr.contains('fonts.gstatic.com') || errStr.contains('ClientException')) {
+      debugPrint('Silently caught and ignored async font fetching exception: $error');
+      return true; // Handled
+    }
+    return false; // Propagate other exceptions
+  };
   
   await AppSettings.instance.loadSettings();
 

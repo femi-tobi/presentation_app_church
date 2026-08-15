@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, compute;
 import 'package:flutter/material.dart';
 import 'pptx_parser.dart';
 import 'settings_state.dart';
@@ -64,11 +64,30 @@ class PptxImportService {
           .replaceAll('.PPTX', '')
           .trim();
 
-      // ── 4. Parse (on main isolate — avoids ChangeNotifier transfer issues) ───
-      // Wrapped in Future so the loading dialog has time to render first.
-      final parsedSlides = await Future.microtask(
-        () => PptxParser.parsePptx(nonNullBytes, cleanTitle),
+      // ── 4. Parse in background isolate (keeps UI completely smooth!) ──────
+      final parsedSlidesRaw = await compute(
+        _parseInBackground,
+        _ParseArgs(bytes: nonNullBytes, title: cleanTitle),
       );
+
+      // Convert plain ParsedSlide list to SlideData on main isolate
+      final parsedSlides = parsedSlidesRaw.map((s) => SlideData(
+        id:                 s.id,
+        title:              s.title,
+        subtitle:           s.subtitle,
+        imageUrl:           s.imageUrl,
+        bgColorValue:       s.bgColorValue,
+        opacity:            1.0,
+        blur:               0.0,
+        isBold:             false,
+        isItalic:           false,
+        titleFontSize:      36.0,
+        subtitleFontSize:   20.0,
+        textColorValue:     s.textColorValue,
+        logoUrl:            '',
+        pptxShapes:         s.pptxShapes,
+        pptxSlideHeightEmu: s.pptxSlideHeightEmu,
+      )).toList();
 
       // ── 5. Register presentation ──────────────────────────────────────
       final id     = 'imported_${DateTime.now().millisecondsSinceEpoch}';
@@ -111,11 +130,7 @@ class PptxImportService {
     }
   }
 
-  // ── Background parse helper (runs via compute) ────────────────────────────
 
-  static List<SlideData> _parseInBackground(_ParseArgs args) {
-    return PptxParser.parsePptx(args.bytes, args.title);
-  }
 
   // ── SnackBar helper ───────────────────────────────────────────────────────
 
@@ -132,13 +147,7 @@ class PptxImportService {
   }
 }
 
-// ── Args record for compute() ─────────────────────────────────────────────────
 
-class _ParseArgs {
-  final Uint8List bytes;
-  final String title;
-  const _ParseArgs({required this.bytes, required this.title});
-}
 
 // ── Loading dialog ─────────────────────────────────────────────────────────────
 
@@ -222,4 +231,14 @@ class _PptxLoadingDialogState extends State<_PptxLoadingDialog>
       ),
     );
   }
+}
+
+class _ParseArgs {
+  final Uint8List bytes;
+  final String title;
+  _ParseArgs({required this.bytes, required this.title});
+}
+
+List<ParsedSlide> _parseInBackground(_ParseArgs args) {
+  return PptxParser.parsePptx(args.bytes, args.title);
 }

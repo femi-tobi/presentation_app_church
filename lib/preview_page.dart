@@ -65,6 +65,7 @@ class _PreviewPageState extends State<PreviewPage> {
   late TextEditingController _subtitleController;
   bool _applyToAll = false;
   int _sidebarTab = 0; // 0: Outline, 1: Slide Thumbnails
+  final Set<int> _selectedShapeIndices = {};
 
   void _applyActiveStylesToAll() {
     if (_slides.isEmpty) return;
@@ -687,6 +688,7 @@ class _PreviewPageState extends State<PreviewPage> {
       _activeSlideIndex = index;
       _titleController.text = _slides[index].title;
       _subtitleController.text = _slides[index].subtitle;
+      _selectedShapeIndices.clear();
     });
     AppSettings.instance.activeSlideIndex = index;
   }
@@ -1388,6 +1390,41 @@ class _PreviewPageState extends State<PreviewPage> {
                             _saveToRecentList();
                             setState(() {});
                           },
+                          selectedShapeIndices: _selectedShapeIndices,
+                          onSelectedShapesChanged: (indices, {
+                            String? fontFamily,
+                            double? fontSize,
+                            bool? isBold,
+                            bool? isItalic,
+                            int? colorValue,
+                            TextAlign? align,
+                            String? text,
+                          }) {
+                            setState(() {
+                              for (final index in indices) {
+                                final old = activeSlide.pptxShapes[index];
+                                activeSlide.pptxShapes[index] = PptxShape(
+                                  left: old.left,
+                                  top: old.top,
+                                  width: old.width,
+                                  height: old.height,
+                                  text: text ?? old.text,
+                                  fontSize: fontSize ?? old.fontSize,
+                                  isBold: isBold ?? old.isBold,
+                                  isItalic: isItalic ?? old.isItalic,
+                                  colorValue: colorValue ?? old.colorValue,
+                                  align: align ?? old.align,
+                                  imageDataUri: old.imageDataUri,
+                                  fillColorValue: old.fillColorValue,
+                                  fontFamily: fontFamily ?? old.fontFamily,
+                                  imageBytes: old.imageBytes,
+                                );
+                              }
+                              activeSlide.update();
+                            });
+                            AppSettings.instance.updateActiveSlides(_slides);
+                            _saveToRecentList();
+                          },
                         ))
                   : _LiveWorkspaceCanvas(
                       activeSlide: activeSlide,
@@ -1437,11 +1474,28 @@ class _PreviewPageState extends State<PreviewPage> {
                             imageDataUri: oldShape.imageDataUri,
                             fillColorValue: oldShape.fillColorValue,
                             fontFamily: oldShape.fontFamily,
+                            imageBytes: oldShape.imageBytes,
                           );
                           activeSlide.update();
                         });
                         AppSettings.instance.updateActiveSlides(_slides);
                         _saveToRecentList();
+                      },
+                      selectedShapeIndices: _selectedShapeIndices,
+                      onShapeTap: (index) {
+                        setState(() {
+                          final isShiftPressed = HardwareKeyboard.instance.isShiftPressed;
+                          if (isShiftPressed) {
+                            if (_selectedShapeIndices.contains(index)) {
+                              _selectedShapeIndices.remove(index);
+                            } else {
+                              _selectedShapeIndices.add(index);
+                            }
+                          } else {
+                            _selectedShapeIndices.clear();
+                            _selectedShapeIndices.add(index);
+                          }
+                        });
                       },
                     ),
             ),
@@ -1499,6 +1553,41 @@ class _PreviewPageState extends State<PreviewPage> {
                 onSaveRecent: () {
                   _saveToRecentList();
                   setState(() {});
+                },
+                selectedShapeIndices: _selectedShapeIndices,
+                onSelectedShapesChanged: (indices, {
+                  String? fontFamily,
+                  double? fontSize,
+                  bool? isBold,
+                  bool? isItalic,
+                  int? colorValue,
+                  TextAlign? align,
+                  String? text,
+                }) {
+                  setState(() {
+                    for (final index in indices) {
+                      final old = activeSlide.pptxShapes[index];
+                      activeSlide.pptxShapes[index] = PptxShape(
+                        left: old.left,
+                        top: old.top,
+                        width: old.width,
+                        height: old.height,
+                        text: text ?? old.text,
+                        fontSize: fontSize ?? old.fontSize,
+                        isBold: isBold ?? old.isBold,
+                        isItalic: isItalic ?? old.isItalic,
+                        colorValue: colorValue ?? old.colorValue,
+                        align: align ?? old.align,
+                        imageDataUri: old.imageDataUri,
+                        fillColorValue: old.fillColorValue,
+                        fontFamily: fontFamily ?? old.fontFamily,
+                        imageBytes: old.imageBytes,
+                      );
+                    }
+                    activeSlide.update();
+                  });
+                  AppSettings.instance.updateActiveSlides(_slides);
+                  _saveToRecentList();
                 },
               ),
           ],
@@ -3437,6 +3526,8 @@ class _LiveWorkspaceCanvas extends StatelessWidget {
   final Function(double, double)? onLogoPositionChanged;
   final Function(double, double)? onTextPositionChanged;
   final Function(int, double, double)? onShapePositionChanged;
+  final Set<int> selectedShapeIndices;
+  final Function(int)? onShapeTap;
 
   const _LiveWorkspaceCanvas({
     required this.activeSlide,
@@ -3446,6 +3537,8 @@ class _LiveWorkspaceCanvas extends StatelessWidget {
     this.onLogoPositionChanged,
     this.onTextPositionChanged,
     this.onShapePositionChanged,
+    this.selectedShapeIndices = const {},
+    this.onShapeTap,
   });
 
   @override
@@ -3496,7 +3589,32 @@ class _LiveWorkspaceCanvas extends StatelessWidget {
                           ),
 
                           // Background Image Layer with custom opacity and live blurs
-                          if (activeSlide.imageUrl.isNotEmpty)
+                          if (activeSlide.bgImageBytes != null && activeSlide.bgImageBytes!.isNotEmpty)
+                            Positioned.fill(
+                              child: Opacity(
+                                opacity: activeSlide.opacity,
+                                child: activeSlide.blur == 0.0
+                                    ? Image.memory(
+                                        activeSlide.bgImageBytes!,
+                                        fit: BoxFit.cover,
+                                        filterQuality: FilterQuality.low,
+                                        errorBuilder: (c, e, s) => const SizedBox(),
+                                      )
+                                    : ImageFiltered(
+                                        imageFilter: ImageFilter.blur(
+                                          sigmaX: activeSlide.blur,
+                                          sigmaY: activeSlide.blur,
+                                        ),
+                                        child: Image.memory(
+                                          activeSlide.bgImageBytes!,
+                                          fit: BoxFit.cover,
+                                          filterQuality: FilterQuality.low,
+                                          errorBuilder: (c, e, s) => const SizedBox(),
+                                        ),
+                                      ),
+                              ),
+                            )
+                          else if (activeSlide.imageUrl.isNotEmpty)
                             Positioned.fill(
                               child: Opacity(
                                 opacity: activeSlide.opacity,
@@ -3552,6 +3670,8 @@ class _LiveWorkspaceCanvas extends StatelessWidget {
                               activeSlide: activeSlide,
                               onPositionChanged: onTextPositionChanged,
                               onShapePositionChanged: onShapePositionChanged,
+                              selectedShapeIndices: selectedShapeIndices,
+                              onShapeTap: onShapeTap,
                             ),
                           ),
 
@@ -3874,6 +3994,16 @@ class _PropertiesSidebar extends StatefulWidget {
   final List<SlideData> slides;
   final ValueChanged<String?> onSelectedSectionChanged;
   final VoidCallback onSaveRecent;
+  final Set<int> selectedShapeIndices;
+  final Function(Set<int> indices, {
+    String? fontFamily,
+    double? fontSize,
+    bool? isBold,
+    bool? isItalic,
+    int? colorValue,
+    TextAlign? align,
+    String? text,
+  }) onSelectedShapesChanged;
 
   const _PropertiesSidebar({
     super.key,
@@ -3895,21 +4025,31 @@ class _PropertiesSidebar extends StatefulWidget {
     required this.slides,
     required this.onSelectedSectionChanged,
     required this.onSaveRecent,
+    required this.selectedShapeIndices,
+    required this.onSelectedShapesChanged,
   });
 
   @override
   State<_PropertiesSidebar> createState() => _PropertiesSidebarState();
 }
 
-class _PropertiesSidebarState extends State<_PropertiesSidebar> with SingleTickerProviderStateMixin {
+class _PropertiesSidebarState extends State<_PropertiesSidebar> with TickerProviderStateMixin {
   late TabController _tabController;
   late TextEditingController _notesController;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _notesController = TextEditingController(text: _getSelectedSectionNotes());
+  }
+
+  @override
+  void reassemble() {
+    super.reassemble();
+    // Recreate tab controller to match new length during hot reload
+    _tabController.dispose();
+    _tabController = TabController(length: 4, vsync: this, initialIndex: 0);
   }
 
   @override
@@ -3918,8 +4058,14 @@ class _PropertiesSidebarState extends State<_PropertiesSidebar> with SingleTicke
     if (oldWidget.selectedSectionId != widget.selectedSectionId) {
       _notesController.text = _getSelectedSectionNotes();
       
-      // If a section is selected, automatically switch to the Section tab (index 1)
-      if (widget.selectedSectionId != null && _tabController.index != 1) {
+      // If a section is selected, automatically switch to the Section tab (index 2)
+      if (widget.selectedSectionId != null && _tabController.index != 2) {
+        _tabController.animateTo(2);
+      }
+    }
+    if (widget.selectedShapeIndices.isNotEmpty && oldWidget.selectedShapeIndices.isEmpty) {
+      // If a shape is selected, automatically switch to the Format tab (index 1)
+      if (_tabController.index != 1) {
         _tabController.animateTo(1);
       }
     }
@@ -5103,6 +5249,310 @@ class _PropertiesSidebarState extends State<_PropertiesSidebar> with SingleTicke
     );
   }
 
+  Widget _buildFormatTab() {
+    if (widget.selectedShapeIndices.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.format_paint_outlined, size: 48, color: SacredColors.outlineVariant),
+            const SizedBox(height: 16),
+            Text(
+              'No Element Selected',
+              style: TextStyle(fontWeight: FontWeight.bold, color: SacredColors.onSurface),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Click on any text shape in the slide editor to adjust its font size, style, color, alignment, and content.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: SacredColors.onSurfaceVariant),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Get the properties of the first selected shape as a preview
+    final firstIdx = widget.selectedShapeIndices.first;
+    if (firstIdx >= widget.activeSlide.pptxShapes.length) {
+      return const SizedBox.shrink();
+    }
+    final firstShape = widget.activeSlide.pptxShapes[firstIdx];
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${widget.selectedShapeIndices.length} Element${widget.selectedShapeIndices.length > 1 ? 's' : ''} Selected',
+            style: SacredTypography.headlineMd(context).copyWith(
+              fontWeight: FontWeight.bold,
+              color: SacredColors.onSurface,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Formatting updates will apply to all selected elements.',
+            style: TextStyle(fontSize: 11, color: SacredColors.onSurfaceVariant),
+          ),
+          const SizedBox(height: 16),
+          const Divider(),
+          const SizedBox(height: 16),
+
+          // Text Content (only show/edit text if 1 element is selected)
+          if (widget.selectedShapeIndices.length == 1) ...[
+            Text(
+              'TEXT CONTENT',
+              style: SacredTypography.labelLg(context).copyWith(
+                color: SacredColors.onSurfaceVariant,
+                letterSpacing: 1.0,
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              maxLines: 4,
+              style: TextStyle(color: SacredColors.onSurface, fontSize: 13),
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: SacredColors.surfaceContainerLow,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: SacredColors.outlineVariant),
+                ),
+              ),
+              controller: TextEditingController(text: firstShape.text)
+                ..selection = TextSelection.collapsed(offset: firstShape.text.length),
+              onChanged: (val) {
+                widget.onSelectedShapesChanged(widget.selectedShapeIndices, text: val);
+              },
+            ),
+            const SizedBox(height: 24),
+          ],
+
+          // Font Family
+          Text(
+            'FONT FAMILY',
+            style: SacredTypography.labelLg(context).copyWith(
+              color: SacredColors.onSurfaceVariant,
+              letterSpacing: 1.0,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Builder(
+            builder: (context) {
+              final String currentFont = firstShape.fontFamily;
+              final List<String> standardFonts = [
+                'Arial',
+                'Impact',
+                'Montserrat',
+                'Archivo Black',
+                'Cinzel',
+                'Georgia',
+                'Courier New',
+              ];
+              final List<String> dropdownFonts = List.from(standardFonts);
+              if (!dropdownFonts.contains(currentFont)) {
+                dropdownFonts.add(currentFont);
+              }
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: SacredColors.surfaceContainer,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: SacredColors.outlineVariant),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: currentFont,
+                    isExpanded: true,
+                    icon: const Icon(Icons.arrow_drop_down),
+                    onChanged: (val) {
+                      if (val != null) {
+                        widget.onSelectedShapesChanged(widget.selectedShapeIndices, fontFamily: val);
+                      }
+                    },
+                    items: dropdownFonts.map((font) {
+                      return DropdownMenuItem<String>(
+                        value: font,
+                        child: Text(font),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              );
+            }
+          ),
+          const SizedBox(height: 24),
+
+          // Font Size
+          Text(
+            'FONT SIZE',
+            style: SacredTypography.labelLg(context).copyWith(
+              color: SacredColors.onSurfaceVariant,
+              letterSpacing: 1.0,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: Slider(
+                  value: firstShape.fontSize.clamp(8.0, 120.0),
+                  min: 8.0,
+                  max: 120.0,
+                  divisions: 112,
+                  activeColor: SacredColors.primary,
+                  inactiveColor: SacredColors.surfaceContainerHighest,
+                  onChanged: (val) {
+                    widget.onSelectedShapesChanged(widget.selectedShapeIndices, fontSize: val);
+                  },
+                ),
+              ),
+              SizedBox(
+                width: 44,
+                child: Text(
+                  '${firstShape.fontSize.toInt()}pt',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: SacredColors.primary,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          // Styling toggles (Bold / Italic / Align)
+          Row(
+            children: [
+              Expanded(
+                child: _FormatToggleIcon(
+                  icon: Icons.format_bold,
+                  isSelected: firstShape.isBold,
+                  onPressed: () {
+                    widget.onSelectedShapesChanged(widget.selectedShapeIndices, isBold: !firstShape.isBold);
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _FormatToggleIcon(
+                  icon: Icons.format_italic,
+                  isSelected: firstShape.isItalic,
+                  onPressed: () {
+                    widget.onSelectedShapesChanged(widget.selectedShapeIndices, isItalic: !firstShape.isItalic);
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: PopupMenuButton<TextAlign>(
+                  initialValue: firstShape.align,
+                  onSelected: (alignment) {
+                    widget.onSelectedShapesChanged(widget.selectedShapeIndices, align: alignment);
+                  },
+                  itemBuilder: (context) => const [
+                    PopupMenuItem(
+                      value: TextAlign.left,
+                      child: Row(
+                        children: [
+                          Icon(Icons.format_align_left),
+                          SizedBox(width: 8),
+                          Text('Left'),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: TextAlign.center,
+                      child: Row(
+                        children: [
+                          Icon(Icons.format_align_center),
+                          SizedBox(width: 8),
+                          Text('Center'),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: TextAlign.right,
+                      child: Row(
+                        children: [
+                          Icon(Icons.format_align_right),
+                          SizedBox(width: 8),
+                          Text('Right'),
+                        ],
+                      ),
+                    ),
+                  ],
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      color: SacredColors.surfaceContainer,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: SacredColors.outlineVariant),
+                    ),
+                    child: Icon(
+                      Icons.format_align_center,
+                      size: 20,
+                      color: SacredColors.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          // Color selection
+          Text(
+            'TEXT COLOR',
+            style: SacredTypography.labelLg(context).copyWith(
+              color: SacredColors.onSurfaceVariant,
+              letterSpacing: 1.0,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final color in [
+                Colors.white,
+                Colors.black,
+                const Color(0xFF70AD47), // Green
+                const Color(0xFF418AB3), // Blue
+                const Color(0xFFED7D31), // Orange
+                const Color(0xFFFFC000), // Yellow
+                const Color(0xFFC00000), // Red
+              ])
+                GestureDetector(
+                  onTap: () {
+                    widget.onSelectedShapesChanged(widget.selectedShapeIndices, colorValue: color.value);
+                  },
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: color,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: firstShape.colorValue == color.value
+                            ? Colors.blue
+                            : Colors.grey.shade400,
+                        width: firstShape.colorValue == color.value ? 2.5 : 1.0,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -5129,6 +5579,7 @@ class _PropertiesSidebarState extends State<_PropertiesSidebar> with SingleTicke
               indicatorSize: TabBarIndicatorSize.tab,
               tabs: const [
                 Tab(icon: Icon(Icons.slideshow, size: 20), text: 'Slide'),
+                Tab(icon: Icon(Icons.format_paint_outlined, size: 20), text: 'Format'),
                 Tab(icon: Icon(Icons.sticky_note_2_outlined, size: 20), text: 'Section'),
                 Tab(icon: Icon(Icons.analytics_outlined, size: 20), text: 'Stats'),
               ],
@@ -5140,6 +5591,7 @@ class _PropertiesSidebarState extends State<_PropertiesSidebar> with SingleTicke
               controller: _tabController,
               children: [
                 _buildSlideTab(),
+                _buildFormatTab(),
                 _buildSectionTab(),
                 _buildStatsTab(),
               ],
@@ -5733,11 +6185,15 @@ class _DraggableTextLayer extends StatefulWidget {
   final SlideData activeSlide;
   final Function(double, double)? onPositionChanged;
   final Function(int, double, double)? onShapePositionChanged;
+  final Set<int> selectedShapeIndices;
+  final Function(int)? onShapeTap;
 
   const _DraggableTextLayer({
     required this.activeSlide,
     this.onPositionChanged,
     this.onShapePositionChanged,
+    this.selectedShapeIndices = const {},
+    this.onShapeTap,
   });
 
   @override
@@ -5791,6 +6247,8 @@ class _DraggableTextLayerState extends State<_DraggableTextLayer> {
                       width: w,
                       height: h,
                       onShapePositionChanged: widget.onShapePositionChanged,
+                      selectedShapeIndices: widget.selectedShapeIndices,
+                      onShapeTap: widget.onShapeTap,
                     ),
                   )
                 else

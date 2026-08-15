@@ -233,6 +233,9 @@ class PptxShape {
   /// The font family name parsed from PowerPoint (e.g. "Arial Black", "Calibri").
   final String fontFamily;
 
+  /// Decoded image bytes (pre-populated to prevent lagging during UI builds).
+  final Uint8List? imageBytes;
+
   const PptxShape({
     required this.left,
     required this.top,
@@ -247,6 +250,7 @@ class PptxShape {
     this.imageDataUri = '',
     this.fillColorValue = 0x00000000, // transparent by default
     this.fontFamily = 'Arial',
+    this.imageBytes,
   });
 
   Map<String, dynamic> toJson() => {
@@ -265,24 +269,38 @@ class PptxShape {
         'fontFamily': fontFamily,
       };
 
-  factory PptxShape.fromJson(Map<String, dynamic> j) => PptxShape(
-        left: (j['left'] as num).toDouble(),
-        top: (j['top'] as num).toDouble(),
-        width: (j['width'] as num).toDouble(),
-        height: (j['height'] as num).toDouble(),
-        text: j['text'] as String? ?? '',
-        fontSize: (j['fontSize'] as num?)?.toDouble() ?? 18.0,
-        isBold: j['isBold'] as bool? ?? false,
-        isItalic: j['isItalic'] as bool? ?? false,
-        colorValue: j['colorValue'] as int? ?? 0xFF000000,
-        align: TextAlign.values.firstWhere(
-          (e) => e.name == j['align'],
-          orElse: () => TextAlign.left,
-        ),
-        imageDataUri: j['imageDataUri'] as String? ?? '',
-        fillColorValue: j['fillColorValue'] as int? ?? 0x00000000,
-        fontFamily: j['fontFamily'] as String? ?? 'Arial',
-      );
+  factory PptxShape.fromJson(Map<String, dynamic> j) {
+    final uri = j['imageDataUri'] as String? ?? '';
+    Uint8List? bytes;
+    if (uri.isNotEmpty) {
+      try {
+        final comma = uri.indexOf(',');
+        if (comma != -1) {
+          bytes = base64Decode(uri.substring(comma + 1));
+        }
+      } catch (_) {}
+    }
+
+    return PptxShape(
+      left: (j['left'] as num).toDouble(),
+      top: (j['top'] as num).toDouble(),
+      width: (j['width'] as num).toDouble(),
+      height: (j['height'] as num).toDouble(),
+      text: j['text'] as String? ?? '',
+      fontSize: (j['fontSize'] as num?)?.toDouble() ?? 18.0,
+      isBold: j['isBold'] as bool? ?? false,
+      isItalic: j['isItalic'] as bool? ?? false,
+      colorValue: j['colorValue'] as int? ?? 0xFF000000,
+      align: TextAlign.values.firstWhere(
+        (e) => e.name == j['align'],
+        orElse: () => TextAlign.left,
+      ),
+      imageDataUri: uri,
+      fillColorValue: j['fillColorValue'] as int? ?? 0x00000000,
+      fontFamily: j['fontFamily'] as String? ?? 'Arial',
+      imageBytes: bytes,
+    );
+  }
 }
 
 class SlideData extends ChangeNotifier {
@@ -476,6 +494,9 @@ class SlideData extends ChangeNotifier {
   /// accurate font-size scaling. 0 for non-imported slides.
   double pptxSlideHeightEmu;
 
+  /// Decoded background image bytes (pre-populated to prevent UI thread lag).
+  final Uint8List? bgImageBytes;
+
   SlideData({
     required this.id,
     required String title,
@@ -500,6 +521,7 @@ class SlideData extends ChangeNotifier {
     String? sectionId,
     List<PptxShape>? pptxShapes,
     double pptxSlideHeightEmu = 0.0,
+    this.bgImageBytes,
   })  : _title = title,
         _subtitle = subtitle,
         _imageUrl = imageUrl,
@@ -553,11 +575,22 @@ class SlideData extends ChangeNotifier {
 
   factory SlideData.fromJson(Map<String, dynamic> json) {
     final rawShapes = json['pptxShapes'] as List<dynamic>?;
+    final imgUrl = json['imageUrl'] as String? ?? '';
+    Uint8List? bgBytes;
+    if (imgUrl.startsWith('data:')) {
+      try {
+        final comma = imgUrl.indexOf(',');
+        if (comma != -1) {
+          bgBytes = base64Decode(imgUrl.substring(comma + 1));
+        }
+      } catch (_) {}
+    }
+
     return SlideData(
       id: json['id'] as String,
       title: json['title'] as String,
       subtitle: json['subtitle'] as String,
-      imageUrl: json['imageUrl'] as String,
+      imageUrl: imgUrl,
       opacity: (json['opacity'] as num?)?.toDouble() ?? 0.85,
       blur: (json['blur'] as num?)?.toDouble() ?? 12.0,
       isBold: json['isBold'] as bool? ?? false,
@@ -585,6 +618,7 @@ class SlideData extends ChangeNotifier {
               .toList()
           : [],
       pptxSlideHeightEmu: (json['pptxSlideHeightEmu'] as num?)?.toDouble() ?? 0.0,
+      bgImageBytes: bgBytes,
     );
   }
 
@@ -625,8 +659,10 @@ class SlideData extends ChangeNotifier {
         imageDataUri: s.imageDataUri,
         fillColorValue: s.fillColorValue,
         fontFamily: s.fontFamily,
+        imageBytes: s.imageBytes,
       )).toList(),
       pptxSlideHeightEmu: pptxSlideHeightEmu,
+      bgImageBytes: bgImageBytes,
     );
   }
 
