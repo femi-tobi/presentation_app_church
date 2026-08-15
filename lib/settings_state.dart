@@ -500,7 +500,7 @@ class SlideData extends ChangeNotifier {
   double pptxSlideHeightEmu;
 
   /// Decoded background image bytes (pre-populated to prevent UI thread lag).
-  final Uint8List? bgImageBytes;
+  Uint8List? bgImageBytes;
 
   SlideData({
     required this.id,
@@ -1249,6 +1249,12 @@ class AppSettings extends ChangeNotifier {
         if (slide.imageUrl.startsWith('data:')) {
           final localPath = await _extractAndSaveMediaFile(presentationId, slide.id, slide.imageUrl);
           slide.imageUrl = localPath;
+          // Pre-load saved image file bytes into bgImageBytes memory
+          if (slide.bgImageBytes == null) {
+            try {
+              slide.bgImageBytes = await File(localPath).readAsBytes();
+            } catch (_) {}
+          }
         }
         // Save base64 images inside imported pptx shapes too
         for (int j = 0; j < slide.pptxShapes.length; j++) {
@@ -1311,9 +1317,25 @@ class AppSettings extends ChangeNotifier {
       if (await file.exists()) {
         final content = await file.readAsString();
         final List<dynamic> decoded = json.decode(content);
-        return decoded
+        final List<SlideData> slides = decoded
             .map((s) => SlideData.fromJson(s as Map<String, dynamic>))
             .toList();
+            
+        // Pre-load saved image file bytes into bgImageBytes memory for zero-lag rendering
+        for (final slide in slides) {
+          if (slide.imageUrl.isNotEmpty && 
+              !slide.imageUrl.startsWith('data:') && 
+              !slide.imageUrl.startsWith('http://') && 
+              !slide.imageUrl.startsWith('https://')) {
+            try {
+              final imgFile = File(slide.imageUrl);
+              if (await imgFile.exists()) {
+                slide.bgImageBytes = await imgFile.readAsBytes();
+              }
+            } catch (_) {}
+          }
+        }
+        return slides;
       }
     } catch (e) {
       debugPrint('Error loading slides from file: $e');
