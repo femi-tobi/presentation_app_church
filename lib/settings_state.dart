@@ -156,29 +156,32 @@ class PresentationRecord {
     this.sections,
   });
 
-  Map<String, dynamic> toJson() {
+  Map<String, dynamic> toJson({bool includeSlides = true}) {
     return {
       'id': id,
       'title': title,
       'slideCount': slideCount,
       'thumbnailUrl': thumbnailUrl,
       'createdAt': createdAt.toIso8601String(),
-      'slides': slides.map((s) => s.toJson()).toList(),
+      if (includeSlides) 'slides': slides.map((s) => s.toJson()).toList(),
       'outlineText': outlineText,
       'sections': sections?.map((s) => s.toJson()).toList(),
     };
   }
 
   factory PresentationRecord.fromJson(Map<String, dynamic> json) {
+    final slidesRaw = json['slides'] as List<dynamic>?;
     return PresentationRecord(
       id: json['id'] as String,
       title: json['title'] as String,
       slideCount: json['slideCount'] as int,
       thumbnailUrl: json['thumbnailUrl'] as String,
       createdAt: DateTime.parse(json['createdAt'] as String),
-      slides: (json['slides'] as List<dynamic>)
-          .map((s) => SlideData.fromJson(s as Map<String, dynamic>))
-          .toList(),
+      slides: slidesRaw != null
+          ? slidesRaw
+              .map((s) => SlideData.fromJson(s as Map<String, dynamic>))
+              .toList()
+          : [],
       outlineText: json['outlineText'] as String? ?? '',
       sections: json['sections'] != null
           ? (json['sections'] as List<dynamic>)
@@ -1203,13 +1206,74 @@ class AppSettings extends ChangeNotifier {
   List<PresentationRecord> get recentPresentations =>
       List.unmodifiable(_recentPresentations);
 
+  Future<void> _saveSlidesToPrefs(String presentationId, List<SlideData> slides) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = 'pres_slides_$presentationId';
+      final slidesJson = slides.map((s) => s.toJson()).toList();
+      await prefs.setString(key, json.encode(slidesJson));
+    } catch (e) {
+      debugPrint('Error saving slides to prefs: $e');
+    }
+  }
+
+  Future<void> _deleteSlidesFromPrefs(String presentationId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = 'pres_slides_$presentationId';
+      await prefs.remove(key);
+    } catch (e) {
+      debugPrint('Error deleting slides from prefs: $e');
+    }
+  }
+
+  Future<List<SlideData>> getSlidesForPresentation(String presentationId) async {
+    // If the presentation is in memory and has slides loaded, return them
+    final idx = _recentPresentations.indexWhere((r) => r.id == presentationId);
+    if (idx != -1 && _recentPresentations[idx].slides.isNotEmpty) {
+      return _recentPresentations[idx].slides;
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = 'pres_slides_$presentationId';
+      final slidesJson = prefs.getString(key);
+      if (slidesJson != null) {
+        final List<dynamic> decoded = json.decode(slidesJson);
+        return decoded
+            .map((s) => SlideData.fromJson(s as Map<String, dynamic>))
+            .toList();
+      }
+    } catch (e) {
+      debugPrint('Error loading slides from prefs: $e');
+    }
+    return [];
+  }
+
   void addRecentPresentation(PresentationRecord record) {
     _recentPresentationsDirty = true;
-    // Remove duplicate IDs before adding
-
     _recentPresentations.removeWhere((r) => r.id == record.id);
-    _recentPresentations.insert(0, record); // newest first
-    if (_recentPresentations.length > 12) _recentPresentations.removeLast();
+    
+    // Save lightweight version in memory
+    final lightweightRecord = PresentationRecord(
+      id: record.id,
+      title: record.title,
+      slideCount: record.slideCount,
+      thumbnailUrl: record.thumbnailUrl,
+      createdAt: record.createdAt,
+      slides: [], // Keep empty in memory to save 99% space!
+      outlineText: record.outlineText,
+      sections: record.sections,
+    );
+
+    _recentPresentations.insert(0, lightweightRecord); // newest first
+    if (_recentPresentations.length > 12) {
+      final removed = _recentPresentations.removeLast();
+      _deleteSlidesFromPrefs(removed.id);
+    }
+    
+    // Save slides dynamically to dedicated key
+    _saveSlidesToPrefs(record.id, record.slides);
+    
     saveSettings();
     notifyListeners();
   }
@@ -1217,6 +1281,7 @@ class AppSettings extends ChangeNotifier {
   void deleteRecentPresentation(String id) {
     _recentPresentationsDirty = true;
     _recentPresentations.removeWhere((r) => r.id == id);
+    _deleteSlidesFromPrefs(id);
     saveSettings();
     notifyListeners();
   }
@@ -1232,27 +1297,35 @@ class AppSettings extends ChangeNotifier {
         slideCount: oldRecord.slideCount,
         thumbnailUrl: oldRecord.thumbnailUrl,
         createdAt: oldRecord.createdAt,
-        slides: oldRecord.slides,
+        slides: [], // Keep empty in memory
         outlineText: oldRecord.outlineText,
+        sections: oldRecord.sections,
       );
       saveSettings();
       notifyListeners();
     }
   }
 
-  void duplicateRecentPresentation(String id) {
+  void duplicateRecentPresentation(String id) async {
     final index = _recentPresentations.indexWhere((r) => r.id == id);
     if (index != -1) {
       final oldRecord = _recentPresentations[index];
+      final slidesList = await getSlidesForPresentation(id);
+      
+      final String newId = '${oldRecord.id}_copy_${DateTime.now().millisecondsSinceEpoch}';
       final newRecord = PresentationRecord(
-        id: '${oldRecord.id}_copy_${DateTime.now().millisecondsSinceEpoch}',
+        id: newId,
         title: '${oldRecord.title} (Copy)',
         slideCount: oldRecord.slideCount,
         thumbnailUrl: oldRecord.thumbnailUrl,
         createdAt: DateTime.now(),
-        slides: oldRecord.slides.map((s) => s.clone()).toList(),
+        slides: [], // Keep empty in memory
         outlineText: oldRecord.outlineText,
+        sections: oldRecord.sections,
       );
+      
+      await _saveSlidesToPrefs(newId, slidesList.map((s) => s.clone()).toList());
+      
       _recentPresentations.insert(index + 1, newRecord);
       _recentPresentationsDirty = true;
       saveSettings();
@@ -1260,8 +1333,11 @@ class AppSettings extends ChangeNotifier {
     }
   }
 
-  void clearCache() {
+  void clearCache() async {
     _recentPresentationsDirty = true;
+    for (final r in _recentPresentations) {
+      _deleteSlidesFromPrefs(r.id);
+    }
     _recentPresentations.clear();
     saveSettings();
     notifyListeners();
@@ -1444,15 +1520,15 @@ class AppSettings extends ChangeNotifier {
         while (true) {
           try {
             final List<Map<String, dynamic>> recentListJson =
-                _recentPresentations.map((r) => r.toJson()).toList();
+                _recentPresentations.map((r) => r.toJson(includeSlides: false)).toList();
             await prefs.setString('recentPresentations', json.encode(recentListJson));
             _recentPresentationsDirty = false;
             break; // successfully saved!
           } catch (e) {
             // If it is a QuotaExceededError or save failure, and we have presentations to remove, remove the oldest one
             if (_recentPresentations.isNotEmpty) {
-              debugPrint('Storage quota exceeded. Evicting oldest presentation: ${_recentPresentations.last.title}');
-              _recentPresentations.removeLast();
+              final removed = _recentPresentations.removeLast();
+              _deleteSlidesFromPrefs(removed.id);
             } else {
               // Nothing left to evict, rethrow
               rethrow;

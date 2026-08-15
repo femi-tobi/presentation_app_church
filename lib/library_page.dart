@@ -1150,7 +1150,7 @@ class _LibraryCardState extends State<_LibraryCard> {
     }
   }
 
-  void _handleMenuAction(BuildContext context, String action) {
+  void _handleMenuAction(BuildContext context, String action) async {
     switch (action) {
       case 'play':
         if (widget.item.category == 'Presentations') {
@@ -1181,17 +1181,40 @@ class _LibraryCardState extends State<_LibraryCard> {
           final matches = AppSettings.instance.recentPresentations.where((p) => p.id == widget.item.id);
           if (matches.isNotEmpty) {
             final realPres = matches.first;
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => PreviewPage(
-                  presentationId: realPres.id,
-                  initialSlides: realPres.slides,
-                  initialSections: realPres.sections,
-                  outlineText: realPres.outlineText,
+            showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (context) => Center(
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(SacredColors.primary),
                 ),
               ),
             );
+
+            try {
+              final slides = await AppSettings.instance.getSlidesForPresentation(realPres.id);
+              if (!context.mounted) return;
+              Navigator.pop(context); // Dismiss loading dialog
+
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => PreviewPage(
+                    presentationId: realPres.id,
+                    initialSlides: slides,
+                    initialSections: realPres.sections,
+                    outlineText: realPres.outlineText,
+                  ),
+                ),
+              );
+            } catch (e) {
+              if (context.mounted) {
+                Navigator.pop(context); // Dismiss loading dialog
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Error loading presentation: $e')),
+                );
+              }
+            }
           } else {
             final String fallbackId = DateTime.now().millisecondsSinceEpoch.toString();
             Navigator.push(
@@ -1508,22 +1531,45 @@ How great, how great is our God.''';
                                   backgroundColor: Colors.white,
                                   child: IconButton(
                                     icon: Icon(Icons.edit, color: widget.primaryColor),
-                                    onPressed: () {
+                                    onPressed: () async {
                                       if (widget.item.category == 'Presentations') {
                                         final matches = AppSettings.instance.recentPresentations.where((p) => p.id == widget.item.id);
                                         if (matches.isNotEmpty) {
                                           final realPres = matches.first;
-                                          Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder: (context) => PreviewPage(
-                                                presentationId: realPres.id,
-                                                initialSlides: realPres.slides,
-                                                initialSections: realPres.sections,
-                                                outlineText: realPres.outlineText,
+                                          showDialog(
+                                            context: context,
+                                            barrierDismissible: false,
+                                            builder: (context) => Center(
+                                              child: CircularProgressIndicator(
+                                                valueColor: AlwaysStoppedAnimation<Color>(SacredColors.primary),
                                               ),
                                             ),
                                           );
+
+                                          try {
+                                            final slides = await AppSettings.instance.getSlidesForPresentation(realPres.id);
+                                            if (!context.mounted) return;
+                                            Navigator.pop(context); // Dismiss loading dialog
+
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (context) => PreviewPage(
+                                                  presentationId: realPres.id,
+                                                  initialSlides: slides,
+                                                  initialSections: realPres.sections,
+                                                  outlineText: realPres.outlineText,
+                                                ),
+                                              ),
+                                            );
+                                          } catch (e) {
+                                            if (context.mounted) {
+                                              Navigator.pop(context); // Dismiss loading dialog
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                SnackBar(content: Text('Error loading presentation: $e')),
+                                              );
+                                            }
+                                          }
                                         } else {
                                           final String fallbackId = DateTime.now().millisecondsSinceEpoch.toString();
                                           Navigator.push(

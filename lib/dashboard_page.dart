@@ -2018,18 +2018,41 @@ class _PresentationCardState extends State<PresentationCard> {
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
       child: GestureDetector(
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => PreviewPage(
-                presentationId: widget.record.id,
-                initialSlides: widget.record.slides,
-                initialSections: widget.record.sections,
-                outlineText: widget.record.outlineText,
+        onTap: () async {
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(SacredColors.primary),
               ),
             ),
           );
+
+          try {
+            final slides = await AppSettings.instance.getSlidesForPresentation(widget.record.id);
+            if (!context.mounted) return;
+            Navigator.pop(context); // Dismiss loading dialog
+
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => PreviewPage(
+                  presentationId: widget.record.id,
+                  initialSlides: slides,
+                  initialSections: widget.record.sections,
+                  outlineText: widget.record.outlineText,
+                ),
+              ),
+            );
+          } catch (e) {
+            if (context.mounted) {
+              Navigator.pop(context); // Dismiss loading dialog
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Error loading presentation: $e')),
+              );
+            }
+          }
         },
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 300),
