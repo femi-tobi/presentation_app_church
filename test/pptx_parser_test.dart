@@ -6,9 +6,7 @@ import 'package:presentation_app/pptx_parser.dart';
 
 void main() {
   test('PPTX Parser Verification - Slides and shapes extraction', () async {
-    // Generate a minimal mock PPTX zip in memory
     final archive = Archive();
-
     final slide1Xml = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
   <p:cSld>

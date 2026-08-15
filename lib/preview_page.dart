@@ -14,6 +14,7 @@ import 'settings_state.dart';
 import 'fullscreen_presenter_page.dart';
 import 'outline_view.dart';
 import 'presenter_view.dart';
+import 'pptx_slide_renderer.dart';
 
 
 /// Safely decode a base64 data-URL (e.g. "data:image/png;base64,....") to bytes.
@@ -103,25 +104,7 @@ class _PreviewPageState extends State<PreviewPage> {
 
     // Parse the user's outline into slides, or fall back to defaults
     if (widget.initialSlides != null && widget.initialSlides!.isNotEmpty) {
-      _slides = List.from(widget.initialSlides!.map((s) => SlideData(
-        id: s.id,
-        title: s.title,
-        subtitle: s.subtitle,
-        imageUrl: s.imageUrl,
-        opacity: s.opacity,
-        blur: s.blur,
-        isBold: s.isBold,
-        isItalic: s.isItalic,
-        alignment: s.alignment,
-        transition: s.transition,
-        titleFontSize: s.titleFontSize,
-        subtitleFontSize: s.subtitleFontSize,
-        logoUrl: s.logoUrl,
-        logoX: s.logoX,
-        logoY: s.logoY,
-        logoSize: s.logoSize,
-        sectionId: s.sectionId,
-      )));
+      _slides = List.from(widget.initialSlides!.map((s) => s.clone()));
     } else if (widget.outlineText.isNotEmpty) {
       _slides = _parseSlidesFromOutline(widget.outlineText);
     } else {
@@ -931,24 +914,7 @@ class _PreviewPageState extends State<PreviewPage> {
         if (slideIdx != -1) {
           final original = _slides[slideIdx];
           final String newSlideId = 'slide_${DateTime.now().millisecondsSinceEpoch}_${slideId}';
-          final copy = SlideData(
-            id: newSlideId,
-            title: original.title,
-            subtitle: original.subtitle,
-            imageUrl: original.imageUrl,
-            opacity: original.opacity,
-            blur: original.blur,
-            isBold: original.isBold,
-            isItalic: original.isItalic,
-            alignment: original.alignment,
-            transition: original.transition,
-            titleFontSize: original.titleFontSize,
-            subtitleFontSize: original.subtitleFontSize,
-            logoUrl: original.logoUrl,
-            logoX: original.logoX,
-            logoY: original.logoY,
-            logoSize: original.logoSize,
-          );
+          final copy = original.clone(newId: newSlideId);
           _slides.add(copy);
           duplicatedSlideIds.add(newSlideId);
         }
@@ -1006,24 +972,7 @@ class _PreviewPageState extends State<PreviewPage> {
     setState(() {
       final active = _slides[_activeSlideIndex];
       final String nextId = 'slide_${DateTime.now().millisecondsSinceEpoch}';
-      final duplicate = SlideData(
-        id: nextId,
-        title: '${active.title} (Copy)',
-        subtitle: active.subtitle,
-        imageUrl: active.imageUrl,
-        opacity: active.opacity,
-        blur: active.blur,
-        isBold: active.isBold,
-        isItalic: active.isItalic,
-        alignment: active.alignment,
-        transition: active.transition,
-        titleFontSize: active.titleFontSize,
-        subtitleFontSize: active.subtitleFontSize,
-        logoUrl: active.logoUrl,
-        logoX: active.logoX,
-        logoY: active.logoY,
-        logoSize: active.logoSize,
-      );
+      final duplicate = active.clone(newId: nextId);
       
       final activeSlideId = active.id;
       final section = _sections.firstWhere((s) => s.slideIds.contains(activeSlideId));
@@ -1468,6 +1417,29 @@ class _PreviewPageState extends State<PreviewPage> {
                         } else {
                           activeSlide.update();
                         }
+                        AppSettings.instance.updateActiveSlides(_slides);
+                        _saveToRecentList();
+                      },
+                      onShapePositionChanged: (index, left, top) {
+                        setState(() {
+                          final oldShape = activeSlide.pptxShapes[index];
+                          activeSlide.pptxShapes[index] = PptxShape(
+                            left: left,
+                            top: top,
+                            width: oldShape.width,
+                            height: oldShape.height,
+                            text: oldShape.text,
+                            fontSize: oldShape.fontSize,
+                            isBold: oldShape.isBold,
+                            isItalic: oldShape.isItalic,
+                            colorValue: oldShape.colorValue,
+                            align: oldShape.align,
+                            imageDataUri: oldShape.imageDataUri,
+                            fillColorValue: oldShape.fillColorValue,
+                            fontFamily: oldShape.fontFamily,
+                          );
+                          activeSlide.update();
+                        });
                         AppSettings.instance.updateActiveSlides(_slides);
                         _saveToRecentList();
                       },
@@ -3247,6 +3219,22 @@ class _SlideThumbnailCardState extends State<_SlideThumbnailCard> {
 
                           return Stack(
                             children: [
+                              // ── PPTX imported slide: full-fidelity renderer ──
+                              if (widget.slide.pptxShapes.isNotEmpty)
+                                Positioned.fill(
+                                  child: ColorFiltered(
+                                    colorFilter: renderFullColor
+                                        ? const ColorFilter.mode(Colors.transparent, BlendMode.multiply)
+                                        : const ColorFilter.matrix(grayscaleMatrix),
+                                    child: PptxSlideRenderer(
+                                      slide: widget.slide,
+                                      width: thumbnailWidth,
+                                      height: thumbnailHeight,
+                                    ),
+                                  ),
+                                )
+                              else ...[
+                              // ── Normal slide: background + blurred image ──
                               Positioned.fill(
                                 child: AnimatedContainer(
                                   duration: const Duration(milliseconds: 300),
@@ -3280,6 +3268,7 @@ class _SlideThumbnailCardState extends State<_SlideThumbnailCard> {
                                   ),
                                 ),
                               ),
+                              ], // end normal slide branch
 
                               if (widget.slide.logoUrl != null && widget.slide.logoUrl!.isNotEmpty)
                                 Positioned(
@@ -3335,12 +3324,14 @@ class _SlideThumbnailCardState extends State<_SlideThumbnailCard> {
                                         ),
                                       ),
                                       if (widget.slide.subtitle.trim().isNotEmpty) ...[
-                                        SizedBox(height: 4.0 * scale),
-                                        Container(
-                                          width: 24.0 * scale,
-                                          height: (1.0 * scale).clamp(0.5, 4.0),
-                                          color: SacredColors.secondaryContainer,
-                                        ),
+                                        if (!widget.slide.id.startsWith('imported_')) ...[
+                                          SizedBox(height: 4.0 * scale),
+                                          Container(
+                                            width: 24.0 * scale,
+                                            height: (1.0 * scale).clamp(0.5, 4.0),
+                                            color: SacredColors.secondaryContainer,
+                                          ),
+                                        ],
                                         SizedBox(height: 4.0 * scale),
                                         Expanded(
                                           child: Text(
@@ -3352,7 +3343,7 @@ class _SlideThumbnailCardState extends State<_SlideThumbnailCard> {
                                               textStyle: TextStyle(
                                                 fontSize: (widget.slide.subtitleFontSize * scale).clamp(3.0, 30.0),
                                                 color: Color(widget.slide.textColorValue).withValues(alpha: 0.9),
-                                                fontStyle: FontStyle.italic,
+                                                fontStyle: widget.slide.isItalic ? FontStyle.italic : FontStyle.normal,
                                                 shadows: const [
                                                   Shadow(
                                                     color: Colors.black45,
@@ -3445,6 +3436,7 @@ class _LiveWorkspaceCanvas extends StatelessWidget {
   final ValueChanged<int> onNavigate;
   final Function(double, double)? onLogoPositionChanged;
   final Function(double, double)? onTextPositionChanged;
+  final Function(int, double, double)? onShapePositionChanged;
 
   const _LiveWorkspaceCanvas({
     required this.activeSlide,
@@ -3453,6 +3445,7 @@ class _LiveWorkspaceCanvas extends StatelessWidget {
     required this.onNavigate,
     this.onLogoPositionChanged,
     this.onTextPositionChanged,
+    this.onShapePositionChanged,
   });
 
   @override
@@ -3544,7 +3537,7 @@ class _LiveWorkspaceCanvas extends StatelessWidget {
                             ),
 
                           // Purple spiritual overlay blending
-                          if (activeSlide.imageUrl.isNotEmpty)
+                          if (activeSlide.imageUrl.isNotEmpty && !activeSlide.imageUrl.startsWith('data:'))
                             Positioned.fill(
                               child: IgnorePointer(
                                 child: Container(
@@ -3558,6 +3551,7 @@ class _LiveWorkspaceCanvas extends StatelessWidget {
                             child: _DraggableTextLayer(
                               activeSlide: activeSlide,
                               onPositionChanged: onTextPositionChanged,
+                              onShapePositionChanged: onShapePositionChanged,
                             ),
                           ),
 
@@ -5738,10 +5732,12 @@ class SubPointBlock {
 class _DraggableTextLayer extends StatefulWidget {
   final SlideData activeSlide;
   final Function(double, double)? onPositionChanged;
+  final Function(int, double, double)? onShapePositionChanged;
 
   const _DraggableTextLayer({
     required this.activeSlide,
     this.onPositionChanged,
+    this.onShapePositionChanged,
   });
 
   @override
@@ -5787,133 +5783,148 @@ class _DraggableTextLayerState extends State<_DraggableTextLayer> {
       return Stack(
         clipBehavior: Clip.none,
         children: [
-          Positioned(
-            left: left,
-            top: top,
-            width: w,
-            height: h,
-            child: GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onTapDown: (_) {
-                setState(() {
-                  _showBorder = true;
-                });
-              },
-              onTapUp: (_) {
-                setState(() {
-                  _showBorder = false;
-                });
-              },
-              onTapCancel: () {
-                setState(() {
-                  _showBorder = false;
-                });
-              },
-              onPanStart: (_) {
-                setState(() {
-                  _dragPixelX = left;
-                  _dragPixelY = top;
-                  _showBorder = true;
-                });
-              },
-              onPanUpdate: (details) {
-                setState(() {
-                  _dragPixelX = ((_dragPixelX ?? left) + details.delta.dx).clamp(minLeft, maxLeft);
-                  _dragPixelY = ((_dragPixelY ?? top) + details.delta.dy).clamp(minTop, maxTop);
-                });
-              },
-              onPanEnd: (_) {
-                if (_dragPixelX != null) {
-                  widget.onPositionChanged?.call(
-                    _dragPixelX! / w,
-                    _dragPixelY! / h,
-                  );
-                }
-                setState(() {
-                  _showBorder = false;
-                });
-              },
-              child: Container(
-                decoration: BoxDecoration(
-                  border: Border.all(
-                    color: _showBorder ? Colors.white54 : Colors.transparent,
-                    width: 1.5,
-                  ),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: (48.0 * scale).clamp(8.0, w),
-                    vertical: (32.0 * scale).clamp(8.0, h),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        widget.activeSlide.title,
-                        textAlign: widget.activeSlide.alignment,
-                        style: GoogleFonts.getFont(
-                          AppSettings.instance.fontFamily,
-                          textStyle: TextStyle(
-                            fontSize: (widget.activeSlide.titleFontSize * scale).clamp(8.0, 150.0),
-                            color: Color(widget.activeSlide.textColorValue),
-                            fontWeight: widget.activeSlide.isBold ? FontWeight.bold : FontWeight.normal,
-                            fontStyle: widget.activeSlide.isItalic ? FontStyle.italic : FontStyle.normal,
-                            shadows: const [
-                              Shadow(
-                                color: Colors.black45,
-                                offset: Offset(0, 4),
-                                blurRadius: 10,
-                              ),
-                            ],
-                          ),
+                  // ── PPTX imported slide: full-fidelity renderer ─────────────
+                if (widget.activeSlide.pptxShapes.isNotEmpty)
+                  Positioned.fill(
+                    child: PptxSlideRenderer(
+                      slide: widget.activeSlide,
+                      width: w,
+                      height: h,
+                      onShapePositionChanged: widget.onShapePositionChanged,
+                    ),
+                  )
+                else
+                // ── Normal slide: draggable text overlay ──────────────────
+                Positioned(
+                  left: left,
+                  top: top,
+                  width: w,
+                  height: h,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onTapDown: (_) {
+                      setState(() {
+                        _showBorder = true;
+                      });
+                    },
+                    onTapUp: (_) {
+                      setState(() {
+                        _showBorder = false;
+                      });
+                    },
+                    onTapCancel: () {
+                      setState(() {
+                        _showBorder = false;
+                      });
+                    },
+                    onPanStart: (_) {
+                      setState(() {
+                        _dragPixelX = left;
+                        _dragPixelY = top;
+                        _showBorder = true;
+                      });
+                    },
+                    onPanUpdate: (details) {
+                      setState(() {
+                        _dragPixelX = ((_dragPixelX ?? left) + details.delta.dx).clamp(minLeft, maxLeft);
+                        _dragPixelY = ((_dragPixelY ?? top) + details.delta.dy).clamp(minTop, maxTop);
+                      });
+                    },
+                    onPanEnd: (_) {
+                      if (_dragPixelX != null) {
+                        widget.onPositionChanged?.call(
+                          _dragPixelX! / w,
+                          _dragPixelY! / h,
+                        );
+                      }
+                      setState(() {
+                        _showBorder = false;
+                      });
+                    },
+                    child: Container(
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: _showBorder ? Colors.white54 : Colors.transparent,
+                          width: 1.5,
                         ),
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                      if (hasSubtitle) ...[
-                        SizedBox(height: 16.0 * scale),
-                        Container(
-                          width: 96.0 * scale,
-                          height: (4.0 * scale).clamp(1.0, 20.0),
-                          decoration: BoxDecoration(
-                            color: SacredColors.secondaryContainer,
-                            borderRadius: BorderRadius.circular(999),
-                          ),
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: (48.0 * scale).clamp(8.0, w),
+                          vertical: (32.0 * scale).clamp(8.0, h),
                         ),
-                        Expanded(
-                          child: Center(
-                            child: Text(
-                              widget.activeSlide.subtitle,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              widget.activeSlide.title,
                               textAlign: widget.activeSlide.alignment,
-                              style: GoogleFonts.inter(
+                              style: GoogleFonts.getFont(
+                                AppSettings.instance.fontFamily,
                                 textStyle: TextStyle(
-                                  fontSize: (widget.activeSlide.subtitleFontSize * scale).clamp(6.0, 100.0),
-                                  color: Color(widget.activeSlide.textColorValue).withValues(alpha: 0.9),
-                                  fontStyle: FontStyle.italic,
+                                  fontSize: (widget.activeSlide.titleFontSize * scale).clamp(8.0, 150.0),
+                                  color: Color(widget.activeSlide.textColorValue),
+                                  fontWeight: widget.activeSlide.isBold ? FontWeight.bold : FontWeight.normal,
+                                  fontStyle: widget.activeSlide.isItalic ? FontStyle.italic : FontStyle.normal,
                                   shadows: const [
                                     Shadow(
                                       color: Colors.black45,
-                                      offset: Offset(0, 2),
-                                      blurRadius: 6,
+                                      offset: Offset(0, 4),
+                                      blurRadius: 10,
                                     ),
                                   ],
                                 ),
                               ),
                             ),
-                          ),
+                            if (hasSubtitle) ...[
+                              if (!widget.activeSlide.id.startsWith('imported_')) ...[
+                                SizedBox(height: 16.0 * scale),
+                                Container(
+                                  width: 96.0 * scale,
+                                  height: (4.0 * scale).clamp(1.0, 20.0),
+                                  decoration: BoxDecoration(
+                                    color: SacredColors.secondaryContainer,
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                ),
+                              ],
+                              SizedBox(height: 16.0 * scale),
+                              Expanded(
+                                child: Center(
+                                  child: Text(
+                                    widget.activeSlide.subtitle,
+                                    textAlign: widget.activeSlide.alignment,
+                                    style: GoogleFonts.inter(
+                                      textStyle: TextStyle(
+                                        fontSize: (widget.activeSlide.subtitleFontSize * scale).clamp(6.0, 100.0),
+                                        color: Color(widget.activeSlide.textColorValue).withValues(alpha: 0.9),
+                                        fontStyle: FontStyle.italic,
+                                        shadows: const [
+                                          Shadow(
+                                            color: Colors.black45,
+                                            offset: Offset(0, 2),
+                                            blurRadius: 6,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
-                      ],
-                    ],
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
-          ),
-        ],
-      );
-    });
-  }
-}
+              ],
+            );
+          });
+        }
+      }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Background Color Selector

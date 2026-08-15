@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'settings_state.dart';
 import 'dashboard_page.dart'; // For SacredColors / Shadows / Typography
+import 'pptx_slide_renderer.dart';
 
 Uint8List _decodeDataUrl(String dataUrl) {
   return decodeDataUrl(dataUrl);
@@ -295,8 +296,19 @@ class _FullscreenPresenterPageState extends State<FullscreenPresenterPage> with 
                                       builder: (context, constraints) {
                                         final double w = constraints.maxWidth;
                                         final double h = constraints.maxHeight;
+
+                                        // ── PPTX imported: full-fidelity shape renderer ──
+                                        if (slide.pptxShapes.isNotEmpty) {
+                                          return PptxSlideRenderer(
+                                            slide: slide,
+                                            width: w,
+                                            height: h,
+                                          );
+                                        }
+
+                                        // ── Normal slide: title/subtitle text overlay ──
                                         final double left = slide.textX * w;
-                                        final double top = slide.textY * h;
+                                        final double top  = slide.textY * h;
                                         final hasSubtitle = slide.subtitle.trim().isNotEmpty;
 
                                         return Stack(
@@ -334,15 +346,18 @@ class _FullscreenPresenterPageState extends State<FullscreenPresenterPage> with 
                                                       ),
                                                     ),
                                                     if (hasSubtitle) ...[
-                                                      const SizedBox(height: 24),
-                                                      Container(
-                                                        width: 120,
-                                                        height: 4,
-                                                        decoration: BoxDecoration(
-                                                          color: SacredColors.secondaryContainer,
-                                                          borderRadius: BorderRadius.circular(999),
+                                                      if (!slide.id.startsWith('imported_')) ...[
+                                                        const SizedBox(height: 24),
+                                                        Container(
+                                                          width: 120,
+                                                          height: 4,
+                                                          decoration: BoxDecoration(
+                                                            color: SacredColors.secondaryContainer,
+                                                            borderRadius: BorderRadius.circular(999),
+                                                          ),
                                                         ),
-                                                      ),
+                                                      ],
+                                                      const SizedBox(height: 24),
                                                       Expanded(
                                                         child: Center(
                                                           child: Text(
@@ -352,7 +367,7 @@ class _FullscreenPresenterPageState extends State<FullscreenPresenterPage> with 
                                                               textStyle: TextStyle(
                                                                 fontSize: 28,
                                                                 color: Color(slide.textColorValue).withValues(alpha: 0.9),
-                                                                fontStyle: FontStyle.italic,
+                                                                fontStyle: slide.isItalic ? FontStyle.italic : FontStyle.normal,
                                                                 shadows: const [
                                                                   Shadow(
                                                                     color: Colors.black54,

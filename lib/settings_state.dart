@@ -204,6 +204,87 @@ class PresentationRecord {
 }
 
 /// Slide data representation holding editing configurations.
+/// Represents a single shape parsed from a PowerPoint slide.
+/// Positions/sizes are normalised fractions of slide width/height (0.0–1.0).
+class PptxShape {
+  final double left;
+  final double top;
+  final double width;
+  final double height;
+
+  /// Text content (joined runs). Empty for picture-only shapes.
+  final String text;
+
+  final double fontSize;
+  final bool isBold;
+  final bool isItalic;
+
+  /// ARGB integer colour of the text (e.g. 0xFF000000 for black).
+  final int colorValue;
+
+  final TextAlign align;
+
+  /// Non-empty base-64 data-URI when this shape is an image (e.g. `data:image/png;base64,...`).
+  final String imageDataUri;
+
+  /// Background fill color of the shape (0x00000000 = transparent / no fill).
+  final int fillColorValue;
+
+  /// The font family name parsed from PowerPoint (e.g. "Arial Black", "Calibri").
+  final String fontFamily;
+
+  const PptxShape({
+    required this.left,
+    required this.top,
+    required this.width,
+    required this.height,
+    this.text = '',
+    this.fontSize = 18.0,
+    this.isBold = false,
+    this.isItalic = false,
+    this.colorValue = 0xFF000000,
+    this.align = TextAlign.left,
+    this.imageDataUri = '',
+    this.fillColorValue = 0x00000000, // transparent by default
+    this.fontFamily = 'Arial',
+  });
+
+  Map<String, dynamic> toJson() => {
+        'left': left,
+        'top': top,
+        'width': width,
+        'height': height,
+        'text': text,
+        'fontSize': fontSize,
+        'isBold': isBold,
+        'isItalic': isItalic,
+        'colorValue': colorValue,
+        'align': align.name,
+        'imageDataUri': imageDataUri,
+        'fillColorValue': fillColorValue,
+        'fontFamily': fontFamily,
+      };
+
+  factory PptxShape.fromJson(Map<String, dynamic> j) => PptxShape(
+        left: (j['left'] as num).toDouble(),
+        top: (j['top'] as num).toDouble(),
+        width: (j['width'] as num).toDouble(),
+        height: (j['height'] as num).toDouble(),
+        text: j['text'] as String? ?? '',
+        fontSize: (j['fontSize'] as num?)?.toDouble() ?? 18.0,
+        isBold: j['isBold'] as bool? ?? false,
+        isItalic: j['isItalic'] as bool? ?? false,
+        colorValue: j['colorValue'] as int? ?? 0xFF000000,
+        align: TextAlign.values.firstWhere(
+          (e) => e.name == j['align'],
+          orElse: () => TextAlign.left,
+        ),
+        imageDataUri: j['imageDataUri'] as String? ?? '',
+        fillColorValue: j['fillColorValue'] as int? ?? 0x00000000,
+        fontFamily: j['fontFamily'] as String? ?? 'Arial',
+      );
+}
+
 class SlideData extends ChangeNotifier {
   final String id;
 
@@ -387,6 +468,14 @@ class SlideData extends ChangeNotifier {
     }
   }
 
+  /// Shapes parsed from an imported PPTX slide.
+  /// Empty for non-imported slides — use title/subtitle rendering instead.
+  List<PptxShape> pptxShapes;
+
+  /// Original slide height in EMUs — used by [PptxSlideRenderer] for
+  /// accurate font-size scaling. 0 for non-imported slides.
+  double pptxSlideHeightEmu;
+
   SlideData({
     required this.id,
     required String title,
@@ -409,6 +498,8 @@ class SlideData extends ChangeNotifier {
     int bgColorValue = 0xFF000000,
     int textColorValue = 0xFFFFFFFF,
     String? sectionId,
+    List<PptxShape>? pptxShapes,
+    double pptxSlideHeightEmu = 0.0,
   })  : _title = title,
         _subtitle = subtitle,
         _imageUrl = imageUrl,
@@ -428,7 +519,9 @@ class SlideData extends ChangeNotifier {
         _textY = textY,
         _bgColorValue = bgColorValue,
         _textColorValue = textColorValue,
-        _sectionId = sectionId;
+        _sectionId = sectionId,
+        pptxShapes = pptxShapes ?? [],
+        pptxSlideHeightEmu = pptxSlideHeightEmu;
 
   Map<String, dynamic> toJson() {
     return {
@@ -453,10 +546,13 @@ class SlideData extends ChangeNotifier {
       'bgColorValue': bgColorValue,
       'textColorValue': textColorValue,
       'sectionId': sectionId,
+      'pptxShapes': pptxShapes.map((s) => s.toJson()).toList(),
+      'pptxSlideHeightEmu': pptxSlideHeightEmu,
     };
   }
 
   factory SlideData.fromJson(Map<String, dynamic> json) {
+    final rawShapes = json['pptxShapes'] as List<dynamic>?;
     return SlideData(
       id: json['id'] as String,
       title: json['title'] as String,
@@ -482,6 +578,55 @@ class SlideData extends ChangeNotifier {
       bgColorValue: json['bgColorValue'] as int? ?? 0xFF000000,
       textColorValue: json['textColorValue'] as int? ?? 0xFFFFFFFF,
       sectionId: json['sectionId'] as String?,
+      pptxShapes: rawShapes != null
+          ? rawShapes
+              .cast<Map<String, dynamic>>()
+              .map(PptxShape.fromJson)
+              .toList()
+          : [],
+      pptxSlideHeightEmu: (json['pptxSlideHeightEmu'] as num?)?.toDouble() ?? 0.0,
+    );
+  }
+
+  SlideData clone({String? newId}) {
+    return SlideData(
+      id: newId ?? id,
+      title: title,
+      subtitle: subtitle,
+      imageUrl: imageUrl,
+      opacity: opacity,
+      blur: blur,
+      isBold: isBold,
+      isItalic: isItalic,
+      alignment: alignment,
+      transition: transition,
+      titleFontSize: titleFontSize,
+      subtitleFontSize: subtitleFontSize,
+      logoUrl: logoUrl,
+      logoX: logoX,
+      logoY: logoY,
+      logoSize: logoSize,
+      textX: textX,
+      textY: textY,
+      bgColorValue: bgColorValue,
+      textColorValue: textColorValue,
+      sectionId: sectionId,
+      pptxShapes: pptxShapes.map((s) => PptxShape(
+        left: s.left,
+        top: s.top,
+        width: s.width,
+        height: s.height,
+        text: s.text,
+        fontSize: s.fontSize,
+        isBold: s.isBold,
+        isItalic: s.isItalic,
+        colorValue: s.colorValue,
+        align: s.align,
+        imageDataUri: s.imageDataUri,
+        fillColorValue: s.fillColorValue,
+        fontFamily: s.fontFamily,
+      )).toList(),
+      pptxSlideHeightEmu: pptxSlideHeightEmu,
     );
   }
 
@@ -1069,27 +1214,7 @@ class AppSettings extends ChangeNotifier {
         slideCount: oldRecord.slideCount,
         thumbnailUrl: oldRecord.thumbnailUrl,
         createdAt: DateTime.now(),
-        slides: oldRecord.slides.map((s) => SlideData(
-          id: s.id,
-          title: s.title,
-          subtitle: s.subtitle,
-          imageUrl: s.imageUrl,
-          opacity: s.opacity,
-          blur: s.blur,
-          isBold: s.isBold,
-          isItalic: s.isItalic,
-          alignment: s.alignment,
-          transition: s.transition,
-          titleFontSize: s.titleFontSize,
-          subtitleFontSize: s.subtitleFontSize,
-          logoUrl: s.logoUrl,
-          logoX: s.logoX,
-          logoY: s.logoY,
-          logoSize: s.logoSize,
-          textX: s.textX,
-          textY: s.textY,
-          bgColorValue: s.bgColorValue,
-        )).toList(),
+        slides: oldRecord.slides.map((s) => s.clone()).toList(),
         outlineText: oldRecord.outlineText,
       );
       _recentPresentations.insert(index + 1, newRecord);

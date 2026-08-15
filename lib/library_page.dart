@@ -9,7 +9,7 @@ import 'settings_state.dart';
 import 'preview_page.dart';
 import 'fullscreen_presenter_page.dart';
 import 'connectivity_badge.dart';
-import 'pptx_parser.dart';
+import 'pptx_import_service.dart';
 
 class LibraryPage extends StatefulWidget {
   final GlobalKey<ScaffoldState>? scaffoldKey;
@@ -165,71 +165,9 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   Future<void> _importPptxDeck() async {
-    try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['pptx'],
-      );
-
-      if (result == null || result.files.isEmpty) return;
-
-      final file = result.files.first;
-      Uint8List? fileBytes;
-      if (kIsWeb) {
-        fileBytes = file.bytes;
-      } else if (file.path != null) {
-        fileBytes = await File(file.path!).readAsBytes();
-      }
-
-      if (fileBytes == null) return;
-
-      final cleanTitle = file.name.replaceAll('.pptx', '');
-      final parsedSlides = PptxParser.parsePptx(fileBytes, cleanTitle);
-      final presentationId = 'imported_${DateTime.now().millisecondsSinceEpoch}';
-
-      // Register the imported deck in recent presentations list
-      final newRecord = PresentationRecord(
-        id: presentationId,
-        title: cleanTitle,
-        slideCount: parsedSlides.length,
-        thumbnailUrl: '',
-        createdAt: DateTime.now(),
-        slides: parsedSlides,
-        outlineText: parsedSlides.map((s) => s.subtitle).join('\n\n'),
-      );
-      AppSettings.instance.addRecentPresentation(newRecord);
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Successfully imported "${newRecord.title}"'),
-            backgroundColor: AppSettings.instance.primaryColor,
-          ),
-        );
-
-        // Navigate directly to editing page
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => PreviewPage(
-              presentationId: newRecord.id,
-              initialSlides: newRecord.slides,
-              initialSections: newRecord.sections,
-              outlineText: newRecord.outlineText,
-            ),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error importing PPTX: $e'),
-            backgroundColor: SacredColors.error,
-          ),
-        );
-      }
-    }
+    // Delegated entirely to the dedicated PPTX import service.
+    // Song / choir handlers are not affected.
+    await PptxImportService.importDeck(context);
   }
 
   Future<void> _loadHymns() async {
