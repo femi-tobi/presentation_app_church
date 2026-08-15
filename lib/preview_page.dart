@@ -1342,7 +1342,8 @@ class _PreviewPageState extends State<PreviewPage> {
                           activeSlide: activeSlide,
                           titleController: _titleController,
                           subtitleController: _subtitleController,
-                          onSlideChanged: _onSlideChanged,
+                          onSlideChanged: () => setState(() {}),
+                          onSlideChangedEnd: _onSlideChanged,
                           onDuplicate: _duplicateSlide,
                           onDelete: _removeSlide,
                           onAllSlidesImageChanged: _onSlideImageChanged,
@@ -1399,6 +1400,7 @@ class _PreviewPageState extends State<PreviewPage> {
                             int? colorValue,
                             TextAlign? align,
                             String? text,
+                            bool endOfDrag = false,
                           }) {
                             setState(() {
                               for (final index in indices) {
@@ -1422,8 +1424,10 @@ class _PreviewPageState extends State<PreviewPage> {
                               }
                               activeSlide.update();
                             });
-                            AppSettings.instance.updateActiveSlides(_slides);
-                            _saveToRecentList();
+                            if (endOfDrag) {
+                              AppSettings.instance.updateActiveSlides(_slides);
+                              _saveToRecentList();
+                            }
                           },
                         ))
                   : _LiveWorkspaceCanvas(
@@ -1478,6 +1482,8 @@ class _PreviewPageState extends State<PreviewPage> {
                           );
                           activeSlide.update();
                         });
+                      },
+                      onShapePositionChangedEnd: (index) {
                         AppSettings.instance.updateActiveSlides(_slides);
                         _saveToRecentList();
                       },
@@ -1506,7 +1512,8 @@ class _PreviewPageState extends State<PreviewPage> {
                 activeSlide: activeSlide,
                 titleController: _titleController,
                 subtitleController: _subtitleController,
-                onSlideChanged: _onSlideChanged,
+                onSlideChanged: () => setState(() {}),
+                onSlideChangedEnd: _onSlideChanged,
                 onDuplicate: _duplicateSlide,
                 onDelete: _removeSlide,
                 onAllSlidesImageChanged: _onSlideImageChanged,
@@ -1563,6 +1570,7 @@ class _PreviewPageState extends State<PreviewPage> {
                   int? colorValue,
                   TextAlign? align,
                   String? text,
+                  bool endOfDrag = false,
                 }) {
                   setState(() {
                     for (final index in indices) {
@@ -1586,8 +1594,10 @@ class _PreviewPageState extends State<PreviewPage> {
                     }
                     activeSlide.update();
                   });
-                  AppSettings.instance.updateActiveSlides(_slides);
-                  _saveToRecentList();
+                  if (endOfDrag) {
+                    AppSettings.instance.updateActiveSlides(_slides);
+                    _saveToRecentList();
+                  }
                 },
               ),
           ],
@@ -3526,6 +3536,7 @@ class _LiveWorkspaceCanvas extends StatelessWidget {
   final Function(double, double)? onLogoPositionChanged;
   final Function(double, double)? onTextPositionChanged;
   final Function(int, double, double)? onShapePositionChanged;
+  final Function(int)? onShapePositionChangedEnd;
   final Set<int> selectedShapeIndices;
   final Function(int)? onShapeTap;
 
@@ -3537,6 +3548,7 @@ class _LiveWorkspaceCanvas extends StatelessWidget {
     this.onLogoPositionChanged,
     this.onTextPositionChanged,
     this.onShapePositionChanged,
+    this.onShapePositionChangedEnd,
     this.selectedShapeIndices = const {},
     this.onShapeTap,
   });
@@ -3670,6 +3682,7 @@ class _LiveWorkspaceCanvas extends StatelessWidget {
                               activeSlide: activeSlide,
                               onPositionChanged: onTextPositionChanged,
                               onShapePositionChanged: onShapePositionChanged,
+                              onShapePositionChangedEnd: onShapePositionChangedEnd,
                               selectedShapeIndices: selectedShapeIndices,
                               onShapeTap: onShapeTap,
                             ),
@@ -3978,6 +3991,7 @@ class _PropertiesSidebar extends StatefulWidget {
   final TextEditingController titleController;
   final TextEditingController subtitleController;
   final VoidCallback onSlideChanged;
+  final VoidCallback? onSlideChangedEnd;
   final VoidCallback onDuplicate;
   final VoidCallback onDelete;
   final ValueChanged<String> onAllSlidesImageChanged;
@@ -4003,6 +4017,7 @@ class _PropertiesSidebar extends StatefulWidget {
     int? colorValue,
     TextAlign? align,
     String? text,
+    bool endOfDrag,
   }) onSelectedShapesChanged;
 
   const _PropertiesSidebar({
@@ -4011,6 +4026,7 @@ class _PropertiesSidebar extends StatefulWidget {
     required this.titleController,
     required this.subtitleController,
     required this.onSlideChanged,
+    this.onSlideChangedEnd,
     required this.onDuplicate,
     required this.onDelete,
     required this.onAllSlidesImageChanged,
@@ -4428,8 +4444,13 @@ class _PropertiesSidebarState extends State<_PropertiesSidebar> with TickerProvi
                       activeColor: SacredColors.primary,
                       inactiveColor: SacredColors.surfaceContainerHighest,
                       onChanged: (val) {
-                        widget.activeSlide.titleFontSize = val;
-                        widget.onSlideChanged();
+                        setState(() {
+                          widget.activeSlide.titleFontSize = val;
+                          widget.activeSlide.update();
+                        });
+                      },
+                      onChangeEnd: (val) {
+                        widget.onSlideChangedEnd?.call();
                       },
                     ),
                   ),
@@ -4467,8 +4488,13 @@ class _PropertiesSidebarState extends State<_PropertiesSidebar> with TickerProvi
                       activeColor: SacredColors.primary,
                       inactiveColor: SacredColors.surfaceContainerHighest,
                       onChanged: (val) {
-                        widget.activeSlide.subtitleFontSize = val;
-                        widget.onSlideChanged();
+                        setState(() {
+                          widget.activeSlide.subtitleFontSize = val;
+                          widget.activeSlide.update();
+                        });
+                      },
+                      onChangeEnd: (val) {
+                        widget.onSlideChangedEnd?.call();
                       },
                     ),
                   ),
@@ -4666,7 +4692,15 @@ class _PropertiesSidebarState extends State<_PropertiesSidebar> with TickerProvi
                   max: 200.0,
                   activeColor: SacredColors.primary,
                   inactiveColor: SacredColors.surfaceContainerHighest,
-                  onChanged: widget.onLogoSizeChanged,
+                  onChanged: (val) {
+                    setState(() {
+                      widget.activeSlide.logoSize = val;
+                      widget.activeSlide.update();
+                    });
+                  },
+                  onChangeEnd: (val) {
+                    widget.onLogoSizeChanged(val);
+                  },
                 ),
               ],
               const SizedBox(height: 24),
@@ -4688,8 +4722,13 @@ class _PropertiesSidebarState extends State<_PropertiesSidebar> with TickerProvi
                 activeColor: SacredColors.primary,
                 inactiveColor: SacredColors.surfaceContainerHighest,
                 onChanged: (val) {
-                  widget.activeSlide.opacity = val;
-                  widget.onSlideChanged();
+                  setState(() {
+                    widget.activeSlide.opacity = val;
+                    widget.activeSlide.update();
+                  });
+                },
+                onChangeEnd: (val) {
+                  widget.onSlideChangedEnd?.call();
                 },
               ),
               const SizedBox(height: 16),
@@ -4711,8 +4750,13 @@ class _PropertiesSidebarState extends State<_PropertiesSidebar> with TickerProvi
                 activeColor: SacredColors.primary,
                 inactiveColor: SacredColors.surfaceContainerHighest,
                 onChanged: (val) {
-                  widget.activeSlide.blur = val;
-                  widget.onSlideChanged();
+                  setState(() {
+                    widget.activeSlide.blur = val;
+                    widget.activeSlide.update();
+                  });
+                },
+                onChangeEnd: (val) {
+                  widget.onSlideChangedEnd?.call();
                 },
               ),
               const SizedBox(height: 32),
@@ -5406,7 +5450,10 @@ class _PropertiesSidebarState extends State<_PropertiesSidebar> with TickerProvi
                   activeColor: SacredColors.primary,
                   inactiveColor: SacredColors.surfaceContainerHighest,
                   onChanged: (val) {
-                    widget.onSelectedShapesChanged(widget.selectedShapeIndices, fontSize: val);
+                    widget.onSelectedShapesChanged(widget.selectedShapeIndices, fontSize: val, endOfDrag: false);
+                  },
+                  onChangeEnd: (val) {
+                    widget.onSelectedShapesChanged(widget.selectedShapeIndices, fontSize: val, endOfDrag: true);
                   },
                 ),
               ),
@@ -6185,6 +6232,7 @@ class _DraggableTextLayer extends StatefulWidget {
   final SlideData activeSlide;
   final Function(double, double)? onPositionChanged;
   final Function(int, double, double)? onShapePositionChanged;
+  final Function(int)? onShapePositionChangedEnd;
   final Set<int> selectedShapeIndices;
   final Function(int)? onShapeTap;
 
@@ -6192,6 +6240,7 @@ class _DraggableTextLayer extends StatefulWidget {
     required this.activeSlide,
     this.onPositionChanged,
     this.onShapePositionChanged,
+    this.onShapePositionChangedEnd,
     this.selectedShapeIndices = const {},
     this.onShapeTap,
   });
@@ -6247,6 +6296,7 @@ class _DraggableTextLayerState extends State<_DraggableTextLayer> {
                       width: w,
                       height: h,
                       onShapePositionChanged: widget.onShapePositionChanged,
+                      onShapePositionChangedEnd: widget.onShapePositionChangedEnd,
                       selectedShapeIndices: widget.selectedShapeIndices,
                       onShapeTap: widget.onShapeTap,
                     ),

@@ -17,6 +17,7 @@ import 'settings_state.dart';
   final double width;
   final double height;
   final Function(int shapeIndex, double left, double top)? onShapePositionChanged;
+  final Function(int shapeIndex)? onShapePositionChangedEnd;
   final Set<int> selectedShapeIndices;
   final Function(int shapeIndex)? onShapeTap;
 
@@ -26,6 +27,7 @@ import 'settings_state.dart';
     required this.width,
     required this.height,
     this.onShapePositionChanged,
+    this.onShapePositionChangedEnd,
     this.selectedShapeIndices = const {},
     this.onShapeTap,
   });
@@ -79,6 +81,9 @@ import 'settings_state.dart';
       onTap: () => onShapeTap?.call(index),
       onPositionChanged: (newLeft, newTop) {
         onShapePositionChanged?.call(index, newLeft, newTop);
+      },
+      onPositionChangedEnd: () {
+        onShapePositionChangedEnd?.call(index);
       },
       child: child,
     );
@@ -227,6 +232,7 @@ class _InteractiveShapeContainer extends StatefulWidget {
   final bool isSelected;
   final VoidCallback? onTap;
   final Function(double left, double top) onPositionChanged;
+  final VoidCallback? onPositionChangedEnd;
   final Widget child;
 
   const _InteractiveShapeContainer({
@@ -236,6 +242,7 @@ class _InteractiveShapeContainer extends StatefulWidget {
     this.isSelected = false,
     this.onTap,
     required this.onPositionChanged,
+    this.onPositionChangedEnd,
     required this.child,
   });
 
@@ -268,7 +275,10 @@ class _InteractiveShapeContainerState extends State<_InteractiveShapeContainer> 
             (widget.shape.top + deltaY).clamp(0.0, 1.0),
           );
         },
-        onPanEnd: (_) => setState(() => _isDragging = false),
+        onPanEnd: (_) {
+          setState(() => _isDragging = false);
+          widget.onPositionChangedEnd?.call();
+        },
         child: Container(
           decoration: BoxDecoration(
             border: Border.all(
