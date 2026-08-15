@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path_provider/path_provider.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:async';
+import 'dart:io';
 import 'presentation_controller.dart';
 
 
@@ -1206,45 +1208,115 @@ class AppSettings extends ChangeNotifier {
   List<PresentationRecord> get recentPresentations =>
       List.unmodifiable(_recentPresentations);
 
+  Future<String> _extractAndSaveMediaFile(String presentationId, String slideId, String dataUrl) async {
+    if (!dataUrl.startsWith('data:')) {
+      return dataUrl;
+    }
+    try {
+      final docDir = await getApplicationSupportDirectory();
+      final mediaDir = Directory('${docDir.path}/media/$presentationId');
+      if (!await mediaDir.exists()) {
+        await mediaDir.create(recursive: true);
+      }
+      
+      final comma = dataUrl.indexOf(',');
+      if (comma == -1) return dataUrl;
+      final bytes = base64Decode(dataUrl.substring(comma + 1));
+      
+      String ext = 'png';
+      if (dataUrl.contains('image/jpeg') || dataUrl.contains('image/jpg')) {
+        ext = 'jpg';
+      } else if (dataUrl.contains('image/gif')) {
+        ext = 'gif';
+      }
+      
+      final file = File('${mediaDir.path}/bg_$slideId.$ext');
+      await file.writeAsBytes(bytes);
+      return file.path;
+    } catch (e) {
+      debugPrint('Error saving media file: $e');
+    }
+    return dataUrl;
+  }
+
   Future<void> _saveSlidesToPrefs(String presentationId, List<SlideData> slides) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final key = 'pres_slides_$presentationId';
+      final docDir = await getApplicationSupportDirectory();
+      
+      // 1. Loop through slides and save base64 images as standalone files
+      for (int i = 0; i < slides.length; i++) {
+        final slide = slides[i];
+        if (slide.imageUrl.startsWith('data:')) {
+          final localPath = await _extractAndSaveMediaFile(presentationId, slide.id, slide.imageUrl);
+          slide.imageUrl = localPath;
+        }
+        // Save base64 images inside imported pptx shapes too
+        for (int j = 0; j < slide.pptxShapes.length; j++) {
+          final shape = slide.pptxShapes[j];
+          if (shape.imageDataUri != null && shape.imageDataUri!.startsWith('data:')) {
+            final localPath = await _extractAndSaveMediaFile(presentationId, 'shape_${slide.id}_$j', shape.imageDataUri!);
+            slide.pptxShapes[j] = PptxShape(
+              left: shape.left,
+              top: shape.top,
+              width: shape.width,
+              height: shape.height,
+              text: shape.text,
+              fontSize: shape.fontSize,
+              isBold: shape.isBold,
+              isItalic: shape.isItalic,
+              colorValue: shape.colorValue,
+              align: shape.align,
+              imageDataUri: localPath,
+              fillColorValue: shape.fillColorValue,
+              fontFamily: shape.fontFamily,
+              imageBytes: shape.imageBytes,
+            );
+          }
+        }
+      }
+
+      // 2. Write slides to standalone JSON file
+      final file = File('${docDir.path}/pres_slides_$presentationId.json');
       final slidesJson = slides.map((s) => s.toJson()).toList();
-      await prefs.setString(key, json.encode(slidesJson));
+      await file.writeAsString(json.encode(slidesJson));
     } catch (e) {
-      debugPrint('Error saving slides to prefs: $e');
+      debugPrint('Error saving slides to file: $e');
     }
   }
 
   Future<void> _deleteSlidesFromPrefs(String presentationId) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final key = 'pres_slides_$presentationId';
-      await prefs.remove(key);
+      final docDir = await getApplicationSupportDirectory();
+      final file = File('${docDir.path}/pres_slides_$presentationId.json');
+      if (await file.exists()) {
+        await file.delete();
+      }
+      final mediaDir = Directory('${docDir.path}/media/$presentationId');
+      if (await mediaDir.exists()) {
+        await mediaDir.delete(recursive: true);
+      }
     } catch (e) {
-      debugPrint('Error deleting slides from prefs: $e');
+      debugPrint('Error deleting slides file: $e');
     }
   }
 
   Future<List<SlideData>> getSlidesForPresentation(String presentationId) async {
-    // If the presentation is in memory and has slides loaded, return them
     final idx = _recentPresentations.indexWhere((r) => r.id == presentationId);
     if (idx != -1 && _recentPresentations[idx].slides.isNotEmpty) {
       return _recentPresentations[idx].slides;
     }
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final key = 'pres_slides_$presentationId';
-      final slidesJson = prefs.getString(key);
-      if (slidesJson != null) {
-        final List<dynamic> decoded = json.decode(slidesJson);
+      final docDir = await getApplicationSupportDirectory();
+      final file = File('${docDir.path}/pres_slides_$presentationId.json');
+      if (await file.exists()) {
+        final content = await file.readAsString();
+        final List<dynamic> decoded = json.decode(content);
         return decoded
             .map((s) => SlideData.fromJson(s as Map<String, dynamic>))
             .toList();
       }
     } catch (e) {
-      debugPrint('Error loading slides from prefs: $e');
+      debugPrint('Error loading slides from file: $e');
     }
     return [];
   }

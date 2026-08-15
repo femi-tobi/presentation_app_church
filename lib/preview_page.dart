@@ -3631,37 +3631,13 @@ class _LiveWorkspaceCanvas extends StatelessWidget {
                               child: Opacity(
                                 opacity: activeSlide.opacity,
                                 child: activeSlide.blur == 0.0
-                                    ? (activeSlide.imageUrl.startsWith('data:')
-                                        ? Image.memory(
-                                            _decodeDataUrl(activeSlide.imageUrl),
-                                            fit: BoxFit.cover,
-                                            filterQuality: FilterQuality.low,
-                                            errorBuilder: (c, e, s) => const SizedBox(),
-                                          )
-                                        : Image.network(
-                                            activeSlide.imageUrl,
-                                            fit: BoxFit.cover,
-                                            filterQuality: FilterQuality.low,
-                                            errorBuilder: (c, e, s) => const SizedBox(),
-                                          ))
+                                    ? _buildImageWidget(activeSlide.imageUrl)
                                     : ImageFiltered(
                                         imageFilter: ImageFilter.blur(
                                           sigmaX: activeSlide.blur,
                                           sigmaY: activeSlide.blur,
                                         ),
-                                        child: activeSlide.imageUrl.startsWith('data:')
-                                            ? Image.memory(
-                                                _decodeDataUrl(activeSlide.imageUrl),
-                                                fit: BoxFit.cover,
-                                                filterQuality: FilterQuality.low,
-                                                errorBuilder: (c, e, s) => const SizedBox(),
-                                              )
-                                            : Image.network(
-                                                activeSlide.imageUrl,
-                                                fit: BoxFit.cover,
-                                                filterQuality: FilterQuality.low,
-                                                errorBuilder: (c, e, s) => const SizedBox(),
-                                              ),
+                                        child: _buildImageWidget(activeSlide.imageUrl),
                                       ),
                               ),
                             ),
@@ -3760,6 +3736,31 @@ class _LiveWorkspaceCanvas extends StatelessWidget {
         );
       },
     );
+  }
+
+  Widget _buildImageWidget(String url) {
+    if (url.startsWith('data:')) {
+      return Image.memory(
+        _decodeDataUrl(url),
+        fit: BoxFit.cover,
+        filterQuality: FilterQuality.low,
+        errorBuilder: (c, e, s) => const SizedBox(),
+      );
+    } else if (url.startsWith('http://') || url.startsWith('https://')) {
+      return Image.network(
+        url,
+        fit: BoxFit.cover,
+        filterQuality: FilterQuality.low,
+        errorBuilder: (c, e, s) => const SizedBox(),
+      );
+    } else {
+      return Image.file(
+        File(url),
+        fit: BoxFit.cover,
+        filterQuality: FilterQuality.low,
+        errorBuilder: (c, e, s) => const SizedBox(),
+      );
+    }
   }
 }
 
