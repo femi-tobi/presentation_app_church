@@ -129,7 +129,7 @@ class RemoteControlService {
     try {
       _udpSocket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 8888);
       _udpSocket!.broadcastEnabled = true;
-      _beaconTimer = Timer.periodic(const Duration(seconds: 4), (timer) {
+      _beaconTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
         final beaconData = json.encode({
           'type': 'presentation_remote_discovery',
           'url': pairingUrl,

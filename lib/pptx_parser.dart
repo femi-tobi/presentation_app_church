@@ -24,13 +24,11 @@ class PptxParser {
       final presFile = archive.findFile('ppt/presentation.xml');
       if (presFile != null) {
         final xml = utf8.decode(presFile.content);
-        // Handle both attribute orderings (cx before cy or cy before cx)
-        var m = RegExp(r'<p:sldSz\b[^>]*\bcx="(\d+)"[^>]*\bcy="(\d+)"').firstMatch(xml);
-        m ??= RegExp(r'<p:sldSz\b[^>]*\bcy="(\d+)"[^>]*\bcx="(\d+)"').firstMatch(xml);
-        if (m != null) {
-          // Group 1 = cx, group 2 = cy regardless of attribute order
-          slideW = double.parse(m.group(1)!);
-          slideH = double.parse(m.group(2)!);
+        final cxM = RegExp(r'\bcx="(\d+)"').firstMatch(xml);
+        final cyM = RegExp(r'\bcy="(\d+)"').firstMatch(xml);
+        if (cxM != null && cyM != null) {
+          slideW = double.parse(cxM.group(1)!);
+          slideH = double.parse(cyM.group(1)!);
         }
       }
     } catch (_) {}
@@ -136,41 +134,11 @@ class PptxParser {
       final bodyXml = content.replaceFirst(
           RegExp(r'<p:bg>.*?</p:bg>', dotAll: true), '');
 
-      // 7a. Picture shapes <p:pic>
-      final picRx = RegExp(r'<p:pic>(.*?)</p:pic>', dotAll: true);
-      for (final m in picRx.allMatches(bodyXml)) {
-        final xml = m.group(1)!;
-        final pos = _xfrm(xml, slideW, slideH) ?? (0.0, 0.0, 1.0, 1.0);
-        final em  = RegExp(r'r:embed="([^"]+)"').firstMatch(xml);
-        if (em == null) continue;
-        final uri = relToDataUri(em.group(1)!);
-        if (uri == null) continue;
-        
-        Uint8List? imgBytes;
-        try {
-          final comma = uri.indexOf(',');
-          if (comma != -1) {
-            imgBytes = base64Decode(uri.substring(comma + 1));
-          }
-        } catch (_) {}
-
-        shapes.add(PptxShape(
-          left: pos.$1, top: pos.$2, width: pos.$3, height: pos.$4,
-          imageDataUri: uri,
-          imageBytes: imgBytes,
-        ));
-      }
-
-      // 7b. Text/shape objects <p:sp>
-      final spRx = RegExp(r'<p:sp>(.*?)</p:sp>', dotAll: true);
-      for (final m in spRx.allMatches(bodyXml)) {
-        final spXml = m.group(1)!;
-        final pos   = _xfrm(spXml, slideW, slideH) ?? (0.0, 0.0, 1.0, 1.0);
-
+      // Local helper to parse a single shape text/fill and add it to shapes
+      void parseSp(String spXml, (double, double, double, double) pos) {
         // Detect placeholder type for font-size inheritance
         final phM   = RegExp(r'<p:ph\b[^>]*type="([^"]+)"').firstMatch(spXml);
         final phTypeStr = phM?.group(1) ?? '';
-        // Also detect body placeholder with no type attr
         final isBodyPh = RegExp(r'<p:ph\b').hasMatch(spXml) && phTypeStr.isEmpty;
         final isTitlePh = phTypeStr == 'title' || phTypeStr == 'ctrTitle';
         final isSubtitlePh = phTypeStr == 'subTitle' || phTypeStr == 'body' || isBodyPh;
@@ -190,7 +158,7 @@ class PptxParser {
                 left: pos.$1, top: pos.$2, width: pos.$3, height: pos.$4,
                 imageDataUri: uri,
               ));
-              continue;
+              return;
             }
           }
 
@@ -221,7 +189,7 @@ class PptxParser {
               fillColorValue: fillColor,
             ));
           }
-          continue;
+          return;
         }
 
         final txXml = txBodyM.group(1)!;
@@ -318,7 +286,7 @@ class PptxParser {
         }
 
         final text = textBuf.toString().trim();
-        if (text.isEmpty && fillColor == 0x00000000) continue;
+        if (text.isEmpty && fillColor == 0x00000000) return;
         if (bestSize == 0.0) bestSize = defFontSize;
 
         // If color was not explicitly set, default to high-contrast white/black based on background
@@ -341,6 +309,125 @@ class PptxParser {
           fillColorValue: fillColor,
           fontFamily:     bestFont,
         ));
+      }
+
+      // ── 7a. Group shapes <p:grpSp>
+      // Process groups first, scale children inside child-space bounding box,
+      // and remove group markup from slide XML to prevent duplicate processing.
+      final grpRx = RegExp(r'<p:grpSp>(.*?)</p:grpSp>', dotAll: true);
+      String processedBodyXml = bodyXml;
+      
+      for (final grpM in grpRx.allMatches(bodyXml)) {
+        final grpXml = grpM.group(0)!;
+        final innerXml = grpM.group(1)!;
+
+        // Parse group coordinate boundaries
+        final xfrmM = RegExp(r'<p:grpSpPr>.*?<a:xfrm[^>]*>(.*?)</a:xfrm>', dotAll: true).firstMatch(grpXml);
+        if (xfrmM != null) {
+          final inner = xfrmM.group(1)!;
+          final offM  = RegExp(r'<a:off\s+x="(-?\d+)"\s+y="(-?\d+)"').firstMatch(inner);
+          final extM  = RegExp(r'<a:ext\s+cx="(\d+)"\s+cy="(\d+)"').firstMatch(inner);
+          final chOffM = RegExp(r'<a:chOff\s+x="(-?\d+)"\s+y="(-?\d+)"').firstMatch(inner);
+          final chExtM = RegExp(r'<a:chExt\s+cx="(\d+)"\s+cy="(\d+)"').firstMatch(inner);
+
+          if (offM != null && extM != null && chOffM != null && chExtM != null) {
+            final gX  = double.parse(offM.group(1)!);
+            final gY  = double.parse(offM.group(2)!);
+            final gCX = double.parse(extM.group(1)!);
+            final gCY = double.parse(extM.group(2)!);
+
+            final cX  = double.parse(chOffM.group(1)!);
+            final cY  = double.parse(chOffM.group(2)!);
+            final cCX = double.parse(chExtM.group(1)!);
+            final cCY = double.parse(chExtM.group(2)!);
+
+            // Scale child-coordinates from child-space to absolute slide space
+            (double, double, double, double) transformCoords(double x, double y, double cx, double cy) {
+              final double normX = (x - cX) / cCX;
+              final double normY = (y - cY) / cCY;
+              final double normCX = cx / cCX;
+              final double normYH = cy / cCY;
+
+              final double slideX = (gX + normX * gCX) / slideW;
+              final double slideY = (gY + normY * gCY) / slideH;
+              final double slideCX = (normCX * gCX) / slideW;
+              final double slideCY = (normYH * gCY) / slideH;
+
+              return (slideX, slideY, slideCX, slideCY);
+            }
+
+            // Pictures nested in group
+            final picRx = RegExp(r'<p:pic>(.*?)</p:pic>', dotAll: true);
+            for (final pm in picRx.allMatches(innerXml)) {
+              final xml = pm.group(1)!;
+              final posRaw = _xfrmRaw(xml);
+              if (posRaw == null) continue;
+              final pos = transformCoords(posRaw.$1, posRaw.$2, posRaw.$3, posRaw.$4);
+              final em  = RegExp(r'r:embed="([^"]+)"').firstMatch(xml);
+              if (em == null) continue;
+              final uri = relToDataUri(em.group(1)!);
+              if (uri == null) continue;
+
+              Uint8List? imgBytes;
+              try {
+                final comma = uri.indexOf(',');
+                if (comma != -1) {
+                  imgBytes = base64Decode(uri.substring(comma + 1));
+                }
+              } catch (_) {}
+
+              shapes.add(PptxShape(
+                left: pos.$1, top: pos.$2, width: pos.$3, height: pos.$4,
+                imageDataUri: uri,
+                imageBytes: imgBytes,
+              ));
+            }
+
+            // Shapes nested in group
+            final spInnerRx = RegExp(r'<p:sp>(.*?)</p:sp>', dotAll: true);
+            for (final sm in spInnerRx.allMatches(innerXml)) {
+              final spXml = sm.group(1)!;
+              final posRaw = _xfrmRaw(spXml);
+              if (posRaw == null) continue;
+              final pos = transformCoords(posRaw.$1, posRaw.$2, posRaw.$3, posRaw.$4);
+              parseSp(spXml, pos);
+            }
+          }
+        }
+        processedBodyXml = processedBodyXml.replaceFirst(grpXml, '');
+      }
+
+      // ── 7b. Direct Picture shapes <p:pic>
+      final picRx = RegExp(r'<p:pic>(.*?)</p:pic>', dotAll: true);
+      for (final m in picRx.allMatches(processedBodyXml)) {
+        final xml = m.group(1)!;
+        final pos = _xfrm(xml, slideW, slideH) ?? (0.0, 0.0, 1.0, 1.0);
+        final em  = RegExp(r'r:embed="([^"]+)"').firstMatch(xml);
+        if (em == null) continue;
+        final uri = relToDataUri(em.group(1)!);
+        if (uri == null) continue;
+        
+        Uint8List? imgBytes;
+        try {
+          final comma = uri.indexOf(',');
+          if (comma != -1) {
+            imgBytes = base64Decode(uri.substring(comma + 1));
+          }
+        } catch (_) {}
+
+        shapes.add(PptxShape(
+          left: pos.$1, top: pos.$2, width: pos.$3, height: pos.$4,
+          imageDataUri: uri,
+          imageBytes: imgBytes,
+        ));
+      }
+
+      // ── 7c. Direct Text/shape objects <p:sp>
+      final spRx = RegExp(r'<p:sp>(.*?)</p:sp>', dotAll: true);
+      for (final m in spRx.allMatches(processedBodyXml)) {
+        final spXml = m.group(1)!;
+        final pos   = _xfrm(spXml, slideW, slideH) ?? (0.0, 0.0, 1.0, 1.0);
+        parseSp(spXml, pos);
       }
 
       // ── 8. Post-process: contrast correction ──────────────────────────
@@ -552,6 +639,12 @@ class PptxParser {
 
   static (double, double, double, double)? _xfrm(
       String xml, double slideW, double slideH) {
+    final pos = _xfrmRaw(xml);
+    if (pos == null) return null;
+    return (pos.$1 / slideW, pos.$2 / slideH, pos.$3 / slideW, pos.$4 / slideH);
+  }
+
+  static (double, double, double, double)? _xfrmRaw(String xml) {
     final xfrmM = RegExp(r'<a:xfrm[^>]*>(.*?)</a:xfrm>', dotAll: true).firstMatch(xml);
     if (xfrmM == null) return null;
     final inner = xfrmM.group(1)!;
@@ -562,7 +655,7 @@ class PptxParser {
     final y  = double.parse(offM.group(2)!);
     final cx = double.parse(extM.group(1)!);
     final cy = double.parse(extM.group(2)!);
-    return (x / slideW, y / slideH, cx / slideW, cy / slideH);
+    return (x, y, cx, cy);
   }
 
   static TextAlign _align(String? a) {

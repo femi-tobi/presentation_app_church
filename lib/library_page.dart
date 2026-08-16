@@ -10,6 +10,7 @@ import 'preview_page.dart';
 import 'fullscreen_presenter_page.dart';
 import 'connectivity_badge.dart';
 import 'pptx_import_service.dart';
+import 'package:desktop_drop/desktop_drop.dart';
 
 class LibraryPage extends StatefulWidget {
   final GlobalKey<ScaffoldState>? scaffoldKey;
@@ -26,6 +27,7 @@ class _LibraryPageState extends State<LibraryPage> {
   bool _isLoadingHymns = false;
   late List<LibraryItem> _dynamicMockItems;
   final Set<String> _selectedIds = {};
+  bool _isDragging = false;
 
   @override
   void initState() {
@@ -483,9 +485,39 @@ class _LibraryPageState extends State<LibraryPage> {
           onSurfaceVariant: SacredColors.onSurfaceVariant,
         ),
       ),
-      child: Scaffold(
-        body: SafeArea(
-          child: Column(
+      child: DropTarget(
+        onDragDone: (details) {
+          final pptxFiles = details.files
+              .where((f) => f.path.toLowerCase().endsWith('.pptx'))
+              .toList();
+          if (pptxFiles.isNotEmpty) {
+            for (final file in pptxFiles) {
+              PptxImportService.importFromFile(File(file.path), context);
+            }
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Only PowerPoint (.pptx) files are supported for drag & drop import.'),
+                backgroundColor: Colors.orangeAccent,
+              ),
+            );
+          }
+        },
+        onDragEntered: (details) {
+          setState(() {
+            _isDragging = true;
+          });
+        },
+        onDragExited: (details) {
+          setState(() {
+            _isDragging = false;
+          });
+        },
+        child: Stack(
+          children: [
+            Scaffold(
+              body: SafeArea(
+                child: Column(
             children: [
               // Top Header Bar
               _LibraryHeader(
@@ -662,6 +694,70 @@ class _LibraryPageState extends State<LibraryPage> {
               ),
             ],
           ),
+        ),
+      ),
+      if (_isDragging)
+              Positioned.fill(
+                child: Container(
+                  color: Colors.black.withOpacity(0.5),
+                  child: Center(
+                    child: Container(
+                      width: 420,
+                      height: 260,
+                      decoration: BoxDecoration(
+                        color: isDarkMode ? const Color(0xFF1E1E2E) : Colors.white,
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(
+                          color: primaryColor,
+                          width: 2.0,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.4),
+                            blurRadius: 32,
+                            offset: const Offset(0, 16),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: primaryColor.withOpacity(0.1),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.cloud_upload_outlined,
+                              size: 48,
+                              color: primaryColor,
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          Text(
+                            'Drop PowerPoint file here',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: isDarkMode ? Colors.white : Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Import directly into your slide library',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: isDarkMode ? Colors.grey[400] : Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );

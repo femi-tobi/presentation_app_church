@@ -130,6 +130,91 @@ class PptxImportService {
     }
   }
 
+  /// Direct import from a File (e.g. via drag-and-drop).
+  static Future<void> importFromFile(File file, BuildContext context) async {
+    // ── 1. Show loading overlay ───────────────────────────────────────────
+    if (context.mounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const _PptxLoadingDialog(),
+      );
+    }
+
+    try {
+      // ── 2. Read bytes ─────────────────────────────────────────────────
+      final bytes = await file.readAsBytes();
+      final cleanTitle = file.path.split(Platform.isWindows ? '\\' : '/').last
+          .replaceAll('.pptx', '')
+          .replaceAll('.PPTX', '')
+          .trim();
+
+      // ── 3. Parse in background isolate (keeps UI completely smooth!) ──────
+      final parsedSlidesRaw = await compute(
+        _parseInBackground,
+        _ParseArgs(bytes: bytes, title: cleanTitle),
+      );
+
+      // Convert plain ParsedSlide list to SlideData on main isolate
+      final parsedSlides = parsedSlidesRaw.map((s) => SlideData(
+        id:                 s.id,
+        title:              s.title,
+        subtitle:           s.subtitle,
+        imageUrl:           s.imageUrl,
+        bgColorValue:       s.bgColorValue,
+        opacity:            1.0,
+        blur:               0.0,
+        isBold:             false,
+        isItalic:           false,
+        titleFontSize:      36.0,
+        subtitleFontSize:   20.0,
+        textColorValue:     s.textColorValue,
+        logoUrl:            '',
+        pptxShapes:         s.pptxShapes,
+        pptxSlideHeightEmu: s.pptxSlideHeightEmu,
+      )).toList();
+
+      // ── 4. Register presentation ──────────────────────────────────────
+      final id     = 'imported_${DateTime.now().millisecondsSinceEpoch}';
+      final record = PresentationRecord(
+        id:           id,
+        title:        cleanTitle,
+        slideCount:   parsedSlides.length,
+        thumbnailUrl: '',
+        createdAt:    DateTime.now(),
+        slides:       parsedSlides,
+        outlineText:  parsedSlides.map((s) => s.subtitle).join('\n\n'),
+      );
+      await AppSettings.instance.addRecentPresentation(record);
+
+      // ── 5. Dismiss loader & navigate ──────────────────────────────────
+      if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
+
+      if (context.mounted) {
+        _snack(
+          context,
+          'Imported "${record.title}" — ${parsedSlides.length} slides',
+        );
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PreviewPage(
+              presentationId: record.id,
+              initialSlides:  record.slides,
+              initialSections: record.sections,
+              outlineText:    record.outlineText,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop(); // dismiss loader
+        _snack(context, 'Error importing PPTX: $e', isError: true);
+      }
+    }
+  }
+
 
 
   // ── SnackBar helper ───────────────────────────────────────────────────────

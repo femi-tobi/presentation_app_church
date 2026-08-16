@@ -13,7 +13,6 @@ class PresentationController extends ChangeNotifier {
   static final PresentationController instance = PresentationController._internal();
 
   PresentationController._internal() {
-    _startElapsedTimeTimer();
     _startPresenterServer();
   }
 
@@ -61,6 +60,9 @@ class PresentationController extends ChangeNotifier {
     _isAudienceProcess = isAudience;
 
     _stopAutoplayTimer();
+
+    // Start the elapsed-time ticker only when a real presentation begins.
+    _startElapsedTimeTimer();
 
     if (_isAudienceProcess) {
       _connectToPresenterServer();

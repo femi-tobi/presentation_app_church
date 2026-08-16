@@ -1208,36 +1208,7 @@ class AppSettings extends ChangeNotifier {
   List<PresentationRecord> get recentPresentations =>
       List.unmodifiable(_recentPresentations);
 
-  Future<String> _extractAndSaveMediaFile(String presentationId, String slideId, String dataUrl) async {
-    if (!dataUrl.startsWith('data:')) {
-      return dataUrl;
-    }
-    try {
-      final docDir = await getApplicationSupportDirectory();
-      final mediaDir = Directory('${docDir.path}/media/$presentationId');
-      if (!await mediaDir.exists()) {
-        await mediaDir.create(recursive: true);
-      }
-      
-      final comma = dataUrl.indexOf(',');
-      if (comma == -1) return dataUrl;
-      final bytes = base64Decode(dataUrl.substring(comma + 1));
-      
-      String ext = 'png';
-      if (dataUrl.contains('image/jpeg') || dataUrl.contains('image/jpg')) {
-        ext = 'jpg';
-      } else if (dataUrl.contains('image/gif')) {
-        ext = 'gif';
-      }
-      
-      final file = File('${mediaDir.path}/bg_$slideId.$ext');
-      await file.writeAsBytes(bytes);
-      return file.path;
-    } catch (e) {
-      debugPrint('Error saving media file: $e');
-    }
-    return dataUrl;
-  }
+
 
   Future<void> _saveSlidesToPrefs(String presentationId, List<SlideData> slides) async {
     try {
@@ -1273,10 +1244,10 @@ class AppSettings extends ChangeNotifier {
         // Save base64 images inside imported pptx shapes too
         for (int j = 0; j < slide.pptxShapes.length; j++) {
           final shape = slide.pptxShapes[j];
-          if (shape.imageDataUri != null && shape.imageDataUri!.startsWith('data:')) {
-            final comma = shape.imageDataUri!.indexOf(',');
+          if (shape.imageDataUri.startsWith('data:')) {
+            final comma = shape.imageDataUri.indexOf(',');
             if (comma != -1) {
-              final bytes = base64Decode(shape.imageDataUri!.substring(comma + 1));
+              final bytes = base64Decode(shape.imageDataUri.substring(comma + 1));
               
               final mediaDir = Directory('${docDir.path}/media/$presentationId');
               if (!await mediaDir.exists()) {
@@ -1372,8 +1343,8 @@ class AppSettings extends ChangeNotifier {
   Future<void> addRecentPresentation(PresentationRecord record) async {
     _recentPresentationsDirty = true;
     _recentPresentations.removeWhere((r) => r.id == record.id);
-    
-    // Save lightweight version in memory
+
+    // ── 1. Update in-memory list instantly (lightweight, no I/O) ─────────
     final lightweightRecord = PresentationRecord(
       id: record.id,
       title: record.title,
@@ -1388,14 +1359,27 @@ class AppSettings extends ChangeNotifier {
     _recentPresentations.insert(0, lightweightRecord); // newest first
     if (_recentPresentations.length > 12) {
       final removed = _recentPresentations.removeLast();
-      await _deleteSlidesFromPrefs(removed.id);
+      // Fire-and-forget: deletion is low-priority
+      _deleteSlidesFromPrefs(removed.id);
     }
-    
-    // Save slides dynamically to dedicated key
-    await _saveSlidesToPrefs(record.id, record.slides);
-    
-    saveSettings();
+
+    // Notify UI immediately so thumbnails / titles refresh without waiting
+    // for disk I/O.
     notifyListeners();
+
+    // ── 2. Debounce the heavy disk write ──────────────────────────────────
+    // Store the latest record; any subsequent calls within 1 s will just
+    // overwrite this field — only the last snapshot is written to disk.
+    _pendingDiskRecord = record;
+    _pendingDiskTimer?.cancel();
+    _pendingDiskTimer = Timer(const Duration(milliseconds: 1000), () async {
+      final toSave = _pendingDiskRecord;
+      _pendingDiskRecord = null;
+      if (toSave != null) {
+        await _saveSlidesToPrefs(toSave.id, toSave.slides);
+        saveSettings();
+      }
+    });
   }
 
   void deleteRecentPresentation(String id) {
@@ -1561,6 +1545,12 @@ class AppSettings extends ChangeNotifier {
 
   Timer? _saveTimer;
   Completer<void>? _saveCompleter;
+
+  // ── Debounced slide-disk-write fields ─────────────────────────────────────
+  /// Pending record waiting for its slides to be flushed to disk.
+  /// Updated on every addRecentPresentation call; flushed after 1 s of idle.
+  PresentationRecord? _pendingDiskRecord;
+  Timer? _pendingDiskTimer;
 
   /// Debounced saveSettings to batch disk writes and prevent UI stutter during user edits
   Future<void> saveSettings() async {

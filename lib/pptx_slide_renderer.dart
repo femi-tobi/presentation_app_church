@@ -51,18 +51,12 @@ import 'settings_state.dart';
         child: Stack(
           clipBehavior: Clip.hardEdge,
           children: [
-            // ── Background ───────────────────────────────────────────────
+            // ── Background ────────────────────────────────────────────────
             _buildBackground(),
 
             // ── Shapes in document order ─────────────────────────────────
             for (int k = 0; k < slide.pptxShapes.length; k++)
-              Positioned(
-                left:   slide.pptxShapes[k].left   * width,
-                top:    slide.pptxShapes[k].top    * height,
-                width:  slide.pptxShapes[k].width  * width,
-                height: slide.pptxShapes[k].height * height,
-                child:  _buildShapeWrapper(k, slide.pptxShapes[k]),
-              ),
+              _buildShapeWrapper(k, slide.pptxShapes[k]),
           ],
         ),
       ),
@@ -71,8 +65,20 @@ import 'settings_state.dart';
 
   Widget _buildShapeWrapper(int index, PptxShape shape) {
     final child = _buildShape(shape);
-    if (onShapePositionChanged == null) return child;
 
+    // Non-interactive (thumbnails etc): wrap in a Positioned as before.
+    if (onShapePositionChanged == null) {
+      return Positioned(
+        left:   shape.left   * width,
+        top:    shape.top    * height,
+        width:  shape.width  * width,
+        height: shape.height * height,
+        child: child,
+      );
+    }
+
+    // Interactive: _InteractiveShapeContainer owns its own Positioned so it
+    // can update its position locally without rebuilding siblings.
     return _InteractiveShapeContainer(
       shape: shape,
       width: width,
@@ -254,39 +260,82 @@ class _InteractiveShapeContainerState extends State<_InteractiveShapeContainer> 
   bool _isHovered = false;
   bool _isDragging = false;
 
+  // Local pixel-space drag offsets — tracked here to avoid calling setState
+  // on the parent during every pointer move event.
+  double? _localLeft;  // absolute pixels from slide left
+  double? _localTop;   // absolute pixels from slide top
+
+  @override
+  void didUpdateWidget(_InteractiveShapeContainer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // If the shape's stored position changed externally (e.g. a different
+    // slide was selected), reset local drag state.
+    if (!_isDragging &&
+        (oldWidget.shape.left != widget.shape.left ||
+         oldWidget.shape.top  != widget.shape.top)) {
+      _localLeft = null;
+      _localTop  = null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool showBorder = widget.isSelected || _isHovered || _isDragging;
     final borderCol = widget.isSelected ? Colors.blue : Colors.blueAccent.withValues(alpha: 0.6);
     final borderWidth = widget.isSelected ? 2.0 : 1.5;
 
-    return MouseRegion(
-      onEnter: (_) => setState(() => _isHovered = true),
-      onExit: (_) => setState(() => _isHovered = false),
-      child: GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onTap: widget.onTap,
-        onPanStart: (_) => setState(() => _isDragging = true),
-        onPanUpdate: (details) {
-          final double deltaX = details.delta.dx / widget.width;
-          final double deltaY = details.delta.dy / widget.height;
-          widget.onPositionChanged(
-            (widget.shape.left + deltaX).clamp(0.0, 1.0),
-            (widget.shape.top + deltaY).clamp(0.0, 1.0),
-          );
-        },
-        onPanEnd: (_) {
-          setState(() => _isDragging = false);
-          widget.onPositionChangedEnd?.call();
-        },
-        child: Container(
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: showBorder ? borderCol : Colors.transparent,
-              width: borderWidth,
+    // During a drag use the locally-tracked position; otherwise derive from
+    // the stored fractional position on the shape.
+    final double resolvedLeft = _localLeft ?? (widget.shape.left * widget.width);
+    final double resolvedTop  = _localTop  ?? (widget.shape.top  * widget.height);
+
+    return Positioned(
+      left:   resolvedLeft.clamp(0.0, widget.width  - 4),
+      top:    resolvedTop .clamp(0.0, widget.height - 4),
+      width:  widget.shape.width  * widget.width,
+      height: widget.shape.height * widget.height,
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit:  (_) => setState(() => _isHovered = false),
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: widget.onTap,
+          onPanStart: (details) {
+            setState(() {
+              _isDragging = true;
+              _localLeft  = resolvedLeft;
+              _localTop   = resolvedTop;
+            });
+          },
+          onPanUpdate: (details) {
+            // Only this widget rebuilds — NOT the parent or siblings.
+            setState(() {
+              _localLeft = ((_localLeft ?? resolvedLeft) + details.delta.dx)
+                  .clamp(0.0, widget.width  - 4);
+              _localTop  = ((_localTop  ?? resolvedTop)  + details.delta.dy)
+                  .clamp(0.0, widget.height - 4);
+            });
+          },
+          onPanEnd: (_) {
+            // Commit the final position to the parent — one call total per drag.
+            if (_localLeft != null && _localTop != null) {
+              widget.onPositionChanged(
+                _localLeft! / widget.width,
+                _localTop!  / widget.height,
+              );
+            }
+            setState(() => _isDragging = false);
+            widget.onPositionChangedEnd?.call();
+          },
+          child: Container(
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: showBorder ? borderCol : Colors.transparent,
+                width: borderWidth,
+              ),
             ),
+            child: widget.child,
           ),
-          child: widget.child,
         ),
       ),
     );

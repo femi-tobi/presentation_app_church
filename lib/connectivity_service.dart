@@ -20,7 +20,7 @@ bool _browserIsOnline() {
 class ConnectivityService extends ChangeNotifier {
   ConnectivityService._internal() {
     _checkNow();
-    _timer = Timer.periodic(const Duration(seconds: 5), (_) => _checkNow());
+    _timer = Timer.periodic(const Duration(seconds: 30), (_) => _checkNow());
   }
 
   static final ConnectivityService instance = ConnectivityService._internal();

@@ -1462,6 +1462,8 @@ class _PreviewPageState extends State<PreviewPage> {
                         _saveToRecentList();
                       },
                       onShapePositionChanged: (index, left, top) {
+                        // Called once on drag-end (not during drag).
+                        // Update the stored shape position and refresh state.
                         setState(() {
                           final oldShape = activeSlide.pptxShapes[index];
                           activeSlide.pptxShapes[index] = PptxShape(
@@ -1482,11 +1484,10 @@ class _PreviewPageState extends State<PreviewPage> {
                           );
                           activeSlide.update();
                         });
-                      },
-                      onShapePositionChangedEnd: (index) {
                         AppSettings.instance.updateActiveSlides(_slides);
                         _saveToRecentList();
                       },
+                      onShapePositionChangedEnd: null, // handled in onShapePositionChanged above
                       selectedShapeIndices: _selectedShapeIndices,
                       onShapeTap: (index) {
                         setState(() {
