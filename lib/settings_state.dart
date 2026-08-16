@@ -1247,36 +1247,62 @@ class AppSettings extends ChangeNotifier {
       for (int i = 0; i < slides.length; i++) {
         final slide = slides[i];
         if (slide.imageUrl.startsWith('data:')) {
-          final localPath = await _extractAndSaveMediaFile(presentationId, slide.id, slide.imageUrl);
-          slide.imageUrl = localPath;
-          // Pre-load saved image file bytes into bgImageBytes memory
-          if (slide.bgImageBytes == null) {
-            try {
-              slide.bgImageBytes = await File(localPath).readAsBytes();
-            } catch (_) {}
+          final comma = slide.imageUrl.indexOf(',');
+          if (comma != -1) {
+            final bytes = base64Decode(slide.imageUrl.substring(comma + 1));
+            
+            final mediaDir = Directory('${docDir.path}/media/$presentationId');
+            if (!await mediaDir.exists()) {
+              await mediaDir.create(recursive: true);
+            }
+            
+            String ext = 'png';
+            if (slide.imageUrl.contains('image/jpeg') || slide.imageUrl.contains('image/jpg')) {
+              ext = 'jpg';
+            } else if (slide.imageUrl.contains('image/gif')) {
+              ext = 'gif';
+            }
+            
+            final file = File('${mediaDir.path}/bg_${slide.id}.$ext');
+            await file.writeAsBytes(bytes);
+            
+            slide.imageUrl = file.path;
+            slide.bgImageBytes = bytes; // Cache the already-decoded memory bytes directly!
           }
         }
         // Save base64 images inside imported pptx shapes too
         for (int j = 0; j < slide.pptxShapes.length; j++) {
           final shape = slide.pptxShapes[j];
           if (shape.imageDataUri != null && shape.imageDataUri!.startsWith('data:')) {
-            final localPath = await _extractAndSaveMediaFile(presentationId, 'shape_${slide.id}_$j', shape.imageDataUri!);
-            slide.pptxShapes[j] = PptxShape(
-              left: shape.left,
-              top: shape.top,
-              width: shape.width,
-              height: shape.height,
-              text: shape.text,
-              fontSize: shape.fontSize,
-              isBold: shape.isBold,
-              isItalic: shape.isItalic,
-              colorValue: shape.colorValue,
-              align: shape.align,
-              imageDataUri: localPath,
-              fillColorValue: shape.fillColorValue,
-              fontFamily: shape.fontFamily,
-              imageBytes: shape.imageBytes,
-            );
+            final comma = shape.imageDataUri!.indexOf(',');
+            if (comma != -1) {
+              final bytes = base64Decode(shape.imageDataUri!.substring(comma + 1));
+              
+              final mediaDir = Directory('${docDir.path}/media/$presentationId');
+              if (!await mediaDir.exists()) {
+                await mediaDir.create(recursive: true);
+              }
+              
+              final file = File('${mediaDir.path}/bg_shape_${slide.id}_$j.png');
+              await file.writeAsBytes(bytes);
+              
+              slide.pptxShapes[j] = PptxShape(
+                left: shape.left,
+                top: shape.top,
+                width: shape.width,
+                height: shape.height,
+                text: shape.text,
+                fontSize: shape.fontSize,
+                isBold: shape.isBold,
+                isItalic: shape.isItalic,
+                colorValue: shape.colorValue,
+                align: shape.align,
+                imageDataUri: file.path,
+                fillColorValue: shape.fillColorValue,
+                fontFamily: shape.fontFamily,
+                imageBytes: bytes, // Cache in-memory image bytes for the shape!
+              );
+            }
           }
         }
       }
@@ -1343,7 +1369,7 @@ class AppSettings extends ChangeNotifier {
     return [];
   }
 
-  void addRecentPresentation(PresentationRecord record) {
+  Future<void> addRecentPresentation(PresentationRecord record) async {
     _recentPresentationsDirty = true;
     _recentPresentations.removeWhere((r) => r.id == record.id);
     
@@ -1362,11 +1388,11 @@ class AppSettings extends ChangeNotifier {
     _recentPresentations.insert(0, lightweightRecord); // newest first
     if (_recentPresentations.length > 12) {
       final removed = _recentPresentations.removeLast();
-      _deleteSlidesFromPrefs(removed.id);
+      await _deleteSlidesFromPrefs(removed.id);
     }
     
     // Save slides dynamically to dedicated key
-    _saveSlidesToPrefs(record.id, record.slides);
+    await _saveSlidesToPrefs(record.id, record.slides);
     
     saveSettings();
     notifyListeners();

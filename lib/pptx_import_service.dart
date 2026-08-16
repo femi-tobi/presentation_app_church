@@ -100,7 +100,7 @@ class PptxImportService {
         slides:       parsedSlides,
         outlineText:  parsedSlides.map((s) => s.subtitle).join('\n\n'),
       );
-      AppSettings.instance.addRecentPresentation(record);
+      await AppSettings.instance.addRecentPresentation(record);
 
       // ── 6. Dismiss loader & navigate ──────────────────────────────────
       if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
