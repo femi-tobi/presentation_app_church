@@ -15,6 +15,8 @@ import 'presentation_controller.dart';
 import 'display_manager.dart';
 import 'diagnostics_page.dart';
 import 'audience_window.dart';
+import 'pptx_slide_renderer.dart';
+import 'bible_service.dart';
 
 Uint8List _decodeDataUrlPresenter(String dataUrl) {
   return decodeDataUrl(dataUrl);
@@ -157,6 +159,15 @@ class _ProfessionalPresenterViewState extends State<ProfessionalPresenterView> {
   void _goFirst() => PresentationController.instance.goFirst();
   void _goLast() => PresentationController.instance.goLast();
 
+  void _showQuickBibleSearchDialog() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return const _QuickBibleSearchDialog();
+      },
+    );
+  }
+
   void _handleKeyEvent(KeyEvent event) {
     if (event is! KeyDownEvent) return;
     if (PresentationController.instance.mode == PresentationMode.locked) return;
@@ -179,6 +190,9 @@ class _ProfessionalPresenterViewState extends State<ProfessionalPresenterView> {
         break;
       case LogicalKeyboardKey.escape:
         Navigator.pop(context);
+        break;
+      case LogicalKeyboardKey.keyB:
+        _showQuickBibleSearchDialog();
         break;
       default:
         break;
@@ -416,6 +430,20 @@ class _ProfessionalPresenterViewState extends State<ProfessionalPresenterView> {
 
           const SizedBox(width: 12),
 
+          // Bible Search Button
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF4B0082),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              textStyle: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold),
+            ),
+            onPressed: _showQuickBibleSearchDialog,
+            icon: const Icon(Icons.menu_book, size: 14),
+            label: const Text('Bible Search (B)'),
+          ),
+          const SizedBox(width: 12),
+
           // Start Presentation Button
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
@@ -443,7 +471,10 @@ class _ProfessionalPresenterViewState extends State<ProfessionalPresenterView> {
 
           // Exit button
           TextButton.icon(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () {
+              PresentationController.instance.closeAudienceWindow();
+              Navigator.popUntil(context, (route) => route.isFirst);
+            },
             icon: const Icon(Icons.close, size: 16, color: Colors.white54),
             label: Text(
               'Exit',
@@ -533,9 +564,57 @@ class _ProfessionalPresenterViewState extends State<ProfessionalPresenterView> {
           Expanded(
             child: ClipRRect(
               borderRadius: BorderRadius.circular(8),
-              child: _currentSlide != null
-                  ? _SlidePreviewWidget(slide: _currentSlide!, showDetails: true)
-                  : const SizedBox(),
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: _currentSlide != null
+                        ? _SlidePreviewWidget(slide: _currentSlide!, showDetails: true)
+                        : const SizedBox(),
+                  ),
+                  if (PresentationController.instance.bibleOverlaySlide != null)
+                    Positioned(
+                      left: 12,
+                      right: 12,
+                      bottom: 12,
+                      child: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.85),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.white24, width: 1),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.menu_book, color: Color(0xFFFED65B), size: 12),
+                                const SizedBox(width: 6),
+                                Text(
+                                  PresentationController.instance.bibleOverlaySlide!.title,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: const Color(0xFFFED65B),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              PresentationController.instance.bibleOverlaySlide!.subtitle,
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
         ],
@@ -942,6 +1021,17 @@ class _SlidePreviewWidget extends StatelessWidget {
               return const SizedBox.shrink();
             }
 
+            if (slide.pptxShapes.isNotEmpty) {
+              return ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: PptxSlideRenderer(
+                  slide: slide,
+                  width: w,
+                  height: h,
+                ),
+              );
+            }
+
             return Stack(
               children: [
                 // Background image
@@ -976,63 +1066,66 @@ class _SlidePreviewWidget extends StatelessWidget {
                         : Image.network(slide.logoUrl!, fit: BoxFit.contain),
                   ),
 
-                // Text content
-                Positioned.fill(
-                  child: Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: Center(
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: SizedBox(
-                          width: w - 16,
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (slide.title.isNotEmpty)
-                                Flexible(
-                                  child: Text(
-                                    slide.title,
-                                    textAlign: slide.alignment,
-                                    maxLines: showDetails ? 4 : 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: GoogleFonts.inter(
-                                      color: Colors.white,
-                                      fontWeight: slide.isBold ? FontWeight.bold : FontWeight.w600,
-                                      fontStyle: slide.isItalic ? FontStyle.italic : FontStyle.normal,
-                                      fontSize: showDetails ? 20 : 14,
-                                      shadows: const [
-                                        Shadow(color: Colors.black54, offset: Offset(0, 2), blurRadius: 6),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              if (slide.subtitle.isNotEmpty) ...[
-                                const SizedBox(height: 4),
-                                Flexible(
-                                  child: Text(
-                                    slide.subtitle,
-                                    textAlign: slide.alignment,
-                                    maxLines: showDetails ? 8 : 3,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: GoogleFonts.inter(
-                                      color: Colors.white.withOpacity(0.9),
-                                      fontWeight: slide.isBold ? FontWeight.w600 : FontWeight.normal,
-                                      fontStyle: slide.isItalic ? FontStyle.italic : FontStyle.normal,
-                                      fontSize: showDetails ? 16 : 11,
-                                      height: 1.4,
-                                      shadows: const [
-                                        Shadow(color: Colors.black54, offset: Offset(0, 2), blurRadius: 6),
-                                      ],
-                                    ),
-                                  ),
-                                ),
+                // Text content — matches preview canvas layout exactly
+                Positioned(
+                  left: (slide.textX * w) + (8.0 * scale).clamp(4, 48),
+                  top: (slide.textY * h) + (4.0 * scale).clamp(2, 32),
+                  width: w - (16.0 * scale).clamp(8, 96),
+                  height: h - (8.0 * scale).clamp(4, 64),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (slide.title.isNotEmpty)
+                        Text(
+                          slide.title,
+                          textAlign: slide.alignment,
+                          maxLines: showDetails ? 4 : 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.getFont(
+                            AppSettings.instance.fontFamily,
+                            textStyle: TextStyle(
+                              fontSize: (slide.titleFontSize * scale).clamp(4.0, 60.0),
+                              color: Color(slide.textColorValue),
+                              fontWeight: slide.isBold ? FontWeight.bold : FontWeight.normal,
+                              fontStyle: slide.isItalic ? FontStyle.italic : FontStyle.normal,
+                              shadows: const [
+                                Shadow(color: Colors.black45, offset: Offset(0, 1), blurRadius: 2),
                               ],
-                            ],
+                            ),
                           ),
                         ),
-                      ),
-                    ),
+                      if (slide.subtitle.trim().isNotEmpty && !slide.id.startsWith('imported_')) ...[
+                        SizedBox(height: (4.0 * scale).clamp(1, 8)),
+                        Container(
+                          width: (24.0 * scale).clamp(4, 40),
+                          height: (1.0 * scale).clamp(0.5, 3),
+                          color: SacredColors.secondaryContainer,
+                        ),
+                      ],
+                      if (slide.subtitle.trim().isNotEmpty)
+                        SizedBox(height: (4.0 * scale).clamp(1, 8)),
+                      if (slide.subtitle.trim().isNotEmpty)
+                        Expanded(
+                          child: Text(
+                            slide.subtitle,
+                            textAlign: slide.alignment,
+                            maxLines: showDetails ? 10 : 4,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(
+                              textStyle: TextStyle(
+                                fontSize: (slide.subtitleFontSize * scale).clamp(3.0, 30.0),
+                                color: Color(slide.textColorValue).withValues(alpha: 0.9),
+                                fontStyle: slide.isItalic ? FontStyle.italic : FontStyle.normal,
+                                height: 1.4,
+                                shadows: const [
+                                  Shadow(color: Colors.black45, offset: Offset(0, 0.5), blurRadius: 1),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ],
@@ -1124,4 +1217,276 @@ class _ModeBadge {
   final String label;
   final Color color;
   const _ModeBadge(this.label, this.color);
+}
+
+class _QuickBibleSearchDialog extends StatefulWidget {
+  const _QuickBibleSearchDialog();
+
+  @override
+  State<_QuickBibleSearchDialog> createState() => _QuickBibleSearchDialogState();
+}
+
+class _QuickBibleSearchDialogState extends State<_QuickBibleSearchDialog> {
+  final TextEditingController _searchController = TextEditingController();
+  String _translation = 'kjv';
+  List<Map<String, dynamic>> _searchResults = [];
+  bool _searching = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _translation = PresentationController.instance.bibleTranslation;
+  }
+
+  void _performSearch() async {
+    final query = _searchController.text.trim();
+    if (query.isEmpty) {
+      setState(() {
+        _searchResults = [];
+        _searching = false;
+      });
+      return;
+    }
+    setState(() {
+      _searching = true;
+    });
+    try {
+      final results = await BibleService.instance.searchVerses(_translation, query);
+      if (mounted) {
+        setState(() {
+          _searchResults = results;
+          _searching = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _searching = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pc = PresentationController.instance;
+    return Dialog(
+      backgroundColor: const Color(0xFF151528),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Container(
+        width: 500,
+        height: 600,
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.menu_book, color: Color(0xFFFED65B), size: 24),
+                    const SizedBox(width: 10),
+                    Text(
+                      'Quick Bible Search',
+                      style: GoogleFonts.inter(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white54),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            // Search Input Row
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    style: GoogleFonts.inter(color: Colors.white),
+                    decoration: InputDecoration(
+                      hintText: 'Search verse (e.g. John 3:16)',
+                      hintStyle: GoogleFonts.inter(color: Colors.white30),
+                      filled: true,
+                      fillColor: const Color(0xFF1E1E32),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide.none,
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    ),
+                    onChanged: (_) => _performSearch(),
+                    onSubmitted: (_) => _performSearch(),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF4B0082),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  onPressed: _performSearch,
+                  child: const Text('Search'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            // Translation Selector
+            Row(
+              children: [
+                Text(
+                  'Translation: ',
+                  style: GoogleFonts.inter(color: Colors.white70, fontSize: 13),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E1E32),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: DropdownButton<String>(
+                    value: _translation,
+                    dropdownColor: const Color(0xFF1E1E32),
+                    underline: const SizedBox(),
+                    icon: const Icon(Icons.arrow_drop_down, color: Colors.white70),
+                    style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
+                    onChanged: (val) {
+                      if (val != null) {
+                        setState(() {
+                          _translation = val;
+                          PresentationController.instance.bibleTranslation = val;
+                        });
+                        _performSearch();
+                      }
+                    },
+                    items: const [
+                      DropdownMenuItem(value: 'kjv', child: Text('King James Version (KJV)')),
+                      DropdownMenuItem(value: 'niv', child: Text('New International Version (NIV)')),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            // Results Area
+            Expanded(
+              child: _searching
+                  ? const Center(child: CircularProgressIndicator(color: Color(0xFFFED65B)))
+                  : _searchResults.isEmpty
+                      ? Center(
+                          child: Text(
+                            'No search results yet.',
+                            style: GoogleFonts.inter(color: Colors.white30, fontSize: 14),
+                          ),
+                        )
+                      : ListView.builder(
+                          itemCount: _searchResults.length,
+                          itemBuilder: (context, index) {
+                            final r = _searchResults[index];
+                            final ref = '${r['book']} ${r['chapter']}:${r['verse']}';
+                            final text = r['text'] as String;
+                            return Card(
+                              color: const Color(0xFF1E1E32),
+                              margin: const EdgeInsets.only(bottom: 8),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              child: ListTile(
+                                contentPadding: const EdgeInsets.all(12),
+                                title: Text(
+                                  ref,
+                                  style: GoogleFonts.inter(
+                                    color: const Color(0xFFFED65B),
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                subtitle: Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Text(
+                                    text,
+                                    style: GoogleFonts.inter(color: Colors.white.withValues(alpha: 0.85), fontSize: 13),
+                                  ),
+                                ),
+                                trailing: ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.green[800],
+                                    foregroundColor: Colors.white,
+                                    textStyle: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold),
+                                  ),
+                                  onPressed: () {
+                                    pc.showBibleOverlay(ref, text);
+                                    Navigator.pop(context);
+                                  },
+                                  child: const Text('Project'),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+            ),
+            if (pc.bibleOverlaySlide != null) ...[
+              const SizedBox(height: 16),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red[900]!.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red[900]!.withOpacity(0.5)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Active Overlay: ${pc.bibleOverlaySlide!.title}',
+                        style: GoogleFonts.inter(color: Colors.red[200], fontSize: 13, fontWeight: FontWeight.w600),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.arrow_left, color: Colors.white70),
+                      tooltip: 'Previous Verse',
+                      onPressed: () async {
+                        await pc.navigateBibleVerse(false);
+                        setState(() {});
+                      },
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.arrow_right, color: Colors.white70),
+                      tooltip: 'Next Verse',
+                      onPressed: () async {
+                        await pc.navigateBibleVerse(true);
+                        setState(() {});
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red[900],
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        textStyle: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold),
+                      ),
+                      onPressed: () {
+                        pc.clearBibleOverlay();
+                        setState(() {});
+                      },
+                      child: const Text('Dismiss Overlay'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 }

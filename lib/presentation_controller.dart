@@ -1,20 +1,20 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
+import 'dart:isolate';
 import 'package:flutter/material.dart';
 import 'settings_state.dart';
 
 import 'display_manager.dart';
 import 'connectors/remote_control_service.dart';
+import 'bible_service.dart';
 
 enum PresentationMode { live, rehearsal, auto, locked }
 
 class PresentationController extends ChangeNotifier {
   static final PresentationController instance = PresentationController._internal();
 
-  PresentationController._internal() {
-    _startPresenterServer();
-  }
+  PresentationController._internal();
 
   List<SlideData> _slides = [];
   List<SlideSection> _sections = [];
@@ -24,6 +24,63 @@ class PresentationController extends ChangeNotifier {
 
   int _liveIndex = 0;
   int _presenterIndex = 0;
+
+  SlideData? _bibleOverlaySlide;
+  SlideData? get bibleOverlaySlide => _bibleOverlaySlide;
+
+  String _bibleTranslation = 'kjv';
+  String get bibleTranslation => _bibleTranslation;
+  set bibleTranslation(String val) {
+    _bibleTranslation = val;
+    notifyListeners();
+  }
+
+  void showBibleOverlay(String title, String subtitle) {
+    _bibleOverlaySlide = SlideData(
+      id: 'bible_overlay_${DateTime.now().millisecondsSinceEpoch}',
+      title: title,
+      subtitle: subtitle,
+      imageUrl: '',
+      bgColorValue: 0xFF2E0052,
+      textColorValue: 0xFFFFFFFF,
+    );
+    notifyListeners();
+    _broadcastState();
+  }
+
+  Future<void> navigateBibleVerse(bool next) async {
+    if (_bibleOverlaySlide == null) return;
+    final title = _bibleOverlaySlide!.title;
+    
+    // Parse title, e.g. "Genesis 1:1" or "1 Samuel 2:3" or "Song of Solomon 4:5"
+    final regex = RegExp(r'^(.+)\s+(\d+):(\d+)$');
+    final match = regex.firstMatch(title);
+    if (match == null) return;
+
+    final bookName = match.group(1)!;
+    final chapterNum = int.tryParse(match.group(2)!) ?? 1;
+    final verseNum = int.tryParse(match.group(3)!) ?? 1;
+
+    final result = await BibleService.instance.getNextOrPrevVerse(
+      translation: _bibleTranslation,
+      bookName: bookName,
+      chapterNum: chapterNum,
+      verseNum: verseNum,
+      next: next,
+    );
+
+    if (result != null) {
+      final ref = '${result['book']} ${result['chapter']}:${result['verse']}';
+      final text = result['text'] as String;
+      showBibleOverlay(ref, text);
+    }
+  }
+
+  void clearBibleOverlay() {
+    _bibleOverlaySlide = null;
+    notifyListeners();
+    _broadcastState();
+  }
 
   int get liveIndex => _liveIndex;
   int get presenterIndex => _presenterIndex;
@@ -43,11 +100,29 @@ class PresentationController extends ChangeNotifier {
   Duration get elapsedTime => _elapsedTime;
 
   // TCP Sync Server (Presenter) / Client (Audience) fields
+  int _serverPort = 4321;
+  int get serverPort => _serverPort;
+  set serverPort(int val) {
+    _serverPort = val;
+  }
+
   ServerSocket? _serverSocket;
   final List<Socket> _connectedClients = [];
   Socket? _audienceClientSocket;
   bool _isAudienceProcess = false;
   bool get isAudienceProcess => _isAudienceProcess;
+  String _currentSessionId = 'unknown';
+  String get currentSessionId => _currentSessionId;
+  
+  String? _currentPresentationId;
+  String? get currentPresentationId => _currentPresentationId;
+  set currentPresentationId(String? val) {
+    _currentPresentationId = val;
+  }
+
+  void setSessionId(String id) {
+    _currentSessionId = id;
+  }
 
   void initialize(List<SlideData> slidesList, List<SlideSection> sectionsList, int startIndex, {bool isAudience = false}) {
     _slides = slidesList;
@@ -65,9 +140,13 @@ class PresentationController extends ChangeNotifier {
     _startElapsedTimeTimer();
 
     if (_isAudienceProcess) {
+      debugPrint('[PRESENTATION][session=$_currentSessionId] Initialized as AUDIENCE PROCESS. Connecting to server...');
       _connectToPresenterServer();
     } else {
+      debugPrint('[PRESENTATION][session=$_currentSessionId] Initialized as PRESENTER PROCESS. Starting server...');
       _startPresenterServer();
+      // Pre-spawn the audience window in the background (hidden) so it is ready instantly
+      spawnAudienceWindow(startHidden: true);
     }
 
     notifyListeners();
@@ -81,25 +160,109 @@ class PresentationController extends ChangeNotifier {
 
   void _broadcastSlides() {
     if (_isAudienceProcess) return;
-    for (final client in _connectedClients) {
+    _writeHandoffFile();
+    _broadcastReloadHandoff();
+  }
+
+
+
+  // Converts a SlideData to a full wire-format map containing background images and shapes.
+  Map<String, dynamic> _slideToFullJson(SlideData s) {
+    return {
+      'id': s.id,
+      'title': s.title,
+      'subtitle': s.subtitle,
+      'imageUrl': s.imageUrl,
+      'opacity': s.opacity,
+      'blur': s.blur,
+      'isBold': s.isBold,
+      'isItalic': s.isItalic,
+      'alignment': s.alignment.name,
+      'transition': s.transition,
+      'titleFontSize': s.titleFontSize,
+      'subtitleFontSize': s.subtitleFontSize,
+      'logoUrl': s.logoUrl,
+      'logoX': s.logoX,
+      'logoY': s.logoY,
+      'logoSize': s.logoSize,
+      'textX': s.textX,
+      'textY': s.textY,
+      'bgColorValue': s.bgColorValue,
+      'textColorValue': s.textColorValue,
+      'sectionId': s.sectionId,
+      'pptxShapes': s.pptxShapes.map((shape) => shape.toJson()).toList(),
+      'pptxSlideHeightEmu': s.pptxSlideHeightEmu,
+    };
+  }
+
+  void _writeHandoffFile() {
+    try {
+      final handoff = {
+        'liveIndex': _liveIndex,
+        'presenterIndex': _presenterIndex,
+        'mode': _mode.index,
+        'slides': _slides.map(_slideToFullJson).toList(),
+        'bibleOverlay': _bibleOverlaySlide != null ? _slideToFullJson(_bibleOverlaySlide!) : null,
+      };
+      final path = _slidesHandoffPath;
+      final jsonStr = json.encode(handoff);
+      
+      // Write synchronously to guarantee the file exists on disk
+      // before _broadcastReloadHandoff() tells the audience process to read it.
+      File(path).writeAsStringSync(jsonStr);
+      debugPrint('[PRESENTATION][session=$_currentSessionId] Handoff file written: $path (${_slides.length} slides)');
+      
+      // Verify handoff file is correct by reading it back immediately
       try {
-        final data = {
-          'type': 'slides_update',
-          'liveIndex': _liveIndex,
-          'presenterIndex': _presenterIndex,
-          'mode': _mode.index,
-          'slides': _slides.map((s) => s.toJson()).toList(),
-        };
-        client.write(json.encode(data) + '\n');
-      } catch (_) {}
+        final content = File(path).readAsStringSync();
+        final decoded = json.decode(content) as Map<String, dynamic>;
+        final exists = File(path).existsSync();
+        final size = File(path).lengthSync();
+        debugPrint('[PRESENTATION][session=$_currentSessionId] Self-validation: exists=$exists, size=$size bytes, parsedSlidesCount=${(decoded['slides'] as List).length}');
+      } catch (e) {
+        debugPrint('[PRESENTATION][session=$_currentSessionId] Self-validation FAILED: $e');
+      }
+    } catch (e) {
+      debugPrint('[PRESENTATION][session=$_currentSessionId] ERROR writing/serializing handoff file: $e');
+    }
+  }
+
+  void _reloadFromHandoffFile() {
+    try {
+      final path = _slidesHandoffPath;
+      final file = File(path);
+      if (file.existsSync()) {
+        final raw = json.decode(file.readAsStringSync()) as Map<String, dynamic>;
+        _liveIndex = (raw['liveIndex'] as num?)?.toInt() ?? _liveIndex;
+        _presenterIndex = (raw['presenterIndex'] as num?)?.toInt() ?? _presenterIndex;
+        _mode = PresentationMode.values[(raw['mode'] as num?)?.toInt() ?? _mode.index];
+        final rawSlides = raw['slides'] as List<dynamic>? ?? [];
+        _slides = rawSlides
+            .map((s) => SlideData.fromJson(s as Map<String, dynamic>))
+            .toList();
+        final bo = raw['bibleOverlay'];
+        _bibleOverlaySlide = bo != null ? SlideData.fromJson(bo as Map<String, dynamic>) : null;
+        debugPrint('[PresentationController] Reloaded ${_slides.length} slides from handoff file');
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('[PresentationController] ERROR reloading handoff file: $e');
     }
   }
 
   // --- Presenter Server Logic ---
   void _startPresenterServer() async {
+    if (_serverSocket != null) {
+      _broadcastSlides();
+      _broadcastState();
+      return;
+    }
     _closePresenterServer();
     try {
-      _serverSocket = await ServerSocket.bind('127.0.0.1', 4321);
+      // Bind to port 0 to assign any available free port dynamically
+      _serverSocket = await ServerSocket.bind('127.0.0.1', 0);
+      _serverPort = _serverSocket!.port;
+      debugPrint('[PresentationController] Presenter server started successfully on port $_serverPort');
       _serverSocket!.listen((socket) {
         _connectedClients.add(socket);
         // Send initial handshake with all slides data
@@ -118,16 +281,19 @@ class PresentationController extends ChangeNotifier {
           cancelOnError: true,
         );
       });
-    } catch (_) {
-      // Server already running or port in use
+    } catch (e) {
+      debugPrint('[PresentationController] ERROR starting presenter server: $e');
     }
   }
 
   void _closePresenterServer() {
-    for (final client in _connectedClients) {
-      client.destroy();
-    }
+    final clients = List<Socket>.from(_connectedClients);
     _connectedClients.clear();
+    for (final client in clients) {
+      try {
+        client.destroy();
+      } catch (_) {}
+    }
     _serverSocket?.close();
     _serverSocket = null;
   }
@@ -139,14 +305,30 @@ class PresentationController extends ChangeNotifier {
     }
   }
 
+  void _broadcastReloadHandoff() {
+    if (_isAudienceProcess) return;
+    for (final client in _connectedClients) {
+      try {
+        final data = {
+          'type': 'reload_handoff',
+          'liveIndex': _liveIndex,
+          'presenterIndex': _presenterIndex,
+          'mode': _mode.index,
+          'bibleOverlay': _bibleOverlaySlide != null ? _slideToFullJson(_bibleOverlaySlide!) : null,
+        };
+        client.write(json.encode(data) + '\n');
+      } catch (_) {}
+    }
+  }
+
   void _sendHandshakeToSocket(Socket socket) {
     try {
       final data = {
-        'type': 'handshake',
+        'type': 'reload_handoff',
         'liveIndex': _liveIndex,
         'presenterIndex': _presenterIndex,
         'mode': _mode.index,
-        'slides': _slides.map((s) => s.toJson()).toList(),
+        'bibleOverlay': _bibleOverlaySlide != null ? _slideToFullJson(_bibleOverlaySlide!) : null,
       };
       socket.write(json.encode(data) + '\n');
     } catch (_) {}
@@ -159,42 +341,65 @@ class PresentationController extends ChangeNotifier {
         'liveIndex': _liveIndex,
         'presenterIndex': _presenterIndex,
         'mode': _mode.index,
+        'bibleOverlay': _bibleOverlaySlide != null ? _slideToFullJson(_bibleOverlaySlide!) : null,
       };
       socket.write(json.encode(data) + '\n');
     } catch (_) {}
   }
 
-  // --- Audience Client Logic ---
   void _connectToPresenterServer() async {
     _disconnectFromPresenterServer();
     try {
-      _audienceClientSocket = await Socket.connect('127.0.0.1', 4321);
+      debugPrint('[PresentationController] Connecting to presenter server at 127.0.0.1:$_serverPort...');
+      _audienceClientSocket = await Socket.connect('127.0.0.1', _serverPort);
+      debugPrint('[PresentationController] Connected successfully to presenter server!');
       utf8.decoder
           .bind(_audienceClientSocket!)
           .transform(const LineSplitter())
           .listen((line) {
         try {
           final data = json.decode(line) as Map<String, dynamic>;
-          if (data['type'] == 'handshake' || data['type'] == 'slides_update') {
+          final type = data['type'] as String? ?? '';
+          if (data.containsKey('bibleOverlay')) {
+            final bo = data['bibleOverlay'];
+            _bibleOverlaySlide = bo != null ? SlideData.fromJson(bo as Map<String, dynamic>) : null;
+          }
+          if (type == 'handshake' || type == 'slides_update') {
             final slidesList = (data['slides'] as List)
                 .map((s) => SlideData.fromJson(s as Map<String, dynamic>))
                 .toList();
             _slides = slidesList;
+            _liveIndex = (data['liveIndex'] as num?)?.toInt() ?? _liveIndex;
+            _presenterIndex = (data['presenterIndex'] as num?)?.toInt() ?? _presenterIndex;
+            _mode = PresentationMode.values[(data['mode'] as num?)?.toInt() ?? _mode.index];
+            notifyListeners();
+          } else if (type == 'reload_handoff') {
+            _reloadFromHandoffFile();
+          } else if (type == 'sync' || type == 'state') {
+            _liveIndex = (data['liveIndex'] as num?)?.toInt() ?? _liveIndex;
+            _presenterIndex = (data['presenterIndex'] as num?)?.toInt() ?? _presenterIndex;
+            _mode = PresentationMode.values[(data['mode'] as num?)?.toInt() ?? _mode.index];
+            notifyListeners();
           }
-          _liveIndex = data['liveIndex'] as int;
-          _presenterIndex = data['presenterIndex'] as int;
-          _mode = PresentationMode.values[data['mode'] as int];
-          notifyListeners();
         } catch (_) {}
+      }, onDone: () {
+        _disconnectFromPresenterServer();
+        _retryConnection();
+      }, onError: (err) {
+        _disconnectFromPresenterServer();
+        _retryConnection();
       });
     } catch (_) {
-      // Retry connection after a short delay
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (_isAudienceProcess && _audienceClientSocket == null) {
-          _connectToPresenterServer();
-        }
-      });
+      _retryConnection();
     }
+  }
+
+  void _retryConnection() {
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (_isAudienceProcess && _audienceClientSocket == null) {
+        _connectToPresenterServer();
+      }
+    });
   }
 
   void _disconnectFromPresenterServer() {
@@ -204,15 +409,48 @@ class PresentationController extends ChangeNotifier {
 
   Process? _audienceProcess;
 
+  // Path used to share slide data with the spawned audience process.
+  // Uses TEMP env var first (more reliable on Windows), falls back to Directory.systemTemp.
+  static String get _slidesHandoffPath {
+    final tmp = Platform.environment['TEMP'] ??
+        Platform.environment['TMP'] ??
+        Directory.systemTemp.path;
+    return '$tmp\\livedeck_handoff.json';
+  }
+
   // Spawns a completely separate borderless fullscreen native window (process)
-  void spawnAudienceWindow() {
+  void spawnAudienceWindow({bool startHidden = false}) {
     if (_isAudienceProcess) return;
+    
+    // Generate unique session ID for this presentation session
+    final sessionId = DateTime.now().microsecondsSinceEpoch.toString();
+    _currentSessionId = sessionId;
+    debugPrint('[PRESENTATION][session=$sessionId] START clicked (spawnAudienceWindow, startHidden: $startHidden)');
+
     if (_audienceProcess != null) {
-      // Already running, do not spawn another one
+      debugPrint('[PRESENTATION][session=$sessionId] Audience process already running (PID: ${_audienceProcess!.pid}). Requesting reload.');
+      if (!startHidden) {
+        setMode(PresentationMode.live);
+      }
+      _writeHandoffFile();
+      _broadcastReloadHandoff();
       return;
     }
+    
+    // ---- Write slide state to a shared temp file ----
+    _writeHandoffFile();
+
+    // Verify file properties on disk
+    final path = _slidesHandoffPath;
+    final exists = File(path).existsSync();
+    final size = File(path).lengthSync();
+    debugPrint('[PRESENTATION][session=$sessionId] File verification before process start: path=$path, exists=$exists, size=$size bytes');
+
     final display = DisplayManager.instance.selectedDisplay;
-    final args = ['--audience'];
+    final args = ['--audience', '--port', _serverPort.toString(), '--session-id', sessionId];
+    if (startHidden) {
+      args.add('--hidden');
+    }
     if (display != null) {
       args.addAll([
         '--offset-x',
@@ -225,17 +463,31 @@ class PresentationController extends ChangeNotifier {
         display.height.toString(),
       ]);
     }
+    
+    debugPrint('[PRESENTATION][session=$sessionId] Launching audience process: ${Platform.executable} with args: $args');
     Process.start(Platform.executable, args).then((process) {
       _audienceProcess = process;
+      debugPrint('[PRESENTATION][session=$sessionId] AUDIENCE_PROCESS_START: PID=${process.pid}');
+      
+      // Pipe outputs to presenter console for debugging
+      process.stdout.transform(utf8.decoder).listen((data) {
+        debugPrint('[AudienceProcess STDOUT][session=$sessionId] $data');
+      });
+      process.stderr.transform(utf8.decoder).listen((data) {
+        debugPrint('[AudienceProcess STDERR][session=$sessionId] $data');
+      });
+
       // Handle process termination to allow spawning again if closed
-      process.exitCode.then((_) {
+      process.exitCode.then((code) {
+        debugPrint('[PRESENTATION][session=$sessionId] AUDIENCE_PROCESS_EXIT: code=$code');
         _audienceProcess = null;
       });
-      // Force broadcast active slides to any connected clients including this newly spawned one
-      Future.delayed(const Duration(milliseconds: 600), () {
-        _broadcastSlides();
-      });
-    }).catchError((_) {
+      // Also broadcast via TCP at multiple intervals as a fallback.
+      Future.delayed(const Duration(milliseconds: 1500), () => _broadcastSlides());
+      Future.delayed(const Duration(milliseconds: 3000), () => _broadcastSlides());
+      Future.delayed(const Duration(milliseconds: 5000), () => _broadcastSlides());
+    }).catchError((err) {
+      debugPrint('[PRESENTATION][session=$sessionId] ERROR spawning audience window: $err');
       _audienceProcess = null;
     });
   }
@@ -345,11 +597,7 @@ class PresentationController extends ChangeNotifier {
   }
 
   void closeAudienceWindow() {
-    if (_audienceProcess != null) {
-      _audienceProcess!.kill();
-      _audienceProcess = null;
-      notifyListeners();
-    }
+    setMode(PresentationMode.locked);
   }
 
   @override

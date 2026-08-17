@@ -123,7 +123,8 @@ Win32Window::~Win32Window() {
 bool Win32Window::Create(const std::wstring& title,
                          const Point& origin,
                          const Size& size,
-                         bool is_audience) {
+                         bool is_audience,
+                         bool is_hidden) {
   Destroy();
 
   const wchar_t* window_class =
@@ -142,7 +143,10 @@ bool Win32Window::Create(const std::wstring& title,
   int h = Scale(size.height, scale_factor);
 
   if (is_audience) {
-    dwStyle = WS_POPUP | WS_VISIBLE;
+    dwStyle = WS_POPUP;
+    if (!is_hidden) {
+      dwStyle |= WS_VISIBLE;
+    }
     MONITORINFO mi = { sizeof(mi) };
     if (GetMonitorInfo(monitor, &mi)) {
       x = mi.rcMonitor.left;

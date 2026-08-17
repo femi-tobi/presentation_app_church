@@ -290,12 +290,13 @@ class _FullscreenPresenterPageState extends State<FullscreenPresenterPage> with 
                                           : Image.network(slide.logoUrl!, fit: BoxFit.contain),
                                     ),
 
-                                  // Content Layer
+                                   // Content Layer
                                   Positioned.fill(
                                     child: LayoutBuilder(
                                       builder: (context, constraints) {
                                         final double w = constraints.maxWidth;
                                         final double h = constraints.maxHeight;
+                                        final double scale = w / 960.0;
 
                                         // ── PPTX imported: full-fidelity shape renderer ──
                                         if (slide.pptxShapes.isNotEmpty) {
@@ -306,32 +307,30 @@ class _FullscreenPresenterPageState extends State<FullscreenPresenterPage> with 
                                           );
                                         }
 
-                                        // ── Normal slide: title/subtitle text overlay ──
-                                        final double left = slide.textX * w;
-                                        final double top  = slide.textY * h;
+                                        // ── Normal slide: same layout as preview canvas ──
                                         final hasSubtitle = slide.subtitle.trim().isNotEmpty;
 
                                         return Stack(
-                                          clipBehavior: Clip.none,
                                           children: [
                                             Positioned(
-                                              left: left,
-                                              top: top,
-                                              width: w,
-                                              height: h,
-                                              child: Padding(
-                                                padding: const EdgeInsets.symmetric(horizontal: 80.0, vertical: 48.0),
-                                                child: Column(
-                                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                                  mainAxisAlignment: MainAxisAlignment.center,
-                                                  children: [
+                                              left: (slide.textX * w) + (48.0 * scale),
+                                              top: (slide.textY * h) + (32.0 * scale),
+                                              width: w - (96.0 * scale),
+                                              height: h - (64.0 * scale),
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.center,
+                                                mainAxisAlignment: MainAxisAlignment.center,
+                                                children: [
+                                                  if (slide.title.isNotEmpty)
                                                     Text(
                                                       slide.title,
                                                       textAlign: slide.alignment,
+                                                      maxLines: 3,
+                                                      overflow: TextOverflow.ellipsis,
                                                       style: GoogleFonts.getFont(
                                                         AppSettings.instance.fontFamily,
                                                         textStyle: TextStyle(
-                                                          fontSize: 64,
+                                                          fontSize: slide.titleFontSize * scale,
                                                           color: Color(slide.textColorValue),
                                                           fontWeight: slide.isBold ? FontWeight.bold : FontWeight.normal,
                                                           fontStyle: slide.isItalic ? FontStyle.italic : FontStyle.normal,
@@ -345,44 +344,44 @@ class _FullscreenPresenterPageState extends State<FullscreenPresenterPage> with 
                                                         ),
                                                       ),
                                                     ),
-                                                    if (hasSubtitle) ...[
-                                                      if (!slide.id.startsWith('imported_')) ...[
-                                                        const SizedBox(height: 24),
-                                                        Container(
-                                                          width: 120,
-                                                          height: 4,
-                                                          decoration: BoxDecoration(
-                                                            color: SacredColors.secondaryContainer,
-                                                            borderRadius: BorderRadius.circular(999),
-                                                          ),
-                                                        ),
-                                                      ],
-                                                      const SizedBox(height: 24),
-                                                      Expanded(
-                                                        child: Center(
-                                                          child: Text(
-                                                            slide.subtitle,
-                                                            textAlign: slide.alignment,
-                                                            style: GoogleFonts.inter(
-                                                              textStyle: TextStyle(
-                                                                fontSize: 28,
-                                                                color: Color(slide.textColorValue).withValues(alpha: 0.9),
-                                                                fontStyle: slide.isItalic ? FontStyle.italic : FontStyle.normal,
-                                                                shadows: const [
-                                                                  Shadow(
-                                                                    color: Colors.black54,
-                                                                    offset: Offset(0, 4),
-                                                                    blurRadius: 8,
-                                                                  ),
-                                                                ],
-                                                              ),
+                                                  if (hasSubtitle && !slide.id.startsWith('imported_')) ...[
+                                                    SizedBox(height: 16.0 * scale),
+                                                    Container(
+                                                      width: 60.0 * scale,
+                                                      height: (2.0 * scale).clamp(2, 6),
+                                                      decoration: BoxDecoration(
+                                                        color: SacredColors.secondaryContainer,
+                                                        borderRadius: BorderRadius.circular(999),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                  if (hasSubtitle)
+                                                    SizedBox(height: 16.0 * scale),
+                                                  if (hasSubtitle)
+                                                    Expanded(
+                                                      child: SingleChildScrollView(
+                                                        child: Text(
+                                                          slide.subtitle,
+                                                          textAlign: slide.alignment,
+                                                          style: GoogleFonts.inter(
+                                                            textStyle: TextStyle(
+                                                              fontSize: slide.subtitleFontSize * scale,
+                                                              color: Color(slide.textColorValue).withValues(alpha: 0.9),
+                                                              fontStyle: slide.isItalic ? FontStyle.italic : FontStyle.normal,
+                                                              height: 1.4,
+                                                              shadows: const [
+                                                                Shadow(
+                                                                  color: Colors.black54,
+                                                                  offset: Offset(0, 4),
+                                                                  blurRadius: 8,
+                                                                ),
+                                                              ],
                                                             ),
                                                           ),
                                                         ),
                                                       ),
-                                                    ],
-                                                  ],
-                                                ),
+                                                    ),
+                                                ],
                                               ),
                                             ),
                                           ],

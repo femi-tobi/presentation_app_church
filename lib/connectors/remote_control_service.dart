@@ -171,6 +171,18 @@ class RemoteControlService {
         'id': p.id,
         'title': p.title,
       }).toList(),
+      'displays': DisplayManager.instance.displays.map((d) => {
+        'id': d.id,
+        'name': d.name,
+        'isPrimary': d.isPrimary,
+        'width': d.width,
+        'height': d.height,
+      }).toList(),
+      'selectedDisplayId': DisplayManager.instance.selectedDisplay?.id,
+      'bibleOverlay': controller.bibleOverlaySlide != null ? {
+        'title': controller.bibleOverlaySlide!.title,
+        'subtitle': controller.bibleOverlaySlide!.subtitle,
+      } : null,
     };
     ws.add(json.encode(state));
   }
@@ -196,6 +208,18 @@ class RemoteControlService {
         'colorValue': sec.colorValue,
         'slideIds': sec.slideIds,
       }).toList(),
+      'displays': DisplayManager.instance.displays.map((d) => {
+        'id': d.id,
+        'name': d.name,
+        'isPrimary': d.isPrimary,
+        'width': d.width,
+        'height': d.height,
+      }).toList(),
+      'selectedDisplayId': DisplayManager.instance.selectedDisplay?.id,
+      'bibleOverlay': controller.bibleOverlaySlide != null ? {
+        'title': controller.bibleOverlaySlide!.title,
+        'subtitle': controller.bibleOverlaySlide!.subtitle,
+      } : null,
     };
     final raw = json.encode(state);
     for (final ws in _webSockets) {
@@ -238,44 +262,62 @@ class RemoteControlService {
         case 'selectPresentation':
           final pId = data['id'] as String;
           final record = AppSettings.instance.recentPresentations.firstWhere((p) => p.id == pId);
+          // Load slides asynchronously from disk if they are not already loaded in memory
+          final slides = await AppSettings.instance.getSlidesForPresentation(pId);
           // Clone SlideData elements to prevent empty slide template generation
-          final clonedSlides = record.slides.map((s) => SlideData.fromJson(s.toJson())).toList();
+          final clonedSlides = slides.map((s) => SlideData.fromJson(s.toJson())).toList();
           final clonedSections = (record.sections ?? []).map((sec) => SlideSection.fromJson(sec.toJson())).toList();
           
           // Set active slide state on controller
+          controller.currentPresentationId = pId;
           controller.initialize(clonedSlides, clonedSections, 0, isAudience: false);
           
           // Also set settings active variables to match main app expectations
           AppSettings.instance.updateActiveSlides(clonedSlides);
           AppSettings.instance.activeSlideIndex = 0;
           break;
+        case 'selectDisplay':
+          final displayId = data['displayId'] as String;
+          DisplayManager.instance.selectDisplay(displayId);
+          broadcastStateChange();
+          break;
         case 'startPresentation':
           final activeSlides = controller.slides;
           // Ensure we have loaded a valid presentation from dropdown selection
           if (activeSlides.isNotEmpty) {
+            // Synchronously populate active settings state to avoid race condition with dashboard initialization
+            AppSettings.instance.updateActiveSlides(activeSlides);
+            AppSettings.instance.updateActiveSections(controller.sections);
+            AppSettings.instance.activeSlideIndex = 0;
+
             controller.setMode(PresentationMode.live);
             controller.spawnAudienceWindow();
             
             final nav = appNavigatorKey.currentState;
             if (nav != null) {
               // Try to find the selected presentation from list to get correct metadata
-              final currentActiveId = AppSettings.instance.recentPresentations.firstWhere(
-                (p) => p.slides.isNotEmpty && p.slides.first.id == activeSlides.first.id,
-                orElse: () => AppSettings.instance.recentPresentations.first,
-              ).id;
+              final currentActiveId = controller.currentPresentationId ?? 
+                  AppSettings.instance.recentPresentations.firstWhere(
+                    (p) => p.slides.isNotEmpty && p.slides.first.id == activeSlides.first.id,
+                    orElse: () => AppSettings.instance.recentPresentations.first,
+                  ).id;
               
               // 1. First push PreviewPage matching the selected slide deck
-              nav.push(MaterialPageRoute(
-                builder: (_) => PreviewPage(
+              nav.push(PageRouteBuilder(
+                pageBuilder: (context, animation, secondaryAnimation) => PreviewPage(
                   presentationId: currentActiveId,
                   initialSlides: activeSlides,
                   initialSections: controller.sections,
                 ),
+                transitionDuration: Duration.zero,
+                reverseTransitionDuration: Duration.zero,
               ));
               
               // 2. Next push the ProfessionalPresenterView (Presenter view dashboard window)
-              nav.push(MaterialPageRoute(
-                builder: (_) => const ProfessionalPresenterView(),
+              nav.push(PageRouteBuilder(
+                pageBuilder: (context, animation, secondaryAnimation) => const ProfessionalPresenterView(),
+                transitionDuration: Duration.zero,
+                reverseTransitionDuration: Duration.zero,
               ));
             }
           }
@@ -299,36 +341,18 @@ class RemoteControlService {
         case 'presentVerse':
           final verseText = data['text'] as String;
           final reference = data['reference'] as String;
-          
-          // Construct SlideData element representing the selected verse
-          final newSlide = SlideData(
-            id: 'verse_${DateTime.now().millisecondsSinceEpoch}',
-            title: reference,
-            subtitle: verseText,
-            imageUrl: '',
-            opacity: 0.85,
-            blur: 12.0,
-            bgColorValue: 0xFF2E0052,
-            textColorValue: 0xFFFFFFFF,
-          );
-          
-          // Push instantly to active slides deck
-          controller.initialize([newSlide], [], 0, isAudience: false);
-          AppSettings.instance.updateActiveSlides([newSlide]);
-          AppSettings.instance.activeSlideIndex = 0;
-          controller.setMode(PresentationMode.live);
-          controller.spawnAudienceWindow();
+          controller.showBibleOverlay(reference, verseText);
+          break;
+        case 'clearBibleOverlay':
+          controller.clearBibleOverlay();
           break;
         case 'endPresentation':
           // Close presenter view dialog stack on desktop app and exit fullscreen view
           final nav = appNavigatorKey.currentState;
-          if (nav != null && nav.canPop()) {
-            nav.pop(); // Pop FullscreenPresenterPage / ProfessionalPresenterView
-            if (nav.canPop()) {
-              nav.pop(); // Pop PreviewPage back to DashboardPage
-            }
+          if (nav != null) {
+            nav.popUntil((route) => route.isFirst);
           }
-          controller.setMode(PresentationMode.locked);
+          controller.closeAudienceWindow();
           break;
         case 'toggleLowerThird':
           final val = data['value'] as bool;
@@ -550,6 +574,13 @@ class RemoteControlService {
     </select>
   </div>
 
+  <div class="card">
+    <div class="card-title">📺 Select Output Display</div>
+    <select id="display-select" onchange="selectDisplay(this.value)">
+      <option value="">Detecting displays...</option>
+    </select>
+  </div>
+
   <div class="card" id="start-card" style="display:none;">
     <button class="btn btn-gold" onclick="send('startPresentation')">▶ Start Presentation</button>
   </div>
@@ -569,6 +600,7 @@ class RemoteControlService {
       <option value="niv">New International Version (NIV)</option>
     </select>
     <div id="bible-results" style="max-height: 200px; overflow-y: auto; border: 1px solid $outlineColor; border-radius: 8px; background: $surfaceColor; display: none;"></div>
+    <button class="btn btn-danger" id="dismiss-overlay-btn" onclick="send('clearBibleOverlay')" style="margin-top: 10px; display: none; background-color: #DC2626; color: white; border: none; font-size: 14px; font-weight: 700; padding: 12px; border-radius: 8px;">Dismiss Bible Overlay</button>
   </div>
 
   <div class="card">
@@ -626,6 +658,7 @@ class RemoteControlService {
         const data = JSON.parse(event.data);
         if (data.type === 'state') {
           populateDropdown(data.presentations || []);
+          populateDisplayDropdown(data.displays || [], data.selectedDisplayId);
           currentSections = data.sections || [];
           updateSlideList(data.slides || [], data.liveIndex);
           updateSwitches(data.useLowerThird, data.usePiP);
@@ -633,6 +666,7 @@ class RemoteControlService {
         } else if (data.type === 'update') {
           updateSwitches(data.useLowerThird, data.usePiP);
           updateModeUI(data.mode);
+          if (data.displays) populateDisplayDropdown(data.displays, data.selectedDisplayId);
           if (data.sections) currentSections = data.sections;
           if (data.slides) {
             updateSlideList(data.slides, data.liveIndex);
@@ -641,6 +675,16 @@ class RemoteControlService {
           }
         } else if (data.type === 'searchResults') {
           displaySearchResults(data.results || []);
+        }
+
+        // Update overlay button visibility
+        const dismissBtn = document.getElementById('dismiss-overlay-btn');
+        if (dismissBtn) {
+          if (data.bibleOverlay) {
+            dismissBtn.style.display = 'block';
+          } else {
+            dismissBtn.style.display = 'none';
+          }
         }
       };
     }
@@ -658,6 +702,21 @@ class RemoteControlService {
         opt.innerText = p.title;
         select.appendChild(opt);
       });
+    }
+    function populateDisplayDropdown(displays, selectedId) {
+      const select = document.getElementById('display-select');
+      if (!select) return;
+      select.innerHTML = '';
+      displays.forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d.id;
+        opt.innerText = d.name + (d.isPrimary ? ' (Primary)' : '') + ' [' + d.width + 'x' + d.height + ']';
+        if (d.id === selectedId) opt.selected = true;
+        select.appendChild(opt);
+      });
+    }
+    function selectDisplay(displayId) {
+      send('selectDisplay', { displayId });
     }
     function selectPresentation(id) {
       const startCard = document.getElementById('start-card');

@@ -66,6 +66,9 @@ class _PreviewPageState extends State<PreviewPage> {
   bool _applyToAll = false;
   int _sidebarTab = 0; // 0: Outline, 1: Slide Thumbnails
   final Set<int> _selectedShapeIndices = {};
+  double _leftSidebarWidth = 300.0;
+  double _rightSidebarWidth = 320.0;
+  double _canvasMaxWidth = 900.0;
 
   void _applyActiveStylesToAll() {
     if (_slides.isEmpty) return;
@@ -1022,6 +1025,7 @@ class _PreviewPageState extends State<PreviewPage> {
     );
   }
 
+  @override
   Widget build(BuildContext context) {
     final double screenWidth = MediaQuery.of(context).size.width;
     final bool isDesktop = screenWidth >= 1024;
@@ -1121,7 +1125,7 @@ class _PreviewPageState extends State<PreviewPage> {
             // Left Panel (Tabbed: Outline ↔ Slides)
             if (isDesktop)
               SizedBox(
-                width: 300,
+                width: _leftSidebarWidth,
                 child: Column(
                   children: [
                     // Tab toggle row
@@ -1303,6 +1307,15 @@ class _PreviewPageState extends State<PreviewPage> {
                   ],
                 ),
               ),
+            if (isDesktop)
+              _ResizableDragHandle(
+                onDragUpdate: (details) {
+                  setState(() {
+                    _leftSidebarWidth = (_leftSidebarWidth + details.delta.dx)
+                        .clamp(150.0, 500.0);
+                  });
+                },
+              ),
 
             // Middle Workspace (Canvas)
             Expanded(
@@ -1339,6 +1352,7 @@ class _PreviewPageState extends State<PreviewPage> {
                           },
                         )
                       : _PropertiesSidebar(
+                          width: screenWidth,
                           activeSlide: activeSlide,
                           titleController: _titleController,
                           subtitleController: _subtitleController,
@@ -1431,6 +1445,12 @@ class _PreviewPageState extends State<PreviewPage> {
                           },
                         ))
                   : _LiveWorkspaceCanvas(
+                      canvasMaxWidth: _canvasMaxWidth,
+                      onCanvasMaxWidthChanged: (val) {
+                        setState(() {
+                          _canvasMaxWidth = val;
+                        });
+                      },
                       activeSlide: activeSlide,
                       slideCount: _slides.length,
                       activeIndex: _activeSlideIndex,
@@ -1506,10 +1526,20 @@ class _PreviewPageState extends State<PreviewPage> {
                       },
                     ),
             ),
+            if (isDesktop)
+              _ResizableDragHandle(
+                onDragUpdate: (details) {
+                  setState(() {
+                    _rightSidebarWidth = (_rightSidebarWidth - details.delta.dx)
+                        .clamp(200.0, 600.0);
+                  });
+                },
+              ),
 
             // Right Panel (Properties)
             if (isDesktop)
               _PropertiesSidebar(
+                width: _rightSidebarWidth,
                 activeSlide: activeSlide,
                 titleController: _titleController,
                 subtitleController: _subtitleController,
@@ -1631,7 +1661,7 @@ class _PreviewPageState extends State<PreviewPage> {
             : null,
         floatingActionButton: Padding(
           padding: EdgeInsets.only(
-            right: isDesktop ? 340.0 : 0.0,
+            right: isDesktop ? _rightSidebarWidth + 20.0 : 0.0,
           ),
           child: _FloatingExportFAB(),
         ),
@@ -3540,12 +3570,16 @@ class _LiveWorkspaceCanvas extends StatelessWidget {
   final Function(int)? onShapePositionChangedEnd;
   final Set<int> selectedShapeIndices;
   final Function(int)? onShapeTap;
+  final double canvasMaxWidth;
+  final ValueChanged<double> onCanvasMaxWidthChanged;
 
   const _LiveWorkspaceCanvas({
     required this.activeSlide,
     required this.slideCount,
     required this.activeIndex,
     required this.onNavigate,
+    required this.canvasMaxWidth,
+    required this.onCanvasMaxWidthChanged,
     this.onLogoPositionChanged,
     this.onTextPositionChanged,
     this.onShapePositionChanged,
@@ -3571,7 +3605,7 @@ class _LiveWorkspaceCanvas extends StatelessWidget {
             padding: EdgeInsets.all(40.0),
             child: Center(
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 900),
+                constraints: BoxConstraints(maxWidth: canvasMaxWidth),
                 child: AspectRatio(
                   aspectRatio: 16 / 9,
                   child: Container(
@@ -3724,6 +3758,45 @@ class _LiveWorkspaceCanvas extends StatelessWidget {
                   SizedBox(width: 6),
                   Text(
                     '4K Resolution (3840x2160)',
+                    style: SacredTypography.labelSm(context).copyWith(
+                      color: SacredColors.outline,
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(width: 24),
+              Row(
+                children: [
+                  Icon(Icons.zoom_in, color: SacredColors.outline, size: 16),
+                  SizedBox(width: 6),
+                  Text(
+                    'Canvas Size:',
+                    style: SacredTypography.labelSm(context).copyWith(
+                      color: SacredColors.outline,
+                    ),
+                  ),
+                  SizedBox(
+                    width: 120,
+                    height: 24,
+                    child: SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        trackHeight: 2,
+                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                        overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+                        activeTrackColor: SacredColors.primary,
+                        inactiveTrackColor: SacredColors.outlineVariant,
+                        thumbColor: SacredColors.primary,
+                      ),
+                      child: Slider(
+                        value: canvasMaxWidth,
+                        min: 400.0,
+                        max: 1400.0,
+                        onChanged: onCanvasMaxWidthChanged,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    '${(canvasMaxWidth / 900 * 100).toInt()}%',
                     style: SacredTypography.labelSm(context).copyWith(
                       color: SacredColors.outline,
                     ),
@@ -3989,6 +4062,7 @@ class _DraggableLogoLayerState extends State<_DraggableLogoLayer> {
 
 
 class _PropertiesSidebar extends StatefulWidget {
+  final double width;
   final SlideData activeSlide;
   final TextEditingController titleController;
   final TextEditingController subtitleController;
@@ -4024,6 +4098,7 @@ class _PropertiesSidebar extends StatefulWidget {
 
   const _PropertiesSidebar({
     super.key,
+    required this.width,
     required this.activeSlide,
     required this.titleController,
     required this.subtitleController,
@@ -5605,7 +5680,7 @@ class _PropertiesSidebarState extends State<_PropertiesSidebar> with TickerProvi
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 320,
+      width: widget.width,
       height: double.infinity,
       decoration: BoxDecoration(
         color: SacredColors.surface.withOpacity(0.7),
@@ -6688,6 +6763,53 @@ class _BackgroundColorSelectorState extends State<_BackgroundColorSelector> {
           ],
         ),
       ],
+    );
+  }
+}
+
+class _ResizableDragHandle extends StatefulWidget {
+  final ValueChanged<DragUpdateDetails> onDragUpdate;
+
+  const _ResizableDragHandle({
+    required this.onDragUpdate,
+  });
+
+  @override
+  State<_ResizableDragHandle> createState() => _ResizableDragHandleState();
+}
+
+class _ResizableDragHandleState extends State<_ResizableDragHandle> {
+  bool _isHovered = false;
+  bool _isDragging = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final activeColor = SacredColors.primary;
+    final idleColor = SacredColors.outlineVariant;
+    
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeLeftRight,
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onHorizontalDragStart: (_) => setState(() => _isDragging = true),
+        onHorizontalDragEnd: (_) => setState(() => _isDragging = false),
+        onHorizontalDragCancel: () => setState(() => _isDragging = false),
+        onHorizontalDragUpdate: widget.onDragUpdate,
+        child: Container(
+          width: 8,
+          color: Colors.transparent,
+          child: Center(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              width: (_isHovered || _isDragging) ? 3 : 1,
+              height: double.infinity,
+              color: (_isHovered || _isDragging) ? activeColor : idleColor,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

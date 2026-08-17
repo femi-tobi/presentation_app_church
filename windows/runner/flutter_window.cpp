@@ -74,6 +74,13 @@ bool FlutterWindow::OnCreate() {
                          SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
           }
           result->Success(flutter::EncodableValue(true));
+        } else if (call.method_name() == "showWindow") {
+          ShowWindow(hwnd, SW_SHOW);
+          SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+          result->Success(flutter::EncodableValue(true));
+        } else if (call.method_name() == "hideWindow") {
+          ShowWindow(hwnd, SW_HIDE);
+          result->Success(flutter::EncodableValue(true));
         } else if (call.method_name() == "getDisplays") {
           struct MonitorData {
             std::wstring name;

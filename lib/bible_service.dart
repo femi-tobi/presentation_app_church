@@ -407,6 +407,112 @@ class BibleService {
 
     return results;
   }
+
+  /// Finds the next or previous verse in the Bible relative to the current book, chapter, and verse.
+  Future<Map<String, dynamic>?> getNextOrPrevVerse({
+    required String translation,
+    required String bookName,
+    required int chapterNum,
+    required int verseNum,
+    required bool next,
+  }) async {
+    final book = await loadBook(translation, bookName);
+    if (book == null) return null;
+
+    final chIdx = book.chapters.indexWhere((c) => int.tryParse(c.chapterNumber) == chapterNum);
+    if (chIdx == -1) return null;
+
+    final currentChapter = book.chapters[chIdx];
+    final vIdx = currentChapter.verses.indexWhere((v) => int.tryParse(v.verseNumber) == verseNum);
+    if (vIdx == -1) return null;
+
+    if (next) {
+      if (vIdx + 1 < currentChapter.verses.length) {
+        final nextVerse = currentChapter.verses[vIdx + 1];
+        return {
+          'book': bookName,
+          'chapter': chapterNum.toString(),
+          'verse': nextVerse.verseNumber,
+          'text': nextVerse.text,
+        };
+      } else {
+        // Go to next chapter, first verse
+        if (chIdx + 1 < book.chapters.length) {
+          final nextChapter = book.chapters[chIdx + 1];
+          if (nextChapter.verses.isNotEmpty) {
+            final nextVerse = nextChapter.verses.first;
+            return {
+              'book': bookName,
+              'chapter': nextChapter.chapterNumber,
+              'verse': nextVerse.verseNumber,
+              'text': nextVerse.text,
+            };
+          }
+        } else {
+          // Go to next book
+          final books = await getBooks(translation);
+          final bookIdx = books.indexWhere((b) => b.toLowerCase() == bookName.toLowerCase());
+          if (bookIdx != -1 && bookIdx + 1 < books.length) {
+            final nextBookName = books[bookIdx + 1];
+            final nextBook = await loadBook(translation, nextBookName);
+            if (nextBook != null && nextBook.chapters.isNotEmpty && nextBook.chapters.first.verses.isNotEmpty) {
+              final nextVerse = nextBook.chapters.first.verses.first;
+              return {
+                'book': nextBookName,
+                'chapter': nextBook.chapters.first.chapterNumber,
+                'verse': nextVerse.verseNumber,
+                'text': nextVerse.text,
+              };
+            }
+          }
+        }
+      }
+    } else {
+      // Previous verse
+      if (vIdx - 1 >= 0) {
+        final prevVerse = currentChapter.verses[vIdx - 1];
+        return {
+          'book': bookName,
+          'chapter': chapterNum.toString(),
+          'verse': prevVerse.verseNumber,
+          'text': prevVerse.text,
+        };
+      } else {
+        // Go to previous chapter, last verse
+        if (chIdx - 1 >= 0) {
+          final prevChapter = book.chapters[chIdx - 1];
+          if (prevChapter.verses.isNotEmpty) {
+            final prevVerse = prevChapter.verses.last;
+            return {
+              'book': bookName,
+              'chapter': prevChapter.chapterNumber,
+              'verse': prevVerse.verseNumber,
+              'text': prevVerse.text,
+            };
+          }
+        } else {
+          // Go to previous book, last chapter, last verse
+          final books = await getBooks(translation);
+          final bookIdx = books.indexWhere((b) => b.toLowerCase() == bookName.toLowerCase());
+          if (bookIdx != -1 && bookIdx - 1 >= 0) {
+            final prevBookName = books[bookIdx - 1];
+            final prevBook = await loadBook(translation, prevBookName);
+            if (prevBook != null && prevBook.chapters.isNotEmpty && prevBook.chapters.last.verses.isNotEmpty) {
+              final prevChapter = prevBook.chapters.last;
+              final prevVerse = prevChapter.verses.last;
+              return {
+                'book': prevBookName,
+                'chapter': prevChapter.chapterNumber,
+                'verse': prevVerse.verseNumber,
+                'text': prevVerse.text,
+              };
+            }
+          }
+        }
+      }
+    }
+    return null;
+  }
 }
 
 /// Helper top-level function to parse a Bible book in a background isolate

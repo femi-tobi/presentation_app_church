@@ -23,6 +23,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
       GetCommandLineArguments();
 
   bool is_audience = false;
+  bool is_hidden = false;
   int offset_x = 10;
   int offset_y = 10;
   int width = 1280;
@@ -31,6 +32,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   for (size_t i = 0; i < command_line_arguments.size(); ++i) {
     if (command_line_arguments[i] == "--audience") {
       is_audience = true;
+    } else if (command_line_arguments[i] == "--hidden") {
+      is_hidden = true;
     } else if (command_line_arguments[i] == "--offset-x" && i + 1 < command_line_arguments.size()) {
       try { offset_x = std::stoi(command_line_arguments[i + 1]); } catch (...) {}
     } else if (command_line_arguments[i] == "--offset-y" && i + 1 < command_line_arguments.size()) {
@@ -47,7 +50,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   FlutterWindow window(project);
   Win32Window::Point origin(offset_x, offset_y);
   Win32Window::Size size(width, height);
-  if (!window.Create(L"presentation_app", origin, size, is_audience)) {
+  if (!window.Create(L"presentation_app", origin, size, is_audience, is_hidden)) {
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);
