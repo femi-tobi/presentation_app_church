@@ -1,8 +1,12 @@
 import 'dart:ui';
+import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'preview_page.dart';
 import 'settings_state.dart';
+import 'presentation_controller.dart';
 import 'connectivity_badge.dart';
 import 'settings_page.dart';
 import 'create_presentation_page.dart';
@@ -253,55 +257,62 @@ class _DashboardPageState extends State<DashboardPage> {
               )
             : null,
         body: SafeArea(
-          child: Row(
+          child: Column(
             children: [
-              if (isDesktop)
-                SacredSidebar(
-                  activeTab: _activeTab,
-                  onTabSelected: _onTabSelected,
-                  isDrawer: false,
-                ),
               Expanded(
-                child: _activeTab == 'Settings'
-                    ? SettingsPage(scaffoldKey: _scaffoldKey)
-                    : (_activeTab == 'Help'
-                        ? DocsPage(scaffoldKey: _scaffoldKey)
-                        : (_activeTab == 'Templates'
-                            ? TemplatesPage(scaffoldKey: _scaffoldKey)
-                            : (_activeTab == 'Library'
-                                ? LibraryPage(scaffoldKey: _scaffoldKey)
-                                : (_activeTab == 'Bible'
-                                    ? BibleShowPage(scaffoldKey: _scaffoldKey)
-                                    : (_activeTab == 'Timer'
-                                        ? TimerPage(scaffoldKey: _scaffoldKey)
-                                        : Column(
-                            children: [
-                              TopNavBar(
-                                scaffoldKey: _scaffoldKey,
-                                showMenuButton: !isDesktop,
-                              ),
-                              Expanded(
-                                child: SingleChildScrollView(
-                                  physics: const BouncingScrollPhysics(),
-                                  child: Padding(
-                                    padding: EdgeInsets.symmetric(
-                                      horizontal: screenWidth > 768 ? 40.0 : 16.0,
-                                      vertical: 24.0,
+                child: Row(
+                  children: [
+                    if (isDesktop)
+                      SacredSidebar(
+                        activeTab: _activeTab,
+                        onTabSelected: _onTabSelected,
+                        isDrawer: false,
+                      ),
+                    Expanded(
+                      child: _activeTab == 'Settings'
+                          ? SettingsPage(scaffoldKey: _scaffoldKey)
+                          : (_activeTab == 'Help'
+                              ? DocsPage(scaffoldKey: _scaffoldKey)
+                              : (_activeTab == 'Templates'
+                                  ? TemplatesPage(scaffoldKey: _scaffoldKey)
+                                  : (_activeTab == 'Library'
+                                      ? LibraryPage(scaffoldKey: _scaffoldKey)
+                                      : (_activeTab == 'Bible'
+                                          ? BibleShowPage(scaffoldKey: _scaffoldKey)
+                                          : (_activeTab == 'Timer'
+                                              ? TimerPage(scaffoldKey: _scaffoldKey)
+                                              : Column(
+                                  children: [
+                                    TopNavBar(
+                                      scaffoldKey: _scaffoldKey,
+                                      showMenuButton: !isDesktop,
                                     ),
-                                    child: Center(
-                                      child: ConstrainedBox(
-                                        constraints: const BoxConstraints(maxWidth: 1400),
-                                        child: MainCanvasContent(
-                                          screenWidth: screenWidth,
-                                          onViewAll: () => _onTabSelected('Library'),
+                                    Expanded(
+                                      child: SingleChildScrollView(
+                                        physics: const BouncingScrollPhysics(),
+                                        child: Padding(
+                                          padding: EdgeInsets.symmetric(
+                                            horizontal: screenWidth > 768 ? 40.0 : 16.0,
+                                            vertical: 24.0,
+                                          ),
+                                          child: Center(
+                                            child: ConstrainedBox(
+                                              constraints: const BoxConstraints(maxWidth: 1400),
+                                              child: MainCanvasContent(
+                                                screenWidth: screenWidth,
+                                                onViewAll: () => _onTabSelected('Library'),
+                                              ),
+                                            ),
+                                          ),
                                         ),
                                       ),
                                     ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ))))))),
+                                  ],
+                                ))))))),
+                  ],
+                ),
+              ),
+              const _BottomStatusBar(),
             ],
           ),
         ),
@@ -2221,6 +2232,261 @@ class _HoverScaleButtonState extends State<_HoverScaleButton> {
           child: widget.child,
         ),
       ),
+    );
+  }
+}
+
+class _BottomStatusBar extends StatefulWidget {
+  const _BottomStatusBar();
+
+  @override
+  State<_BottomStatusBar> createState() => _BottomStatusBarState();
+}
+
+class _BottomStatusBarState extends State<_BottomStatusBar> with SingleTickerProviderStateMixin {
+  late Ticker _ticker;
+  int _frameCount = 0;
+  double _fps = 60.0;
+  DateTime _lastFpsTime = DateTime.now();
+
+  // Real CPU tracking
+  double _cpuPercent = 0.0;
+  double _lastCpuSeconds = -1.0;
+  DateTime _lastCpuTime = DateTime.now();
+  late Timer _cpuTimer;
+
+  @override
+  void initState() {
+    super.initState();
+
+    // FPS counter via Ticker
+    _ticker = createTicker((elapsed) {
+      _frameCount++;
+      final now = DateTime.now();
+      final diff = now.difference(_lastFpsTime).inMilliseconds;
+      if (diff >= 1000) {
+        if (mounted) {
+          setState(() {
+            _fps = (_frameCount * 1000.0) / diff;
+            _frameCount = 0;
+            _lastFpsTime = now;
+          });
+        }
+      }
+    });
+    _ticker.start();
+
+    // Seed the first CPU baseline immediately, then poll every 1 second
+    _pollCpu();
+    _cpuTimer = Timer.periodic(const Duration(seconds: 1), (_) => _pollCpu());
+  }
+
+  /// Reads CPU time from Windows via wmic in 100-nanosecond ticks
+  /// (KernelModeTime + UserModeTime) — the same raw values Windows Task
+  /// Manager uses — and computes a percentage delta:
+  ///   cpu% = (ticksDelta / (elapsedMs × 10_000)) / numCores × 100
+  Future<void> _pollCpu() async {
+    try {
+      final currentPid = pid; // dart:io global
+      // Record wall-clock time BEFORE the query so tool startup time is included
+      // in the elapsed window correctly.
+      final queryStart = DateTime.now();
+
+      final result = await Process.run(
+        'wmic',
+        [
+          'process', 'where', 'processid=$currentPid',
+          'get', 'KernelModeTime,UserModeTime', '/format:value',
+        ],
+        runInShell: false,
+      );
+
+      if (result.exitCode == 0) {
+        final output = result.stdout.toString();
+        // Parse KernelModeTime=<value> and UserModeTime=<value>
+        int parseTicks(String key) {
+          final match = RegExp('$key=(\\d+)').firstMatch(output);
+          return match != null ? int.tryParse(match.group(1)!) ?? 0 : 0;
+        }
+        final kernelTicks = parseTicks('KernelModeTime');
+        final userTicks   = parseTicks('UserModeTime');
+        final totalTicks  = kernelTicks + userTicks;
+
+        final now = DateTime.now();
+        if (_lastCpuSeconds >= 0) {
+          // elapsedMs measured from BEFORE the query started so startup time
+          // is already accounted for in the denominator.
+          final elapsedMs = now.difference(_lastCpuTime).inMilliseconds;
+          final ticksDelta = (totalTicks - _lastCpuSeconds * 10000000).clamp(0.0, double.infinity);
+          final numCores = Platform.numberOfProcessors;
+          if (elapsedMs > 0) {
+            // 1 ms = 10,000 × 100ns ticks
+            final percent = (ticksDelta / (elapsedMs * 10000.0) / numCores * 100.0)
+                .clamp(0.0, 100.0);
+            if (mounted) setState(() => _cpuPercent = percent);
+          }
+        }
+        // Store totalTicks as seconds (÷ 10_000_000) so the field type stays double
+        _lastCpuSeconds = totalTicks / 10000000.0;
+        _lastCpuTime = queryStart; // use pre-query timestamp as baseline
+      }
+    } catch (_) {
+      // Silently ignore if process query fails
+    }
+  }
+
+  @override
+  void dispose() {
+    _ticker.dispose();
+    _cpuTimer.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final double ramMb = ProcessInfo.currentRss / (1024 * 1024);
+    
+    return ListenableBuilder(
+      listenable: PresentationController.instance,
+      builder: (context, _) {
+        final pc = PresentationController.instance;
+        final clients = pc.connectedClientsCount;
+        final port = pc.serverPort;
+
+        return Container(
+          height: 28,
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: const Color(0xFF0C0D12),
+            border: Border(
+              top: BorderSide(
+                color: Colors.white.withValues(alpha: 0.08),
+                width: 1.0,
+              ),
+            ),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              // Left: Connection info
+              Row(
+                children: [
+                  Icon(
+                    Icons.sensors,
+                    size: 13,
+                    color: clients > 0 ? Colors.greenAccent : Colors.white54,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'PORT: $port',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                  const VerticalDivider(width: 16, indent: 6, endIndent: 6, color: Colors.white12),
+                  Icon(
+                    Icons.people_outline,
+                    size: 13,
+                    color: clients > 0 ? Colors.greenAccent : Colors.white54,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'CLIENTS: $clients',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                  if (pc.isAudienceProcess) ...[
+                    const VerticalDivider(width: 16, indent: 6, endIndent: 6, color: Colors.white12),
+                    const Icon(
+                      Icons.tv,
+                      size: 13,
+                      color: Colors.blueAccent,
+                    ),
+                    const SizedBox(width: 4),
+                    const Text(
+                      'AUDIENCE WINDOW',
+                      style: TextStyle(
+                        color: Colors.blueAccent,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              
+              // Right: CPU, RAM & FPS
+              Row(
+                children: [
+                  // CPU load
+                  Icon(
+                    Icons.developer_board,
+                    size: 12,
+                    color: _cpuPercent > 70
+                        ? Colors.redAccent
+                        : _cpuPercent > 35
+                            ? Colors.orangeAccent
+                            : Colors.greenAccent,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'CPU: ${_cpuPercent.toStringAsFixed(1)}%',
+                    style: TextStyle(
+                      color: _cpuPercent > 70
+                          ? Colors.redAccent
+                          : Colors.white70,
+                      fontSize: 10,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                  const VerticalDivider(width: 16, indent: 6, endIndent: 6, color: Colors.white12),
+                  
+                  // Memory usage
+                  const Icon(
+                    Icons.memory,
+                    size: 12,
+                    color: Colors.cyanAccent,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'RAM: ${ramMb.toStringAsFixed(1)} MB',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 10,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                  const VerticalDivider(width: 16, indent: 6, endIndent: 6, color: Colors.white12),
+                  
+                  // FPS counter
+                  Icon(
+                    Icons.speed,
+                    size: 12,
+                    color: _fps > 50 ? Colors.greenAccent : Colors.yellowAccent,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${_fps.toStringAsFixed(1)} FPS',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 10,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

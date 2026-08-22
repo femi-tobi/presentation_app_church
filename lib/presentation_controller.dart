@@ -174,13 +174,18 @@ class PresentationController extends ChangeNotifier {
       spawnAudienceWindow(startHidden: true);
     }
 
-    notifyListeners();
+    // Defer notifyListeners to the next microtask so we never call it
+    // during a widget build phase (which would throw markNeedsBuild assertion).
+    Future.microtask(notifyListeners);
   }
 
   void updateSlides(List<SlideData> slidesList) {
     _slides = List.from(slidesList);
-    _broadcastSlides();
     notifyListeners();
+    // Defer the heavy file write off the current synchronous call stack so the
+    // UI (e.g. the Present dialog) can render its first frame before we start
+    // any work. This prevents the "Not Responding" freeze on low-RAM systems.
+    Future.microtask(_broadcastSlides);
   }
 
   Future<void> _broadcastSlides() async {
@@ -222,18 +227,45 @@ class PresentationController extends ChangeNotifier {
 
   Future<void> _writeHandoffFile() async {
     try {
-      final handoff = {
-        'liveIndex': _liveIndex,
-        'presenterIndex': _presenterIndex,
-        'mode': _mode.index,
-        'slides': _slides.map(_slideToFullJson).toList(),
-        'bibleOverlay': _bibleOverlaySlide != null ? _slideToFullJson(_bibleOverlaySlide!) : null,
-        'isBibleFullscreen': _isBibleFullscreen,
-        'bibleOverlayTarget': _bibleOverlayTarget,
-      };
       final path = _slidesHandoffPath;
-      final jsonStr = json.encode(handoff);
-      
+      final liveIndexVal = _liveIndex;
+      final presenterIndexVal = _presenterIndex;
+      final modeVal = _mode.index;
+      final isBibleFullscreenVal = _isBibleFullscreen;
+      final bibleOverlayTargetVal = _bibleOverlayTarget;
+
+      // Serialize slides in small chunks, yielding to the event loop between
+      // each chunk so the UI thread can process frames and stay responsive on
+      // low-RAM / low-core machines.
+      const int chunkSize = 2;
+      final List<Map<String, dynamic>> serializedSlides = [];
+      for (int i = 0; i < _slides.length; i += chunkSize) {
+        final end = (i + chunkSize).clamp(0, _slides.length);
+        for (int j = i; j < end; j++) {
+          serializedSlides.add(_slideToFullJson(_slides[j]));
+        }
+        // Yield between chunks so frames can paint
+        if (end < _slides.length) {
+          await Future<void>.delayed(Duration.zero);
+        }
+      }
+      final Map<String, dynamic>? serializedBible =
+          _bibleOverlaySlide != null ? _slideToFullJson(_bibleOverlaySlide!) : null;
+
+      // Perform the heavy JSON string encoding in the background isolate
+      final jsonStr = await Isolate.run(() {
+        final handoff = {
+          'liveIndex': liveIndexVal,
+          'presenterIndex': presenterIndexVal,
+          'mode': modeVal,
+          'slides': serializedSlides,
+          'bibleOverlay': serializedBible,
+          'isBibleFullscreen': isBibleFullscreenVal,
+          'bibleOverlayTarget': bibleOverlayTargetVal,
+        };
+        return json.encode(handoff);
+      });
+
       await PerformanceTracker.trackAsync('Handoff write', () async {
         await File(path).writeAsString(jsonStr);
       });

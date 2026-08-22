@@ -40,11 +40,6 @@ class _ProfessionalPresenterViewState extends State<ProfessionalPresenterView> {
   @override
   void initState() {
     super.initState();
-    PresentationController.instance.initialize(
-      AppSettings.instance.activeSlides,
-      AppSettings.instance.activeSections,
-      AppSettings.instance.activeSlideIndex,
-    );
     PresentationController.instance.addListener(_onControllerChanged);
     DisplayManager.instance.addListener(_onDisplayChanged);
     _focusNode.requestFocus();
@@ -54,6 +49,17 @@ class _ProfessionalPresenterViewState extends State<ProfessionalPresenterView> {
       if (mounted && PresentationController.instance.mode == PresentationMode.live) {
         setState(() => _liveDotVisible = !_liveDotVisible);
       }
+    });
+
+    // Defer initialize() to after the first frame so notifyListeners() inside
+    // it doesn't fire during a build pass and cause the markNeedsBuild error.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      PresentationController.instance.initialize(
+        AppSettings.instance.activeSlides,
+        AppSettings.instance.activeSections,
+        AppSettings.instance.activeSlideIndex,
+      );
     });
 
     DisplayManager.instance.log('Presenter View initialized and synchronized.');
