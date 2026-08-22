@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'dashboard_page.dart';
 import 'settings_state.dart';
 import 'presentation_controller.dart';
+import 'auto_update_service.dart';
 import 'audience_window.dart';
 import 'connectors/remote_control_service.dart';
 
@@ -103,6 +104,8 @@ void main(List<String> args) async {
   } else {
     // Start Remote Control server on startup
     RemoteControlService.instance.start().catchError((_) {});
+    // Start silent background update checker (presenter process only)
+    AutoUpdateService.instance.start();
   }
 
   runApp(MyApp(isAudience: isAudience));

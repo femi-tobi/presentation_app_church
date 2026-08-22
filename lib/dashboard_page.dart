@@ -18,6 +18,7 @@ import 'bible_show_page.dart';
 import 'timer_page.dart';
 import 'onboarding_dialog.dart';
 import 'feedback_dialog.dart';
+import 'auto_update_service.dart';
 import 'docs_page.dart';
 
 
@@ -2345,13 +2346,17 @@ class _BottomStatusBarState extends State<_BottomStatusBar> with SingleTickerPro
   @override
   Widget build(BuildContext context) {
     final double ramMb = ProcessInfo.currentRss / (1024 * 1024);
-    
+
     return ListenableBuilder(
-      listenable: PresentationController.instance,
+      listenable: Listenable.merge([
+        PresentationController.instance,
+        AutoUpdateService.instance,
+      ]),
       builder: (context, _) {
         final pc = PresentationController.instance;
         final clients = pc.connectedClientsCount;
         final port = pc.serverPort;
+        final upd = AutoUpdateService.instance.state;
 
         return Container(
           height: 28,
@@ -2422,7 +2427,84 @@ class _BottomStatusBarState extends State<_BottomStatusBar> with SingleTickerPro
                   ],
                 ],
               ),
-              
+
+              // Center: Update notification chip
+              if (upd.status == UpdateStatus.downloading ||
+                  upd.status == UpdateStatus.readyToInstall ||
+                  upd.status == UpdateStatus.available)
+                GestureDetector(
+                  onTap: upd.status == UpdateStatus.readyToInstall
+                      ? () => AutoUpdateService.instance.installAndRestart()
+                      : null,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: upd.status == UpdateStatus.readyToInstall
+                          ? Colors.greenAccent.withValues(alpha: 0.15)
+                          : Colors.blueAccent.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                        color: upd.status == UpdateStatus.readyToInstall
+                            ? Colors.greenAccent.withValues(alpha: 0.5)
+                            : Colors.blueAccent.withValues(alpha: 0.3),
+                        width: 0.8,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (upd.status == UpdateStatus.downloading) ...[
+                          SizedBox(
+                            width: 8,
+                            height: 8,
+                            child: CircularProgressIndicator(
+                              value: upd.downloadProgress,
+                              strokeWidth: 1.5,
+                              color: Colors.blueAccent,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Downloading v${upd.info?.latestVersion ?? ''} '
+                            '${(upd.downloadProgress * 100).toStringAsFixed(0)}%',
+                            style: const TextStyle(
+                              color: Colors.blueAccent,
+                              fontSize: 10,
+                              fontFamily: 'monospace',
+                            ),
+                          ),
+                        ] else if (upd.status == UpdateStatus.readyToInstall) ...[
+                          const Icon(Icons.system_update_alt,
+                              size: 11, color: Colors.greenAccent),
+                          const SizedBox(width: 5),
+                          Text(
+                            '▶ Restart to install v${upd.info?.latestVersion ?? ''}',
+                            style: const TextStyle(
+                              color: Colors.greenAccent,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              fontFamily: 'monospace',
+                            ),
+                          ),
+                        ] else ...[
+                          const Icon(Icons.cloud_download_outlined,
+                              size: 11, color: Colors.blueAccent),
+                          const SizedBox(width: 5),
+                          Text(
+                            'Update v${upd.info?.latestVersion ?? ''} available',
+                            style: const TextStyle(
+                              color: Colors.blueAccent,
+                              fontSize: 10,
+                              fontFamily: 'monospace',
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+
+
               // Right: CPU, RAM & FPS
               Row(
                 children: [
