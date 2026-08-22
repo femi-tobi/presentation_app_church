@@ -86,6 +86,17 @@ class PptxParser {
         return 'data:image/$ext;base64,${base64Encode(mf.content as List<int>)}';
       }
 
+      Uint8List? relToBytes(String relId) {
+        final target = imageRels[relId];
+        if (target == null) return null;
+        final path = resolveTarget(target);
+        final mf   = archive.findFile(path);
+        if (mf == null) return null;
+        return mf.content is Uint8List
+            ? mf.content as Uint8List
+            : Uint8List.fromList(mf.content as List<int>);
+      }
+
       // ── 6. Background ──────────────────────────────────────────────────
       // Default: white (most slides have a light background unless explicitly dark)
       int    bgColor    = 0xFFFFFFFF;
@@ -118,12 +129,7 @@ class PptxParser {
           if (uri != null) {
             bgImageUri = uri;
             hasBgImage = true;
-            try {
-              final comma = uri.indexOf(',');
-              if (comma != -1) {
-                bgImageBytes = base64Decode(uri.substring(comma + 1));
-              }
-            } catch (_) {}
+            bgImageBytes = relToBytes(em.group(1)!);
           }
         }
       }
@@ -154,9 +160,11 @@ class PptxParser {
           if (blipEm != null) {
             final uri = relToDataUri(blipEm.group(1)!);
             if (uri != null) {
+              final imgBytes = relToBytes(blipEm.group(1)!);
               shapes.add(PptxShape(
                 left: pos.$1, top: pos.$2, width: pos.$3, height: pos.$4,
                 imageDataUri: uri,
+                imageBytes: imgBytes,
               ));
               return;
             }
@@ -368,13 +376,7 @@ class PptxParser {
               final uri = relToDataUri(em.group(1)!);
               if (uri == null) continue;
 
-              Uint8List? imgBytes;
-              try {
-                final comma = uri.indexOf(',');
-                if (comma != -1) {
-                  imgBytes = base64Decode(uri.substring(comma + 1));
-                }
-              } catch (_) {}
+              final imgBytes = relToBytes(em.group(1)!);
 
               shapes.add(PptxShape(
                 left: pos.$1, top: pos.$2, width: pos.$3, height: pos.$4,
@@ -407,13 +409,7 @@ class PptxParser {
         final uri = relToDataUri(em.group(1)!);
         if (uri == null) continue;
         
-        Uint8List? imgBytes;
-        try {
-          final comma = uri.indexOf(',');
-          if (comma != -1) {
-            imgBytes = base64Decode(uri.substring(comma + 1));
-          }
-        } catch (_) {}
+        final imgBytes = relToBytes(em.group(1)!);
 
         shapes.add(PptxShape(
           left: pos.$1, top: pos.$2, width: pos.$3, height: pos.$4,
@@ -449,6 +445,7 @@ class PptxParser {
               imageDataUri: s.imageDataUri,
               fillColorValue: s.fillColorValue,
               fontFamily: s.fontFamily,
+              imageBytes: s.imageBytes,
             );
           }
           // Both bg and text are dark → flip text to light
@@ -462,6 +459,7 @@ class PptxParser {
               imageDataUri: s.imageDataUri,
               fillColorValue: s.fillColorValue,
               fontFamily: s.fontFamily,
+              imageBytes: s.imageBytes,
             );
           }
           return s;

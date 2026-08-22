@@ -221,63 +221,93 @@ class _FullscreenPresenterPageState extends State<FullscreenPresenterPage> with 
 
                               Widget mainContent = Stack(
                                 children: [
-                                  // Base Background Color Layer
+                                  // Base Background Color & Image Layer (Repaint Isolated)
                                   Positioned.fill(
-                                    child: Container(
-                                      color: Color(slide.bgColorValue),
-                                    ),
-                                  ),
-
-                                  // Background Image Layer with Blur & Opacity
-                                  if (slide.imageUrl.isNotEmpty)
-                                    Positioned.fill(
-                                      child: Opacity(
-                                        opacity: slide.opacity,
-                                        child: slide.blur == 0.0
-                                            ? (slide.imageUrl.startsWith('data:')
-                                                ? Image.memory(
-                                                    _decodeDataUrl(slide.imageUrl),
-                                                    fit: BoxFit.cover,
-                                                    filterQuality: FilterQuality.low,
-                                                    errorBuilder: (c, e, s) => const SizedBox(),
-                                                  )
-                                                : Image.network(
-                                                    slide.imageUrl,
-                                                    fit: BoxFit.cover,
-                                                    filterQuality: FilterQuality.low,
-                                                    errorBuilder: (c, e, s) => const SizedBox(),
-                                                  ))
-                                            : ImageFiltered(
-                                                imageFilter: ImageFilter.blur(
-                                                  sigmaX: slide.blur,
-                                                  sigmaY: slide.blur,
-                                                ),
-                                                child: slide.imageUrl.startsWith('data:')
+                                    child: RepaintBoundary(
+                                      child: Stack(
+                                        children: [
+                                          Positioned.fill(
+                                            child: Container(
+                                              color: Color(slide.bgColorValue),
+                                            ),
+                                          ),
+                                          if (slide.bgImageBytes != null && slide.bgImageBytes!.isNotEmpty)
+                                            Positioned.fill(
+                                              child: Opacity(
+                                                opacity: slide.opacity,
+                                                child: slide.blur == 0.0
                                                     ? Image.memory(
-                                                        _decodeDataUrl(slide.imageUrl),
+                                                        slide.bgImageBytes!,
                                                         fit: BoxFit.cover,
                                                         filterQuality: FilterQuality.low,
                                                         errorBuilder: (c, e, s) => const SizedBox(),
                                                       )
-                                                    : Image.network(
-                                                        slide.imageUrl,
-                                                        fit: BoxFit.cover,
-                                                        filterQuality: FilterQuality.low,
-                                                        errorBuilder: (c, e, s) => const SizedBox(),
+                                                    : ImageFiltered(
+                                                        imageFilter: ImageFilter.blur(
+                                                          sigmaX: slide.blur,
+                                                          sigmaY: slide.blur,
+                                                        ),
+                                                        child: Image.memory(
+                                                          slide.bgImageBytes!,
+                                                          fit: BoxFit.cover,
+                                                          filterQuality: FilterQuality.low,
+                                                          errorBuilder: (c, e, s) => const SizedBox(),
+                                                        ),
                                                       ),
                                               ),
+                                            )
+                                          else if (slide.imageUrl.isNotEmpty)
+                                            Positioned.fill(
+                                              child: Opacity(
+                                                opacity: slide.opacity,
+                                                child: slide.blur == 0.0
+                                                    ? (slide.imageUrl.startsWith('data:')
+                                                        ? Image.memory(
+                                                            _decodeDataUrl(slide.imageUrl),
+                                                            fit: BoxFit.cover,
+                                                            filterQuality: FilterQuality.low,
+                                                            errorBuilder: (c, e, s) => const SizedBox(),
+                                                          )
+                                                        : Image.network(
+                                                            slide.imageUrl,
+                                                            fit: BoxFit.cover,
+                                                            filterQuality: FilterQuality.low,
+                                                            errorBuilder: (c, e, s) => const SizedBox(),
+                                                          ))
+                                                    : ImageFiltered(
+                                                        imageFilter: ImageFilter.blur(
+                                                          sigmaX: slide.blur,
+                                                          sigmaY: slide.blur,
+                                                        ),
+                                                        child: slide.imageUrl.startsWith('data:')
+                                                            ? Image.memory(
+                                                                _decodeDataUrl(slide.imageUrl),
+                                                                fit: BoxFit.cover,
+                                                                filterQuality: FilterQuality.low,
+                                                                errorBuilder: (c, e, s) => const SizedBox(),
+                                                              )
+                                                            : Image.network(
+                                                                slide.imageUrl,
+                                                                fit: BoxFit.cover,
+                                                                filterQuality: FilterQuality.low,
+                                                                errorBuilder: (c, e, s) => const SizedBox(),
+                                                              ),
+                                                      ),
+                                              ),
+                                            ),
+                                          // Spiritual purple overlay blending
+                                          if (slide.imageUrl.isNotEmpty)
+                                            Positioned.fill(
+                                              child: IgnorePointer(
+                                                child: Container(
+                                                  color: SacredColors.primary.withValues(alpha: 0.20),
+                                                ),
+                                              ),
+                                            ),
+                                        ],
                                       ),
                                     ),
-
-                                  // Spiritual purple overlay blending
-                                  if (slide.imageUrl.isNotEmpty)
-                                    Positioned.fill(
-                                      child: IgnorePointer(
-                                        child: Container(
-                                          color: SacredColors.primary.withValues(alpha: 0.20),
-                                        ),
-                                      ),
-                                    ),
+                                  ),
                                   // Logo
                                   if (slide.logoUrl != null && slide.logoUrl!.isNotEmpty)
                                     Positioned(

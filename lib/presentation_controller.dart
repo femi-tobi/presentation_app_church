@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'dart:isolate';
 import 'package:flutter/material.dart';
 import 'settings_state.dart';
+import 'performance_tracker.dart';
 
 import 'display_manager.dart';
 import 'connectors/remote_control_service.dart';
@@ -53,7 +54,7 @@ class PresentationController extends ChangeNotifier {
     _getRemoteService()?.broadcastStateChange();
   }
 
-  void showBibleOverlay(String title, String subtitle, {bool fullscreen = false}) {
+  Future<void> showBibleOverlay(String title, String subtitle, {bool fullscreen = false}) async {
     _isBibleFullscreen = fullscreen;
     _bibleOverlaySlide = SlideData(
       id: 'bible_overlay_${DateTime.now().millisecondsSinceEpoch}',
@@ -63,7 +64,7 @@ class PresentationController extends ChangeNotifier {
       bgColorValue: AppSettings.instance.bibleBgColor,
       textColorValue: AppSettings.instance.bibleTextColor,
     );
-    _writeHandoffFile();
+    await _writeHandoffFile();
     notifyListeners();
     _broadcastState();
     _getRemoteService()?.broadcastStateChange();
@@ -97,9 +98,9 @@ class PresentationController extends ChangeNotifier {
     }
   }
 
-  void clearBibleOverlay() {
+  Future<void> clearBibleOverlay() async {
     _bibleOverlaySlide = null;
-    _writeHandoffFile();
+    await _writeHandoffFile();
     notifyListeners();
     _broadcastState();
     _getRemoteService()?.broadcastStateChange();
@@ -134,6 +135,7 @@ class PresentationController extends ChangeNotifier {
   Socket? _audienceClientSocket;
   bool _isAudienceProcess = false;
   bool get isAudienceProcess => _isAudienceProcess;
+  int get connectedClientsCount => _connectedClients.length;
   String _currentSessionId = 'unknown';
   String get currentSessionId => _currentSessionId;
   
@@ -181,9 +183,9 @@ class PresentationController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _broadcastSlides() {
+  Future<void> _broadcastSlides() async {
     if (_isAudienceProcess) return;
-    _writeHandoffFile();
+    await _writeHandoffFile();
     _broadcastReloadHandoff();
   }
 
@@ -218,7 +220,7 @@ class PresentationController extends ChangeNotifier {
     };
   }
 
-  void _writeHandoffFile() {
+  Future<void> _writeHandoffFile() async {
     try {
       final handoff = {
         'liveIndex': _liveIndex,
@@ -232,39 +234,36 @@ class PresentationController extends ChangeNotifier {
       final path = _slidesHandoffPath;
       final jsonStr = json.encode(handoff);
       
-      // Write synchronously to guarantee the file exists on disk
-      // before _broadcastReloadHandoff() tells the audience process to read it.
-      File(path).writeAsStringSync(jsonStr);
+      await PerformanceTracker.trackAsync('Handoff write', () async {
+        await File(path).writeAsString(jsonStr);
+      });
       debugPrint('[PRESENTATION][session=$_currentSessionId] Handoff file written: $path (${_slides.length} slides)');
-      
-      // Verify handoff file is correct by reading it back immediately
-      try {
-        final content = File(path).readAsStringSync();
-        final decoded = json.decode(content) as Map<String, dynamic>;
-        final exists = File(path).existsSync();
-        final size = File(path).lengthSync();
-        debugPrint('[PRESENTATION][session=$_currentSessionId] Self-validation: exists=$exists, size=$size bytes, parsedSlidesCount=${(decoded['slides'] as List).length}');
-      } catch (e) {
-        debugPrint('[PRESENTATION][session=$_currentSessionId] Self-validation FAILED: $e');
-      }
     } catch (e) {
       debugPrint('[PRESENTATION][session=$_currentSessionId] ERROR writing/serializing handoff file: $e');
     }
   }
 
-  void _reloadFromHandoffFile() {
+  Future<void> _reloadFromHandoffFile() async {
     try {
       final path = _slidesHandoffPath;
       final file = File(path);
-      if (file.existsSync()) {
-        final raw = json.decode(file.readAsStringSync()) as Map<String, dynamic>;
+      if (await file.exists()) {
+        final content = await PerformanceTracker.trackAsync('Handoff read', () async {
+          return await file.readAsString();
+        });
+        
+        final Map<String, dynamic> raw = await Isolate.run(() => json.decode(content) as Map<String, dynamic>);
         _liveIndex = (raw['liveIndex'] as num?)?.toInt() ?? _liveIndex;
         _presenterIndex = (raw['presenterIndex'] as num?)?.toInt() ?? _presenterIndex;
         _mode = PresentationMode.values[(raw['mode'] as num?)?.toInt() ?? _mode.index];
+        
         final rawSlides = raw['slides'] as List<dynamic>? ?? [];
-        _slides = rawSlides
-            .map((s) => SlideData.fromJson(s as Map<String, dynamic>))
-            .toList();
+        final parsedSlides = await Isolate.run(() {
+          return rawSlides
+              .map((s) => SlideData.fromJson(s as Map<String, dynamic>))
+              .toList();
+        });
+        _slides = parsedSlides;
         final bo = raw['bibleOverlay'];
         _bibleOverlaySlide = bo != null ? SlideData.fromJson(bo as Map<String, dynamic>) : null;
         _isBibleFullscreen = raw['isBibleFullscreen'] as bool? ?? false;
@@ -458,7 +457,7 @@ class PresentationController extends ChangeNotifier {
   }
 
   // Spawns a completely separate borderless fullscreen native window (process)
-  void spawnAudienceWindow({bool startHidden = false}) {
+  void spawnAudienceWindow({bool startHidden = false}) async {
     if (_isAudienceProcess) return;
     
     // Generate unique session ID for this presentation session
@@ -471,18 +470,18 @@ class PresentationController extends ChangeNotifier {
       if (!startHidden) {
         setMode(PresentationMode.live);
       }
-      _writeHandoffFile();
+      await _writeHandoffFile();
       _broadcastReloadHandoff();
       return;
     }
     
     // ---- Write slide state to a shared temp file ----
-    _writeHandoffFile();
+    await _writeHandoffFile();
 
     // Verify file properties on disk
     final path = _slidesHandoffPath;
     final exists = File(path).existsSync();
-    final size = File(path).lengthSync();
+    final size = exists ? File(path).lengthSync() : 0;
     debugPrint('[PRESENTATION][session=$sessionId] File verification before process start: path=$path, exists=$exists, size=$size bytes');
 
     final display = DisplayManager.instance.selectedDisplay;

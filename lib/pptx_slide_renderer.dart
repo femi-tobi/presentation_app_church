@@ -52,7 +52,7 @@ import 'settings_state.dart';
           clipBehavior: Clip.hardEdge,
           children: [
             // ── Background ────────────────────────────────────────────────
-            _buildBackground(),
+            RepaintBoundary(child: _buildBackground()),
 
             // ── Shapes in document order ─────────────────────────────────
             for (int k = 0; k < slide.pptxShapes.length; k++)
@@ -217,9 +217,7 @@ import 'settings_state.dart';
   // ── Utilities ──────────────────────────────────────────────────────────────
 
   static Uint8List _decodeUri(String dataUri) {
-    final comma = dataUri.indexOf(',');
-    if (comma == -1) return Uint8List(0);
-    return base64Decode(dataUri.substring(comma + 1));
+    return decodeDataUrl(dataUri);
   }
 
   static Alignment _toAlignment(TextAlign align) {

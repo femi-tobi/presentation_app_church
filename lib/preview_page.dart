@@ -149,6 +149,7 @@ class _PreviewPageState extends State<PreviewPage> {
 
       // Save this presentation to the recent list so the dashboard reflects it
       _saveToRecentList();
+      _precacheSlides();
     });
   }
 
@@ -686,6 +687,44 @@ class _PreviewPageState extends State<PreviewPage> {
     _saveToRecentList();
   }
 
+  void _precacheSlides() {
+    if (!mounted || _slides.isEmpty) return;
+    final int total = _slides.length;
+    for (int i = 0; i < 3; i++) {
+      final index = _activeSlideIndex + i;
+      if (index >= 0 && index < total) {
+        final slide = _slides[index];
+        if (slide.imageUrl.startsWith('data:')) {
+          try {
+            final provider = MemoryImage(decodeDataUrl(slide.imageUrl));
+            precacheImage(provider, context);
+          } catch (_) {}
+        }
+        if (slide.bgImageBytes != null && slide.bgImageBytes!.isNotEmpty) {
+          try {
+            final provider = MemoryImage(slide.bgImageBytes!);
+            precacheImage(provider, context);
+          } catch (_) {}
+        }
+        for (final shape in slide.pptxShapes) {
+          if (shape.imageDataUri.isNotEmpty) {
+            if (shape.imageBytes != null && shape.imageBytes!.isNotEmpty) {
+              try {
+                final provider = MemoryImage(shape.imageBytes!);
+                precacheImage(provider, context);
+              } catch (_) {}
+            } else if (shape.imageDataUri.startsWith('data:')) {
+              try {
+                final provider = MemoryImage(decodeDataUrl(shape.imageDataUri));
+                precacheImage(provider, context);
+              } catch (_) {}
+            }
+          }
+        }
+      }
+    }
+  }
+
   void _setActiveSlide(int index) {
     setState(() {
       _activeSlideIndex = index;
@@ -694,6 +733,7 @@ class _PreviewPageState extends State<PreviewPage> {
       _selectedShapeIndices.clear();
     });
     AppSettings.instance.activeSlideIndex = index;
+    _precacheSlides();
   }
 
   void _syncSlidesFromSections() {

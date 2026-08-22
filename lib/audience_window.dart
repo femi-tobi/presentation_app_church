@@ -80,6 +80,8 @@ class _AudienceWindowState extends State<AudienceWindow> {
       });
     }
     super.dispose();
+  }
+
   TextStyle _getSafeFont(String fontFamily, {required double fontSize, required FontWeight fontWeight, FontStyle? fontStyle, Color? color, double? height, double? letterSpacing}) {
     try {
       return GoogleFonts.getFont(
@@ -220,60 +222,62 @@ class _AudienceWindowState extends State<AudienceWindow> {
                             children: [
                               // Slide Background Stack matching the preview canvas
                               Positioned.fill(
-                                child: Stack(
-                                  children: [
-                                    // Base Background Color
-                                    Positioned.fill(
-                                      child: Container(
-                                        color: Color(slide.bgColorValue),
-                                      ),
-                                    ),
-                                    // Background Image Layer with custom opacity and blurs
-                                    if (slide.imageUrl.isNotEmpty)
+                                child: RepaintBoundary(
+                                  child: Stack(
+                                    children: [
+                                      // Base Background Color
                                       Positioned.fill(
-                                        child: Opacity(
-                                          opacity: slide.opacity,
-                                          child: slide.blur == 0.0
-                                              ? (slide.imageUrl.startsWith('data:')
-                                                  ? Image.memory(
-                                                      decodeDataUrl(slide.imageUrl),
-                                                      fit: BoxFit.cover,
-                                                      errorBuilder: (c, e, s) => const SizedBox(),
-                                                    )
-                                                  : Image.network(
-                                                      slide.imageUrl,
-                                                      fit: BoxFit.cover,
-                                                      errorBuilder: (c, e, s) => const SizedBox(),
-                                                    ))
-                                              : ImageFiltered(
-                                                  imageFilter: ImageFilter.blur(
-                                                    sigmaX: slide.blur,
-                                                    sigmaY: slide.blur,
-                                                  ),
-                                                  child: slide.imageUrl.startsWith('data:')
-                                                      ? Image.memory(
-                                                          decodeDataUrl(slide.imageUrl),
-                                                          fit: BoxFit.cover,
-                                                          errorBuilder: (c, e, s) => const SizedBox(),
-                                                        )
-                                                      : Image.network(
-                                                          slide.imageUrl,
-                                                          fit: BoxFit.cover,
-                                                          errorBuilder: (c, e, s) => const SizedBox(),
-                                                        ),
-                                                ),
+                                        child: Container(
+                                          color: Color(slide.bgColorValue),
                                         ),
                                       ),
-                                    // Purple spiritual overlay blending
-                                    if (slide.imageUrl.isNotEmpty && !slide.imageUrl.startsWith('data:'))
-                                      Positioned.fill(
-                                        child: IgnorePointer(
-                                          child: Container(
-                                            color: SacredColors.primary.withValues(alpha: 0.20),
+                                      // Background Image Layer with custom opacity and blurs
+                                      if (slide.imageUrl.isNotEmpty)
+                                        Positioned.fill(
+                                          child: Opacity(
+                                            opacity: slide.opacity,
+                                            child: slide.blur == 0.0
+                                                ? (slide.imageUrl.startsWith('data:')
+                                                    ? Image.memory(
+                                                        decodeDataUrl(slide.imageUrl),
+                                                        fit: BoxFit.cover,
+                                                        errorBuilder: (c, e, s) => const SizedBox(),
+                                                      )
+                                                    : Image.network(
+                                                        slide.imageUrl,
+                                                        fit: BoxFit.cover,
+                                                        errorBuilder: (c, e, s) => const SizedBox(),
+                                                      ))
+                                                : ImageFiltered(
+                                                    imageFilter: ImageFilter.blur(
+                                                      sigmaX: slide.blur,
+                                                      sigmaY: slide.blur,
+                                                    ),
+                                                    child: slide.imageUrl.startsWith('data:')
+                                                        ? Image.memory(
+                                                            decodeDataUrl(slide.imageUrl),
+                                                            fit: BoxFit.cover,
+                                                            errorBuilder: (c, e, s) => const SizedBox(),
+                                                          )
+                                                        : Image.network(
+                                                            slide.imageUrl,
+                                                            fit: BoxFit.cover,
+                                                            errorBuilder: (c, e, s) => const SizedBox(),
+                                                          ),
+                                                  ),
                                           ),
                                         ),
-                                      ),
-                                  ],
+                                      // Purple spiritual overlay blending
+                                      if (slide.imageUrl.isNotEmpty && !slide.imageUrl.startsWith('data:'))
+                                        Positioned.fill(
+                                          child: IgnorePointer(
+                                            child: Container(
+                                              color: SacredColors.primary.withValues(alpha: 0.20),
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
                                 ),
                               ),
 
@@ -615,9 +619,7 @@ class AudienceSlideView extends StatelessWidget {
   }
 
   static Uint8List _decodeUri(String dataUri) {
-    final comma = dataUri.indexOf(',');
-    if (comma == -1) return Uint8List(0);
-    return base64Decode(dataUri.substring(comma + 1));
+    return decodeDataUrl(dataUri);
   }
 
   static Alignment _toAlignment(TextAlign align) {
@@ -639,7 +641,7 @@ class AudienceSlideView extends StatelessWidget {
           children: [
             // ── Background ──
             Positioned.fill(
-              child: _buildBackground(),
+              child: RepaintBoundary(child: _buildBackground()),
             ),
 
             // ── Shapes ──

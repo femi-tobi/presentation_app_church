@@ -7,6 +7,24 @@ import 'dart:async';
 import 'dart:io';
 import 'presentation_controller.dart';
 
+class ImageBytesCache {
+  static final Map<String, Uint8List> _cache = {};
+  
+  static Uint8List? get(String uri) {
+    if (uri.isEmpty) return null;
+    return _cache[uri];
+  }
+  
+  static void put(String uri, Uint8List bytes) {
+    if (uri.isEmpty) return;
+    _cache[uri] = bytes;
+  }
+  
+  static void clear() {
+    _cache.clear();
+  }
+}
+
 
 enum SectionType {
   verse,
@@ -278,12 +296,16 @@ class PptxShape {
     final uri = j['imageDataUri'] as String? ?? '';
     Uint8List? bytes;
     if (uri.isNotEmpty) {
-      try {
-        final comma = uri.indexOf(',');
-        if (comma != -1) {
-          bytes = base64Decode(uri.substring(comma + 1));
-        }
-      } catch (_) {}
+      bytes = ImageBytesCache.get(uri);
+      if (bytes == null) {
+        try {
+          final comma = uri.indexOf(',');
+          if (comma != -1) {
+            bytes = base64Decode(uri.substring(comma + 1));
+            ImageBytesCache.put(uri, bytes);
+          }
+        } catch (_) {}
+      }
     }
 
     return PptxShape(
@@ -548,7 +570,16 @@ class SlideData extends ChangeNotifier {
         _textColorValue = textColorValue,
         _sectionId = sectionId,
         pptxShapes = pptxShapes ?? [],
-        pptxSlideHeightEmu = pptxSlideHeightEmu;
+        pptxSlideHeightEmu = pptxSlideHeightEmu {
+    if (bgImageBytes != null && imageUrl.startsWith('data:')) {
+      ImageBytesCache.put(imageUrl, bgImageBytes!);
+    }
+    for (final shape in this.pptxShapes) {
+      if (shape.imageBytes != null && shape.imageDataUri.startsWith('data:')) {
+        ImageBytesCache.put(shape.imageDataUri, shape.imageBytes!);
+      }
+    }
+  }
 
   Map<String, dynamic> toJson() {
     return {
@@ -583,12 +614,16 @@ class SlideData extends ChangeNotifier {
     final imgUrl = json['imageUrl'] as String? ?? '';
     Uint8List? bgBytes;
     if (imgUrl.startsWith('data:')) {
-      try {
-        final comma = imgUrl.indexOf(',');
-        if (comma != -1) {
-          bgBytes = base64Decode(imgUrl.substring(comma + 1));
-        }
-      } catch (_) {}
+      bgBytes = ImageBytesCache.get(imgUrl);
+      if (bgBytes == null) {
+        try {
+          final comma = imgUrl.indexOf(',');
+          if (comma != -1) {
+            bgBytes = base64Decode(imgUrl.substring(comma + 1));
+            ImageBytesCache.put(imgUrl, bgBytes);
+          }
+        } catch (_) {}
+      }
     }
 
     return SlideData(
