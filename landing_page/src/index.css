@@ -1,0 +1,144 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+:root {
+  /* Color Palette based on dark pro AV tools with glowing neon accents */
+  --bg-dark: #0A0B10;
+  --bg-surface: #14151C;
+  --bg-glass: rgba(20, 21, 28, 0.6);
+  --bg-glass-light: rgba(255, 255, 255, 0.05);
+  
+  --primary: #6B46C1; /* Deep purple */
+  --primary-glow: #9F7AEA; /* Lighter purple glow */
+  --secondary: #3182CE; /* Bright blue */
+  --accent: #38B2AC; /* Teal/Green for success/actions */
+  
+  --text-main: #FFFFFF;
+  --text-muted: #A0AEC0;
+  
+  --border-light: rgba(255, 255, 255, 0.1);
+  --border-glass: rgba(255, 255, 255, 0.15);
+  
+  /* Typography */
+  --font-primary: 'Inter', sans-serif;
+  
+  /* Shadows and Effects */
+  --shadow-glow: 0 0 25px rgba(107, 70, 193, 0.4);
+  --shadow-glass: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  --blur-glass: 12px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-primary);
+  background-color: var(--bg-dark);
+  color: var(--text-main);
+  overflow-x: hidden;
+  min-height: 100vh;
+  /* Very subtle animated mesh gradient base */
+  background-image: 
+    radial-gradient(at 0% 0%, rgba(107, 70, 193, 0.15) 0px, transparent 50%),
+    radial-gradient(at 100% 0%, rgba(49, 130, 206, 0.15) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, rgba(56, 178, 172, 0.1) 0px, transparent 50%);
+  background-attachment: fixed;
+}
+
+/* Glassmorphism Utilities */
+.glass-panel {
+  background: var(--bg-glass);
+  backdrop-filter: blur(var(--blur-glass));
+  -webkit-backdrop-filter: blur(var(--blur-glass));
+  border: 1px solid var(--border-glass);
+  box-shadow: var(--shadow-glass);
+  border-radius: 16px;
+}
+
+.glass-card {
+  background: var(--bg-glass-light);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  padding: 24px;
+  transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+}
+
+.glass-card:hover {
+  transform: translateY(-5px);
+  box-shadow: var(--shadow-glow);
+  border-color: rgba(159, 122, 234, 0.4);
+}
+
+/* Typography Utilities */
+.text-gradient {
+  background: linear-gradient(135deg, #FFFFFF 0%, #A0AEC0 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.text-gradient-primary {
+  background: linear-gradient(135deg, var(--primary-glow) 0%, var(--secondary) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Layout Utilities */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.section {
+  padding: 100px 0;
+  position: relative;
+}
+
+/* Buttons */
+.btn-primary {
+  background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+  color: white;
+  border: none;
+  padding: 14px 28px;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(107, 70, 193, 0.3);
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(107, 70, 193, 0.5);
+}
+
+.btn-outline {
+  background: transparent;
+  color: var(--text-main);
+  border: 1px solid var(--border-glass);
+  padding: 14px 28px;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(4px);
+}
+
+.btn-outline:hover {
+  background: var(--bg-glass-light);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* Link Resets */
+a {
+  text-decoration: none;
+  color: inherit;
+}

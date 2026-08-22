@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:convert/convert.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -84,8 +85,8 @@ class AutoUpdateService extends ChangeNotifier {
   // ── Configuration ───────────────────────────────────────────────────────────
   /// Your GitHub username and repo name. These are the ONLY two values you
   /// ever need to change. Everything else is automatic.
-  static const String _githubOwner = 'YOUR_GITHUB_USERNAME';
-  static const String _githubRepo  = 'YOUR_GITHUB_REPO';
+  static const String _githubOwner = 'femi-tobi';
+  static const String _githubRepo  = 'presentation_app_church';
   // ────────────────────────────────────────────────────────────────────────────
 
   static const String _expectedHost = 'objects.githubusercontent.com';
