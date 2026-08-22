@@ -24,6 +24,7 @@ class _BibleShowPageState extends State<BibleShowPage> {
   String? _selectedBook;
   BibleBook? _currentBookData;
   BibleChapter? _selectedChapter;
+  String _projectionTarget = 'both'; // 'both', 'obs', 'display'
   
   // Translation Comparison
   bool _isComparing = false;
@@ -175,47 +176,20 @@ class _BibleShowPageState extends State<BibleShowPage> {
       _selectedVerseNumbers.clear();
       _selectedVerseNumbers.add(v.verseNumber);
     });
-    final settings = AppSettings.instance;
-    final List<String> segments = settings.bibleAutoSplit
-        ? _splitVerseText(v.text, settings.bibleMaxChars, settings.bibleMaxLines)
-        : [v.text];
 
-    final List<SlideData> slides = [];
-    for (int i = 0; i < segments.length; i++) {
-      final id = DateTime.now().microsecondsSinceEpoch.toString() + '_$i';
-      final letterSuffix = segments.length > 1 ? String.fromCharCode(97 + i) : ''; // 97 is ASCII code for 'a'
-      slides.add(SlideData(
-        id: id,
-        title: '${_selectedBook} ${_selectedChapter!.chapterNumber}:${v.verseNumber}$letterSuffix',
-        subtitle: segments[i],
-        imageUrl: '',
-        opacity: 0.0,
-        isBold: settings.bibleIsBold,
-        isItalic: settings.bibleIsItalic,
-        titleFontSize: settings.bibleFontSize,
-        subtitleFontSize: settings.bibleFontSize * 0.8,
-        bgColorValue: settings.bibleBgColor,
-        textColorValue: settings.bibleTextColor,
-      ));
-    }
+    PresentationController.instance.bibleOverlayTarget = _projectionTarget;
 
-    final isMultiScreen = DisplayManager.instance.displays.length > 1 || DisplayManager.instance.simulateAudience;
+    // Set the overlay text
+    PresentationController.instance.showBibleOverlay(
+      '${_selectedBook} ${_selectedChapter!.chapterNumber}:${v.verseNumber}',
+      v.text,
+      fullscreen: false,
+    );
 
-    settings.updateActiveSlides(slides);
-    settings.activeSlideIndex = 0;
-
-    PresentationController.instance.updateSlides(slides);
-    PresentationController.instance.goTo(0);
-    PresentationController.instance.setMode(PresentationMode.live);
-    PresentationController.instance.spawnAudienceWindow();
-
-    if (!isMultiScreen) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => const FullscreenPresenterPage(),
-        ),
-      );
+    // Make sure the audience window is active if projecting to display
+    if (_projectionTarget == 'both' || _projectionTarget == 'display') {
+      PresentationController.instance.setMode(PresentationMode.live);
+      PresentationController.instance.spawnAudienceWindow();
     }
   }
 
@@ -753,6 +727,25 @@ class _BibleShowPageState extends State<BibleShowPage> {
             icon: const Icon(Icons.tune),
             tooltip: 'Bible Presentation Settings',
             onPressed: () => _showBibleSettingsDialog(context),
+          ),
+          const SizedBox(width: 8),
+
+          // Target selector (segmented choices)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+            decoration: BoxDecoration(
+              color: SacredColors.surfaceVariant.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: SacredColors.outlineVariant),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildTargetOption('both', Icons.settings_input_composite, 'Both'),
+                _buildTargetOption('obs', Icons.video_call, 'OBS Only'),
+                _buildTargetOption('display', Icons.monitor, 'Display Only'),
+              ],
+            ),
           ),
           const SizedBox(width: 8),
 
@@ -1329,6 +1322,18 @@ class _BibleShowPageState extends State<BibleShowPage> {
                             label: const Text('Add to Queue'),
                             onPressed: _selectedVerseNumbers.isNotEmpty ? _addSelectedToPresentation : null,
                           ),
+                          const SizedBox(width: 8),
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.red[800],
+                              foregroundColor: Colors.white,
+                            ),
+                            icon: const Icon(Icons.stop_screen_share_outlined),
+                            label: const Text('Clear Screen'),
+                            onPressed: () {
+                              PresentationController.instance.clearBibleOverlay();
+                            },
+                          ),
                         ],
                       ),
                       const SizedBox(height: 16),
@@ -1634,111 +1639,338 @@ class _BibleShowPageState extends State<BibleShowPage> {
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            return AlertDialog(
-              title: Row(
-                children: [
-                  Icon(Icons.tune, color: SacredColors.primary),
-                  const SizedBox(width: 12),
-                  const Text('Bible Presentation Styles'),
-                ],
-              ),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+            return DefaultTabController(
+              length: 3,
+              child: AlertDialog(
+                title: Row(
                   children: [
-                    // Background Color Selection
-                    const Text('Background Style', style: TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        _bgColorOption(setDialogState, 'Deep Purple', 0xFF2E0052),
-                        _bgColorOption(setDialogState, 'Dark Charcoal', 0xFF121212),
-                        _bgColorOption(setDialogState, 'Deep Blue', 0xFF0D1B2A),
-                        _bgColorOption(setDialogState, 'Sacred Red', 0xFF3D0C11),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Text Color Selection
-                    const Text('Text Style', style: TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        _textColorOption(setDialogState, 'White', 0xFFFFFFFF),
-                        _textColorOption(setDialogState, 'Cream', 0xFFFDF0D5),
-                        _textColorOption(setDialogState, 'Soft Yellow', 0xFFFFF275),
-                        _textColorOption(setDialogState, 'Gold', 0xFFFFD700),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-
-                    // Font Size Slider
-                    Row(
-                      children: [
-                        const Text('Font Size: ', style: TextStyle(fontWeight: FontWeight.bold)),
-                        Text('${settings.bibleFontSize.toInt()} px'),
-                      ],
-                    ),
-                    Slider(
-                      value: settings.bibleFontSize,
-                      min: 24.0,
-                      max: 72.0,
-                      activeColor: themeColor,
-                      onChanged: (val) {
-                        setDialogState(() {
-                          settings.bibleFontSize = val;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Bold & Italic Switches
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Bold Text', style: TextStyle(fontWeight: FontWeight.w600)),
-                        Switch(
-                          value: settings.bibleIsBold,
-                          activeColor: themeColor,
-                          onChanged: (val) {
-                            setDialogState(() {
-                              settings.bibleIsBold = val;
-                            });
-                          },
-                        ),
-                      ],
-                    ),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Italic Text', style: TextStyle(fontWeight: FontWeight.w600)),
-                        Switch(
-                          value: settings.bibleIsItalic,
-                          activeColor: themeColor,
-                          onChanged: (val) {
-                            setDialogState(() {
-                              settings.bibleIsItalic = val;
-                            });
-                          },
-                        ),
-                      ],
-                    ),
+                    Icon(Icons.tune, color: SacredColors.primary),
+                    const SizedBox(width: 12),
+                    const Text('Bible Presentation Styles'),
                   ],
                 ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Done'),
+                content: Container(
+                  width: 500,
+                  height: 420,
+                  child: Column(
+                    children: [
+                      TabBar(
+                        labelColor: themeColor,
+                        unselectedLabelColor: SacredColors.onSurfaceVariant,
+                        indicatorColor: themeColor,
+                        tabs: const [
+                          Tab(text: 'Fullscreen'),
+                          Tab(text: 'Lower Third'),
+                          Tab(text: 'Splitting'),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Expanded(
+                        child: TabBarView(
+                          children: [
+                            // ── Fullscreen Style Tab ──
+                            SingleChildScrollView(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  const Text('Background Style', style: TextStyle(fontWeight: FontWeight.bold)),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      _bgColorOption(setDialogState, 'Deep Purple', 0xFF2E0052),
+                                      _bgColorOption(setDialogState, 'Dark Charcoal', 0xFF121212),
+                                      _bgColorOption(setDialogState, 'Deep Blue', 0xFF0D1B2A),
+                                      _bgColorOption(setDialogState, 'Sacred Red', 0xFF3D0C11),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 16),
+                                  const Text('Text Color', style: TextStyle(fontWeight: FontWeight.bold)),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      _textColorOption(setDialogState, 'White', 0xFFFFFFFF),
+                                      _textColorOption(setDialogState, 'Cream', 0xFFFDF0D5),
+                                      _textColorOption(setDialogState, 'Soft Yellow', 0xFFFFF275),
+                                      _textColorOption(setDialogState, 'Gold', 0xFFFFD700),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 20),
+                                  Row(
+                                    children: [
+                                      const Text('Font Size: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                                      Text('${settings.bibleFontSize.toInt()} px'),
+                                    ],
+                                  ),
+                                  Slider(
+                                    value: settings.bibleFontSize,
+                                    min: 24.0,
+                                    max: 72.0,
+                                    activeColor: themeColor,
+                                    onChanged: (val) {
+                                      setDialogState(() {
+                                        settings.bibleFontSize = val;
+                                      });
+                                    },
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      const Text('Bold Text', style: TextStyle(fontWeight: FontWeight.w600)),
+                                      Switch(
+                                        value: settings.bibleIsBold,
+                                        activeColor: themeColor,
+                                        onChanged: (val) {
+                                          setDialogState(() {
+                                            settings.bibleIsBold = val;
+                                          });
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      const Text('Italic Text', style: TextStyle(fontWeight: FontWeight.w600)),
+                                      Switch(
+                                        value: settings.bibleIsItalic,
+                                        activeColor: themeColor,
+                                        onChanged: (val) {
+                                          setDialogState(() {
+                                            settings.bibleIsItalic = val;
+                                          });
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            // ── Lower Third Style Tab ──
+                            SingleChildScrollView(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  const Text('Container Style (L3)', style: TextStyle(fontWeight: FontWeight.bold)),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      _l3BgColorOption(setDialogState, 'Translucent Black', 0xDE000000),
+                                      _l3BgColorOption(setDialogState, 'Solid Black', 0xFF000000),
+                                      _l3BgColorOption(setDialogState, 'Translucent Blue', 0xDE0B132B),
+                                      _l3BgColorOption(setDialogState, 'Translucent Purple', 0xDE1A0933),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 16),
+                                  const Text('Text Color (L3)', style: TextStyle(fontWeight: FontWeight.bold)),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      _l3TextColorOption(setDialogState, 'White', 0xFFFFFFFF),
+                                      _l3TextColorOption(setDialogState, 'Cream', 0xFFFDF0D5),
+                                      _l3TextColorOption(setDialogState, 'Soft Yellow', 0xFFFFF275),
+                                      _l3TextColorOption(setDialogState, 'Gold', 0xFFFFD700),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 20),
+                                  Row(
+                                    children: [
+                                      const Text('Font Size: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                                      Text('${settings.bibleL3FontSize.toInt()} px'),
+                                    ],
+                                  ),
+                                  Slider(
+                                    value: settings.bibleL3FontSize,
+                                    min: 16.0,
+                                    max: 48.0,
+                                    activeColor: themeColor,
+                                    onChanged: (val) {
+                                      setDialogState(() {
+                                        settings.bibleL3FontSize = val;
+                                      });
+                                    },
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Row(
+                                    children: [
+                                      const Text('Border Radius: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                                      Text('${settings.bibleL3BorderRadius.toInt()} px'),
+                                    ],
+                                  ),
+                                  Slider(
+                                    value: settings.bibleL3BorderRadius,
+                                    min: 0.0,
+                                    max: 32.0,
+                                    activeColor: themeColor,
+                                    onChanged: (val) {
+                                      setDialogState(() {
+                                        settings.bibleL3BorderRadius = val;
+                                      });
+                                    },
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      const Text('Show Thin Border', style: TextStyle(fontWeight: FontWeight.w600)),
+                                      Switch(
+                                        value: settings.bibleL3ShowBorder,
+                                        activeColor: themeColor,
+                                        onChanged: (val) {
+                                          setDialogState(() {
+                                            settings.bibleL3ShowBorder = val;
+                                          });
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            // ── Verse Splitting Rules Tab ──
+                            SingleChildScrollView(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      const Text('Auto-Split Long Verses', style: TextStyle(fontWeight: FontWeight.bold)),
+                                      Switch(
+                                        value: settings.bibleAutoSplit,
+                                        activeColor: themeColor,
+                                        onChanged: (val) {
+                                          setDialogState(() {
+                                            settings.bibleAutoSplit = val;
+                                          });
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+                                  if (settings.bibleAutoSplit) ...[
+                                    Row(
+                                      children: [
+                                        const Text('Max Lines per Slide: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                                        Text('${settings.bibleMaxLines} lines'),
+                                      ],
+                                    ),
+                                    Slider(
+                                      value: settings.bibleMaxLines.toDouble(),
+                                      min: 2.0,
+                                      max: 8.0,
+                                      divisions: 6,
+                                      activeColor: themeColor,
+                                      onChanged: (val) {
+                                        setDialogState(() {
+                                          settings.bibleMaxLines = val.toInt();
+                                        });
+                                      },
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Row(
+                                      children: [
+                                        const Text('Max Chars per Slide: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                                        Text('${settings.bibleMaxChars} chars'),
+                                      ],
+                                    ),
+                                    Slider(
+                                      value: settings.bibleMaxChars.toDouble(),
+                                      min: 80.0,
+                                      max: 300.0,
+                                      divisions: 22,
+                                      activeColor: themeColor,
+                                      onChanged: (val) {
+                                        setDialogState(() {
+                                          settings.bibleMaxChars = val.toInt();
+                                        });
+                                      },
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ],
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Done'),
+                  ),
+                ],
+              ),
             );
           },
         );
       },
+    );
+  }
+
+  Widget _l3BgColorOption(StateSetter setDialogState, String label, int hexValue) {
+    final settings = AppSettings.instance;
+    final isSelected = settings.bibleL3BgColor == hexValue;
+    return GestureDetector(
+      onTap: () {
+        setDialogState(() {
+          settings.bibleL3BgColor = hexValue;
+        });
+      },
+      child: Container(
+        width: 54,
+        height: 54,
+        decoration: BoxDecoration(
+          color: Color(hexValue),
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: isSelected ? Colors.white : Colors.grey.withOpacity(0.5),
+            width: isSelected ? 3.0 : 1.5,
+          ),
+          boxShadow: isSelected ? [BoxShadow(color: Colors.black26, blurRadius: 4, spreadRadius: 1)] : null,
+        ),
+        child: isSelected ? const Icon(Icons.check, color: Colors.white) : null,
+      ),
+    );
+  }
+
+  Widget _l3TextColorOption(StateSetter setDialogState, String label, int hexValue) {
+    final settings = AppSettings.instance;
+    final isSelected = settings.bibleL3TextColor == hexValue;
+    return GestureDetector(
+      onTap: () {
+        setDialogState(() {
+          settings.bibleL3TextColor = hexValue;
+        });
+      },
+      child: Container(
+        width: 54,
+        height: 54,
+        decoration: BoxDecoration(
+          color: Colors.black87,
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: isSelected ? Color(hexValue) : Colors.grey.withOpacity(0.5),
+            width: isSelected ? 3.0 : 1.5,
+          ),
+        ),
+        child: Center(
+          child: Text(
+            'Aa',
+            style: TextStyle(
+              color: Color(hexValue),
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -1865,6 +2097,44 @@ class _BibleShowPageState extends State<BibleShowPage> {
               fontSize: 16,
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTargetOption(String target, IconData icon, String label) {
+    final isSelected = _projectionTarget == target;
+    final themeColor = SacredColors.primary;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _projectionTarget = target;
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? themeColor : Colors.transparent,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 14,
+              color: isSelected ? Colors.white : SacredColors.onSurfaceVariant,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                fontWeight: isSelected ? FontWeight.bold : AppSettings.instance.isDarkMode ? FontWeight.w400 : FontWeight.w500,
+                color: isSelected ? Colors.white : SacredColors.onSurfaceVariant,
+              ),
+            ),
+          ],
         ),
       ),
     );

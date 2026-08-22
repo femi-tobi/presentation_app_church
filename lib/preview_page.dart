@@ -3736,10 +3736,14 @@ class _LiveWorkspaceCanvas extends StatelessWidget {
           ),
 
           // Aspect/Resolution details footer
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+          Wrap(
+            alignment: WrapAlignment.center,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 24,
+            runSpacing: 8,
             children: [
               Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(Icons.aspect_ratio, color: SacredColors.outline, size: 16),
                   SizedBox(width: 6),
@@ -3751,8 +3755,8 @@ class _LiveWorkspaceCanvas extends StatelessWidget {
                   ),
                 ],
               ),
-              SizedBox(width: 24),
               Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(Icons.hd_outlined, color: SacredColors.outline, size: 16),
                   SizedBox(width: 6),
@@ -3764,8 +3768,8 @@ class _LiveWorkspaceCanvas extends StatelessWidget {
                   ),
                 ],
               ),
-              SizedBox(width: 24),
               Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(Icons.zoom_in, color: SacredColors.outline, size: 16),
                   SizedBox(width: 6),

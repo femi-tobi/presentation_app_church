@@ -28,6 +28,15 @@ class PresentationController extends ChangeNotifier {
   SlideData? _bibleOverlaySlide;
   SlideData? get bibleOverlaySlide => _bibleOverlaySlide;
 
+  String _bibleOverlayTarget = 'both'; // 'both', 'obs', 'display'
+  String get bibleOverlayTarget => _bibleOverlayTarget;
+  set bibleOverlayTarget(String val) {
+    _bibleOverlayTarget = val;
+    notifyListeners();
+    _broadcastState();
+    _getRemoteService()?.broadcastStateChange();
+  }
+
   String _bibleTranslation = 'kjv';
   String get bibleTranslation => _bibleTranslation;
   set bibleTranslation(String val) {
@@ -35,17 +44,29 @@ class PresentationController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void showBibleOverlay(String title, String subtitle) {
+  bool _isBibleFullscreen = false;
+  bool get isBibleFullscreen => _isBibleFullscreen;
+  set isBibleFullscreen(bool val) {
+    _isBibleFullscreen = val;
+    notifyListeners();
+    _broadcastState();
+    _getRemoteService()?.broadcastStateChange();
+  }
+
+  void showBibleOverlay(String title, String subtitle, {bool fullscreen = false}) {
+    _isBibleFullscreen = fullscreen;
     _bibleOverlaySlide = SlideData(
       id: 'bible_overlay_${DateTime.now().millisecondsSinceEpoch}',
       title: title,
       subtitle: subtitle,
       imageUrl: '',
-      bgColorValue: 0xFF2E0052,
-      textColorValue: 0xFFFFFFFF,
+      bgColorValue: AppSettings.instance.bibleBgColor,
+      textColorValue: AppSettings.instance.bibleTextColor,
     );
+    _writeHandoffFile();
     notifyListeners();
     _broadcastState();
+    _getRemoteService()?.broadcastStateChange();
   }
 
   Future<void> navigateBibleVerse(bool next) async {
@@ -72,14 +93,16 @@ class PresentationController extends ChangeNotifier {
     if (result != null) {
       final ref = '${result['book']} ${result['chapter']}:${result['verse']}';
       final text = result['text'] as String;
-      showBibleOverlay(ref, text);
+      showBibleOverlay(ref, text, fullscreen: _isBibleFullscreen);
     }
   }
 
   void clearBibleOverlay() {
     _bibleOverlaySlide = null;
+    _writeHandoffFile();
     notifyListeners();
     _broadcastState();
+    _getRemoteService()?.broadcastStateChange();
   }
 
   int get liveIndex => _liveIndex;
@@ -203,6 +226,8 @@ class PresentationController extends ChangeNotifier {
         'mode': _mode.index,
         'slides': _slides.map(_slideToFullJson).toList(),
         'bibleOverlay': _bibleOverlaySlide != null ? _slideToFullJson(_bibleOverlaySlide!) : null,
+        'isBibleFullscreen': _isBibleFullscreen,
+        'bibleOverlayTarget': _bibleOverlayTarget,
       };
       final path = _slidesHandoffPath;
       final jsonStr = json.encode(handoff);
@@ -242,6 +267,8 @@ class PresentationController extends ChangeNotifier {
             .toList();
         final bo = raw['bibleOverlay'];
         _bibleOverlaySlide = bo != null ? SlideData.fromJson(bo as Map<String, dynamic>) : null;
+        _isBibleFullscreen = raw['isBibleFullscreen'] as bool? ?? false;
+        _bibleOverlayTarget = raw['bibleOverlayTarget'] as String? ?? 'both';
         debugPrint('[PresentationController] Reloaded ${_slides.length} slides from handoff file');
         notifyListeners();
       }
@@ -315,6 +342,8 @@ class PresentationController extends ChangeNotifier {
           'presenterIndex': _presenterIndex,
           'mode': _mode.index,
           'bibleOverlay': _bibleOverlaySlide != null ? _slideToFullJson(_bibleOverlaySlide!) : null,
+          'isBibleFullscreen': _isBibleFullscreen,
+          'bibleOverlayTarget': _bibleOverlayTarget,
         };
         client.write(json.encode(data) + '\n');
       } catch (_) {}
@@ -329,6 +358,8 @@ class PresentationController extends ChangeNotifier {
         'presenterIndex': _presenterIndex,
         'mode': _mode.index,
         'bibleOverlay': _bibleOverlaySlide != null ? _slideToFullJson(_bibleOverlaySlide!) : null,
+        'isBibleFullscreen': _isBibleFullscreen,
+        'bibleOverlayTarget': _bibleOverlayTarget,
       };
       socket.write(json.encode(data) + '\n');
     } catch (_) {}
@@ -342,6 +373,8 @@ class PresentationController extends ChangeNotifier {
         'presenterIndex': _presenterIndex,
         'mode': _mode.index,
         'bibleOverlay': _bibleOverlaySlide != null ? _slideToFullJson(_bibleOverlaySlide!) : null,
+        'isBibleFullscreen': _isBibleFullscreen,
+        'bibleOverlayTarget': _bibleOverlayTarget,
       };
       socket.write(json.encode(data) + '\n');
     } catch (_) {}
@@ -363,6 +396,12 @@ class PresentationController extends ChangeNotifier {
           if (data.containsKey('bibleOverlay')) {
             final bo = data['bibleOverlay'];
             _bibleOverlaySlide = bo != null ? SlideData.fromJson(bo as Map<String, dynamic>) : null;
+          }
+          if (data.containsKey('isBibleFullscreen')) {
+            _isBibleFullscreen = data['isBibleFullscreen'] as bool? ?? false;
+          }
+          if (data.containsKey('bibleOverlayTarget')) {
+            _bibleOverlayTarget = data['bibleOverlayTarget'] as String? ?? 'both';
           }
           if (type == 'handshake' || type == 'slides_update') {
             final slidesList = (data['slides'] as List)
@@ -598,6 +637,11 @@ class PresentationController extends ChangeNotifier {
 
   void closeAudienceWindow() {
     setMode(PresentationMode.locked);
+    if (_audienceProcess != null) {
+      debugPrint('[PRESENTATION] Killing audience process (PID: ${_audienceProcess!.pid})');
+      _audienceProcess!.kill();
+      _audienceProcess = null;
+    }
   }
 
   @override
@@ -606,6 +650,10 @@ class PresentationController extends ChangeNotifier {
     _autoplayTimer?.cancel();
     _closePresenterServer();
     _disconnectFromPresenterServer();
+    if (_audienceProcess != null) {
+      _audienceProcess!.kill();
+      _audienceProcess = null;
+    }
     super.dispose();
   }
 }

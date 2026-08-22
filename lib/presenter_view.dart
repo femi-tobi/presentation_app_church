@@ -61,6 +61,7 @@ class _ProfessionalPresenterViewState extends State<ProfessionalPresenterView> {
 
   @override
   void dispose() {
+    PresentationController.instance.closeAudienceWindow();
     PresentationController.instance.removeListener(_onControllerChanged);
     DisplayManager.instance.removeListener(_onDisplayChanged);
     _blinkTimer.cancel();
@@ -176,11 +177,19 @@ class _ProfessionalPresenterViewState extends State<ProfessionalPresenterView> {
       case LogicalKeyboardKey.space:
       case LogicalKeyboardKey.enter:
       case LogicalKeyboardKey.pageDown:
-        _next();
+        if (PresentationController.instance.bibleOverlaySlide != null) {
+          PresentationController.instance.navigateBibleVerse(true);
+        } else {
+          _next();
+        }
         break;
       case LogicalKeyboardKey.arrowLeft:
       case LogicalKeyboardKey.pageUp:
-        _prev();
+        if (PresentationController.instance.bibleOverlaySlide != null) {
+          PresentationController.instance.navigateBibleVerse(false);
+        } else {
+          _prev();
+        }
         break;
       case LogicalKeyboardKey.home:
         _goFirst();
@@ -189,6 +198,7 @@ class _ProfessionalPresenterViewState extends State<ProfessionalPresenterView> {
         _goLast();
         break;
       case LogicalKeyboardKey.escape:
+        PresentationController.instance.closeAudienceWindow();
         Navigator.pop(context);
         break;
       case LogicalKeyboardKey.keyB:
@@ -571,47 +581,82 @@ class _ProfessionalPresenterViewState extends State<ProfessionalPresenterView> {
                         ? _SlidePreviewWidget(slide: _currentSlide!, showDetails: true)
                         : const SizedBox(),
                   ),
-                  if (PresentationController.instance.bibleOverlaySlide != null)
-                    Positioned(
-                      left: 12,
-                      right: 12,
-                      bottom: 12,
-                      child: Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.85),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.white24, width: 1),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Row(
-                              children: [
-                                const Icon(Icons.menu_book, color: Color(0xFFFED65B), size: 12),
-                                const SizedBox(width: 6),
-                                Text(
-                                  PresentationController.instance.bibleOverlaySlide!.title,
-                                  style: GoogleFonts.inter(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                    color: const Color(0xFFFED65B),
+                  if (PresentationController.instance.bibleOverlaySlide != null && PresentationController.instance.bibleOverlayTarget != 'obs')
+                    Positioned.fill(
+                      child: PresentationController.instance.isBibleFullscreen
+                          ? Container(
+                              color: Color(PresentationController.instance.bibleOverlaySlide!.bgColorValue),
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      const Icon(Icons.menu_book, color: Color(0xFFFED65B), size: 14),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        PresentationController.instance.bibleOverlaySlide!.title,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          color: const Color(0xFFFED65B),
+                                        ),
+                                      ),
+                                    ],
                                   ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    PresentationController.instance.bibleOverlaySlide!.subtitle,
+                                    textAlign: TextAlign.center,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 13,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : Align(
+                              alignment: Alignment.bottomCenter,
+                              child: Container(
+                                margin: const EdgeInsets.all(12),
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.85),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.white24, width: 1),
                                 ),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              PresentationController.instance.bibleOverlaySlide!.subtitle,
-                              style: GoogleFonts.inter(
-                                fontSize: 11,
-                                color: Colors.white,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        const Icon(Icons.menu_book, color: Color(0xFFFED65B), size: 12),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          PresentationController.instance.bibleOverlaySlide!.title,
+                                          style: GoogleFonts.inter(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                            color: const Color(0xFFFED65B),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      PresentationController.instance.bibleOverlaySlide!.subtitle,
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
-                          ],
-                        ),
-                      ),
                     ),
                 ],
               ),
@@ -1414,17 +1459,37 @@ class _QuickBibleSearchDialogState extends State<_QuickBibleSearchDialog> {
                                     style: GoogleFonts.inter(color: Colors.white.withValues(alpha: 0.85), fontSize: 13),
                                   ),
                                 ),
-                                trailing: ElevatedButton(
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.green[800],
-                                    foregroundColor: Colors.white,
-                                    textStyle: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold),
-                                  ),
-                                  onPressed: () {
-                                    pc.showBibleOverlay(ref, text);
-                                    Navigator.pop(context);
-                                  },
-                                  child: const Text('Project'),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    ElevatedButton(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.green[800],
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                        textStyle: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold),
+                                      ),
+                                      onPressed: () {
+                                        pc.showBibleOverlay(ref, text, fullscreen: false);
+                                        Navigator.pop(context);
+                                      },
+                                      child: const Text('Overlay'),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    ElevatedButton(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(0xFF4B0082),
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                        textStyle: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold),
+                                      ),
+                                      onPressed: () {
+                                        pc.showBibleOverlay(ref, text, fullscreen: true);
+                                        Navigator.pop(context);
+                                      },
+                                      child: const Text('Fullscreen'),
+                                    ),
+                                  ],
                                 ),
                               ),
                             );

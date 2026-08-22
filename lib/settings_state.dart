@@ -918,6 +918,56 @@ class AppSettings extends ChangeNotifier {
     }
   }
 
+  int _bibleL3BgColor = 0xDE000000;
+  int get bibleL3BgColor => _bibleL3BgColor;
+  set bibleL3BgColor(int value) {
+    if (_bibleL3BgColor != value) {
+      _bibleL3BgColor = value;
+      saveSettings();
+      notifyListeners();
+    }
+  }
+
+  int _bibleL3TextColor = 0xFFFFFFFF;
+  int get bibleL3TextColor => _bibleL3TextColor;
+  set bibleL3TextColor(int value) {
+    if (_bibleL3TextColor != value) {
+      _bibleL3TextColor = value;
+      saveSettings();
+      notifyListeners();
+    }
+  }
+
+  double _bibleL3FontSize = 24.0;
+  double get bibleL3FontSize => _bibleL3FontSize;
+  set bibleL3FontSize(double value) {
+    if (_bibleL3FontSize != value) {
+      _bibleL3FontSize = value;
+      saveSettings();
+      notifyListeners();
+    }
+  }
+
+  double _bibleL3BorderRadius = 16.0;
+  double get bibleL3BorderRadius => _bibleL3BorderRadius;
+  set bibleL3BorderRadius(double value) {
+    if (_bibleL3BorderRadius != value) {
+      _bibleL3BorderRadius = value;
+      saveSettings();
+      notifyListeners();
+    }
+  }
+
+  bool _bibleL3ShowBorder = true;
+  bool get bibleL3ShowBorder => _bibleL3ShowBorder;
+  set bibleL3ShowBorder(bool value) {
+    if (_bibleL3ShowBorder != value) {
+      _bibleL3ShowBorder = value;
+      saveSettings();
+      notifyListeners();
+    }
+  }
+
   int _bibleMaxLines = 4;
   int get bibleMaxLines => _bibleMaxLines;
   set bibleMaxLines(int value) {
@@ -1510,6 +1560,11 @@ class AppSettings extends ChangeNotifier {
       _bibleAutoSplit = prefs.getBool('bibleAutoSplit') ?? _bibleAutoSplit;
       _bibleMaxLines = prefs.getInt('bibleMaxLines') ?? _bibleMaxLines;
       _bibleMaxChars = prefs.getInt('bibleMaxChars') ?? _bibleMaxChars;
+      _bibleL3BgColor = prefs.getInt('bibleL3BgColor') ?? _bibleL3BgColor;
+      _bibleL3TextColor = prefs.getInt('bibleL3TextColor') ?? _bibleL3TextColor;
+      _bibleL3FontSize = prefs.getDouble('bibleL3FontSize') ?? _bibleL3FontSize;
+      _bibleL3BorderRadius = prefs.getDouble('bibleL3BorderRadius') ?? _bibleL3BorderRadius;
+      _bibleL3ShowBorder = prefs.getBool('bibleL3ShowBorder') ?? _bibleL3ShowBorder;
 
       _timerOverlayWidth = prefs.getDouble('timerOverlayWidth') ?? _timerOverlayWidth;
       _timerOverlayHeight = prefs.getDouble('timerOverlayHeight') ?? _timerOverlayHeight;
@@ -1613,6 +1668,11 @@ class AppSettings extends ChangeNotifier {
       await prefs.setBool('bibleAutoSplit', _bibleAutoSplit);
       await prefs.setInt('bibleMaxLines', _bibleMaxLines);
       await prefs.setInt('bibleMaxChars', _bibleMaxChars);
+      await prefs.setInt('bibleL3BgColor', _bibleL3BgColor);
+      await prefs.setInt('bibleL3TextColor', _bibleL3TextColor);
+      await prefs.setDouble('bibleL3FontSize', _bibleL3FontSize);
+      await prefs.setDouble('bibleL3BorderRadius', _bibleL3BorderRadius);
+      await prefs.setBool('bibleL3ShowBorder', _bibleL3ShowBorder);
       await prefs.setString('customShortcuts', json.encode(_customShortcuts));
 
       await prefs.setDouble('timerOverlayWidth', _timerOverlayWidth);

@@ -14,6 +14,7 @@ import 'bible_show_page.dart';
 import 'timer_page.dart';
 import 'onboarding_dialog.dart';
 import 'feedback_dialog.dart';
+import 'docs_page.dart';
 
 
 /// Exact Material 3 custom color system derived from the design tailwind config.
@@ -263,15 +264,17 @@ class _DashboardPageState extends State<DashboardPage> {
               Expanded(
                 child: _activeTab == 'Settings'
                     ? SettingsPage(scaffoldKey: _scaffoldKey)
-                    : (_activeTab == 'Templates'
-                        ? TemplatesPage(scaffoldKey: _scaffoldKey)
-                        : (_activeTab == 'Library'
-                            ? LibraryPage(scaffoldKey: _scaffoldKey)
-                            : (_activeTab == 'Bible'
-                                ? BibleShowPage(scaffoldKey: _scaffoldKey)
-                                : (_activeTab == 'Timer'
-                                    ? TimerPage(scaffoldKey: _scaffoldKey)
-                                    : Column(
+                    : (_activeTab == 'Help'
+                        ? DocsPage(scaffoldKey: _scaffoldKey)
+                        : (_activeTab == 'Templates'
+                            ? TemplatesPage(scaffoldKey: _scaffoldKey)
+                            : (_activeTab == 'Library'
+                                ? LibraryPage(scaffoldKey: _scaffoldKey)
+                                : (_activeTab == 'Bible'
+                                    ? BibleShowPage(scaffoldKey: _scaffoldKey)
+                                    : (_activeTab == 'Timer'
+                                        ? TimerPage(scaffoldKey: _scaffoldKey)
+                                        : Column(
                             children: [
                               TopNavBar(
                                 scaffoldKey: _scaffoldKey,
@@ -298,7 +301,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                 ),
                               ),
                             ],
-                          )))))),
+                          ))))))),
             ],
           ),
         ),
@@ -430,6 +433,14 @@ class SacredSidebar extends StatelessWidget {
                           label: 'Settings',
                           isActive: activeTab == 'Settings',
                           onTap: () => onTabSelected('Settings'),
+                        ),
+                        SizedBox(height: 8),
+                        _SidebarNavigationItem(
+                          icon: Icons.help_outline,
+                          activeIcon: Icons.help,
+                          label: 'Help',
+                          isActive: activeTab == 'Help',
+                          onTap: () => onTabSelected('Help'),
                         ),
                       ],
                     ),

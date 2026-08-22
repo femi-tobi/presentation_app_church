@@ -80,10 +80,32 @@ class _AudienceWindowState extends State<AudienceWindow> {
       });
     }
     super.dispose();
+  TextStyle _getSafeFont(String fontFamily, {required double fontSize, required FontWeight fontWeight, FontStyle? fontStyle, Color? color, double? height, double? letterSpacing}) {
+    try {
+      return GoogleFonts.getFont(
+        fontFamily,
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+        fontStyle: fontStyle,
+        color: color,
+        height: height,
+        letterSpacing: letterSpacing,
+      );
+    } catch (_) {
+      return GoogleFonts.inter(
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+        fontStyle: fontStyle,
+        color: color,
+        height: height,
+        letterSpacing: letterSpacing,
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final settings = AppSettings.instance;
     return ListenableBuilder(
       listenable: PresentationController.instance,
       builder: (context, _) {
@@ -140,11 +162,23 @@ class _AudienceWindowState extends State<AudienceWindow> {
             actions: <Type, Action<Intent>>{
               CloseIntent: CallbackAction<CloseIntent>(onInvoke: (_) => exit(0)),
               NextIntent: CallbackAction<NextIntent>(onInvoke: (_) {
-                if (pc.mode != PresentationMode.locked) pc.next();
+                if (pc.mode != PresentationMode.locked) {
+                  if (pc.bibleOverlaySlide != null) {
+                    pc.navigateBibleVerse(true);
+                  } else {
+                    pc.next();
+                  }
+                }
                 return null;
               }),
               PrevIntent: CallbackAction<PrevIntent>(onInvoke: (_) {
-                if (pc.mode != PresentationMode.locked) pc.prev();
+                if (pc.mode != PresentationMode.locked) {
+                  if (pc.bibleOverlaySlide != null) {
+                    pc.navigateBibleVerse(false);
+                  } else {
+                    pc.prev();
+                  }
+                }
                 return null;
               }),
               FirstIntent: CallbackAction<FirstIntent>(onInvoke: (_) {
@@ -445,59 +479,106 @@ class _AudienceWindowState extends State<AudienceWindow> {
                                     );
                                   },
                                 ),
-                              // Bible Overlay Card Layer
-                              if (pc.bibleOverlaySlide != null)
-                                Positioned(
-                                  left: 48 * scale,
-                                  right: 48 * scale,
-                                  bottom: 48 * scale,
-                                  child: Container(
-                                    padding: EdgeInsets.all(24 * scale),
-                                    decoration: BoxDecoration(
-                                      color: Colors.black.withValues(alpha: 0.88),
-                                      borderRadius: BorderRadius.circular(16 * scale),
-                                      border: Border.all(color: Colors.white24, width: 2),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: Colors.black54,
-                                          blurRadius: 15 * scale,
-                                          spreadRadius: 2 * scale,
-                                        )
-                                      ],
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Icon(Icons.menu_book, color: const Color(0xFFFED65B), size: 24 * scale),
-                                            SizedBox(width: 10 * scale),
-                                            Text(
-                                              pc.bibleOverlaySlide!.title,
-                                              style: GoogleFonts.inter(
-                                                fontSize: 20 * scale,
-                                                fontWeight: FontWeight.w800,
-                                                color: const Color(0xFFFED65B),
-                                                letterSpacing: 1.0,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        SizedBox(height: 12 * scale),
-                                        Text(
-                                          pc.bibleOverlaySlide!.subtitle,
-                                          style: GoogleFonts.inter(
-                                            fontSize: 24 * scale,
-                                            fontWeight: FontWeight.w500,
-                                            color: Colors.white,
-                                            height: 1.4,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
+                              if (pc.bibleOverlaySlide != null && pc.bibleOverlayTarget != 'obs')
+                                 Positioned.fill(
+                                   child: pc.isBibleFullscreen
+                                       ? Container(
+                                           color: Color(pc.bibleOverlaySlide!.bgColorValue),
+                                           padding: EdgeInsets.symmetric(horizontal: 64 * scale, vertical: 48 * scale),
+                                           child: Column(
+                                             mainAxisAlignment: MainAxisAlignment.center,
+                                             children: [
+                                               Row(
+                                                 mainAxisAlignment: MainAxisAlignment.center,
+                                                 children: [
+                                                   Icon(Icons.menu_book, color: const Color(0xFFFED65B), size: 44 * scale),
+                                                   SizedBox(width: 14 * scale),
+                                                   Text(
+                                                     pc.bibleOverlaySlide!.title,
+                                                     style: _getSafeFont(
+                                                       settings.bibleFontFamily,
+                                                       fontSize: 36 * scale,
+                                                       fontWeight: FontWeight.w800,
+                                                       color: const Color(0xFFFED65B),
+                                                       letterSpacing: 1.0,
+                                                     ),
+                                                   ),
+                                                 ],
+                                               ),
+                                               SizedBox(height: 40 * scale),
+                                               Text(
+                                                 pc.bibleOverlaySlide!.subtitle,
+                                                 textAlign: TextAlign.center,
+                                                 style: _getSafeFont(
+                                                   settings.bibleFontFamily,
+                                                   fontSize: settings.bibleFontSize * scale,
+                                                   fontWeight: settings.bibleIsBold ? FontWeight.bold : FontWeight.w500,
+                                                   fontStyle: settings.bibleIsItalic ? FontStyle.italic : FontStyle.normal,
+                                                   color: Color(settings.bibleTextColor),
+                                                   height: 1.5,
+                                                 ),
+                                               ),
+                                             ],
+                                           ),
+                                         )
+                                       : Align(
+                                           alignment: Alignment.bottomCenter,
+                                           child: Padding(
+                                             padding: EdgeInsets.symmetric(horizontal: 48 * scale, vertical: 48 * scale),
+                                             child: Container(
+                                               padding: EdgeInsets.all(24 * scale),
+                                               decoration: BoxDecoration(
+                                                 color: Color(settings.bibleL3BgColor),
+                                                 borderRadius: BorderRadius.circular(settings.bibleL3BorderRadius * scale),
+                                                 border: settings.bibleL3ShowBorder
+                                                     ? Border.all(color: Colors.white24, width: 2)
+                                                     : null,
+                                                 boxShadow: [
+                                                   BoxShadow(
+                                                     color: Colors.black54,
+                                                     blurRadius: 15 * scale,
+                                                     spreadRadius: 2 * scale,
+                                                   )
+                                                 ],
+                                               ),
+                                               child: Column(
+                                                 crossAxisAlignment: CrossAxisAlignment.start,
+                                                 mainAxisSize: MainAxisSize.min,
+                                                 children: [
+                                                   Row(
+                                                     children: [
+                                                       Icon(Icons.menu_book, color: const Color(0xFFFED65B), size: 24 * scale),
+                                                       SizedBox(width: 10 * scale),
+                                                       Text(
+                                                         pc.bibleOverlaySlide!.title,
+                                                         style: _getSafeFont(
+                                                           settings.bibleFontFamily,
+                                                           fontSize: 20 * scale,
+                                                           fontWeight: FontWeight.w800,
+                                                           color: const Color(0xFFFED65B),
+                                                           letterSpacing: 1.0,
+                                                         ),
+                                                       ),
+                                                     ],
+                                                   ),
+                                                   SizedBox(height: 12 * scale),
+                                                   Text(
+                                                     pc.bibleOverlaySlide!.subtitle,
+                                                     style: _getSafeFont(
+                                                       settings.bibleFontFamily,
+                                                       fontSize: settings.bibleL3FontSize * scale,
+                                                       fontWeight: settings.bibleIsBold ? FontWeight.bold : FontWeight.w500,
+                                                       fontStyle: settings.bibleIsItalic ? FontStyle.italic : FontStyle.normal,
+                                                       color: Color(settings.bibleL3TextColor),
+                                                       height: 1.4,
+                                                     ),
+                                                   ),
+                                                 ],
+                                               ),
+                                             ),
+                                           ),
+                                         ),
+                                 ),
                             ],
                           ),
                         );
