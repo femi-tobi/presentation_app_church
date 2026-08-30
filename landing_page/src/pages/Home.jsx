@@ -1,69 +1,183 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import PageTransition from '../components/PageTransition';
+import MenuOverlay from '../components/MenuOverlay';
 
 const Home = () => {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+
   return (
     <PageTransition>
-      <div className="section" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-        <div className="container" style={{ textAlign: 'center' }}>
+      <MenuOverlay isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} />
+      {/* Navbar */}
+      <nav className="navbar">
+        <div className="container nav-container">
+          <div className="logo-container">
+            {/* The actual logo copied from assets */}
+            <img src="/app_icon.ico" alt="LiveDeck Logo" style={{ width: '48px', height: '48px' }} />
+            <span className="logo-text">LiveDeck</span>
+          </div>
+          <div>
+            <button 
+              className="btn-solid" 
+              style={{ background: '#FF7EB3' }}
+              onClick={() => setIsMenuOpen(true)}
+            >
+              ≡ Menu
+            </button>
+          </div>
+        </div>
+      </nav>
+
+      {/* Hero Section */}
+      <section className="section-hero">
+        <div className="container">
           
           <motion.h1 
-            className="text-gradient" 
-            style={{ fontSize: '4rem', marginBottom: '20px' }}
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2, duration: 0.6 }}
+            className="hero-title"
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: 'spring', bounce: 0.5 }}
           >
-            Present Flawlessly.<br />
-            <span className="text-gradient-primary">Inspire Effortlessly.</span>
+            Present Flawlessly<br />
+            Inspire the World
           </motion.h1>
           
-          <motion.p 
-            style={{ fontSize: '1.2rem', color: 'var(--text-muted)', marginBottom: '40px', maxWidth: '600px', margin: '0 auto 40px auto' }}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.4, duration: 0.6 }}
-          >
-            The next-generation presentation tool for modern churches and events. 
-            Wireless control, automatic updates, and stunning pixel-perfect projection.
-          </motion.p>
-          
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.6, duration: 0.5, type: 'spring' }}
-            style={{ display: 'flex', gap: '20px', justifyContent: 'center', marginBottom: '80px' }}
-          >
-            <button className="btn-primary">Download for Windows</button>
-            <Link to="/about">
-              <button className="btn-outline">Learn More</button>
-            </Link>
-          </motion.div>
-          
-          {/* Glassmorphism Feature Cards Area */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '30px' }}>
-            {[
-              { title: 'Wireless Remote', desc: 'Control your presentation directly from your phone.' },
-              { title: 'Bible Integration', desc: 'Instantly display beautiful lower-third verses.' },
-              { title: 'Zero Configuration', desc: 'It just works out of the box with zero network setup.' }
-            ].map((feature, i) => (
-              <motion.div 
-                key={i}
-                className="glass-card"
-                initial={{ opacity: 0, y: 50 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.8 + (i * 0.1), duration: 0.5 }}
-              >
-                <h3 style={{ marginBottom: '10px', color: 'var(--primary-glow)' }}>{feature.title}</h3>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>{feature.desc}</p>
-              </motion.div>
-            ))}
+          <p style={{ fontSize: '1.5rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+            Connect instantly with pixel-perfect projection.
+          </p>
+
+          <div className="store-badges">
+            <button className="store-badge">▶ Get it on Windows</button>
+            <button className="store-badge" style={{ background: '#FFDD00', color: 'black' }}>★ Remote Control</button>
           </div>
 
+          {/* Floating Stickers */}
+          <motion.div 
+            className="sticker sticker-pink" 
+            style={{ top: '200px', left: '15%' }}
+            animate={{ y: [0, -10, 0] }}
+            transition={{ repeat: Infinity, duration: 3, ease: 'easeInOut' }}
+          >
+            Wireless!
+          </motion.div>
+
+          <motion.div 
+            className="sticker sticker-blue" 
+            style={{ top: '150px', right: '18%' }}
+            animate={{ y: [0, 15, 0] }}
+            transition={{ repeat: Infinity, duration: 4, ease: 'easeInOut' }}
+          >
+            Zero Latency
+          </motion.div>
+
+          <motion.div 
+            className="sticker sticker-green" 
+            style={{ top: '350px', left: '20%' }}
+            animate={{ y: [0, 8, 0], rotate: [5, 10, 5] }}
+            transition={{ repeat: Infinity, duration: 3.5, ease: 'easeInOut' }}
+          >
+            Perfect Vibes
+          </motion.div>
+
+          {/* Overlapping Mockups */}
+          <div className="mockup-group">
+            <motion.div 
+              className="mockup-desktop"
+              initial={{ y: 100, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: 0.1 }}
+            >
+              <div className="screen-content" style={{ background: '#22C55E' }}>Desktop Audience View</div>
+            </motion.div>
+            
+            <motion.div 
+              className="mockup-phone mockup-phone-offset"
+              initial={{ y: 100, x: 280, rotate: 10, opacity: 0 }}
+              animate={{ y: 30, x: 280, rotate: 10, opacity: 1 }}
+              transition={{ delay: 0.2 }}
+            >
+              <div className="screen-content">Phone Remote</div>
+            </motion.div>
+          </div>
         </div>
-      </div>
+      </section>
+
+      {/* Blue Section */}
+      <section className="section-blue">
+        <div className="container" style={{ display: 'flex', alignItems: 'center', gap: '60px' }}>
+          <div style={{ flex: 1 }}>
+            <h2 className="section-title">Straight to the<br />real presentation</h2>
+            <p style={{ fontSize: '1.25rem', fontWeight: 600 }}>
+              Controlling your slides is effortless. Import your PPTX, connect your phone, and dive right into the message. No IP addresses, no firewall rules.
+            </p>
+          </div>
+          <div style={{ flex: 1 }}>
+             {/* Big chunky image placeholder */}
+             <div style={{ width: '100%', height: '400px', background: '#FF7EB3', borderRadius: '40px', border: '8px solid var(--border-dark)', boxShadow: 'var(--shadow-sticker)' }}></div>
+          </div>
+        </div>
+      </section>
+
+      {/* Yellow Features Section */}
+      <section className="section-yellow">
+        <div className="container">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+            <h2 className="section-title" style={{ margin: 0 }}>Flow with the<br />moment</h2>
+            <p style={{ maxWidth: '400px', fontSize: '1.1rem', fontWeight: 600 }}>
+              Seamless automatic updates, dynamic backgrounds, and instantaneous text rendering. 
+            </p>
+          </div>
+
+          <div className="polaroid-grid">
+            <div className="polaroid">
+               <div className="sticker sticker-blue" style={{ top: '-20px', left: '-20px', zIndex: 10 }}>⚡ Fast</div>
+               <div className="polaroid-image"></div>
+            </div>
+            
+            <div className="polaroid">
+               <div className="sticker sticker-pink" style={{ top: '-20px', right: '-20px', zIndex: 10 }}>🔥 Smooth</div>
+               <div className="polaroid-image" style={{ background: '#FF7EB3' }}></div>
+            </div>
+            
+            <div className="polaroid">
+               <div className="sticker sticker-green" style={{ bottom: '20px', right: '-20px', zIndex: 10 }}>✨ Magic</div>
+               <div className="polaroid-image" style={{ background: '#22C55E' }}></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="section-footer">
+        <div className="container">
+           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '60px' }}>
+             <span className="logo-text" style={{ fontSize: '4rem' }}>LiveDeck</span>
+             <div className="store-badges" style={{ marginTop: 0 }}>
+               <button className="store-badge">Download App</button>
+             </div>
+           </div>
+           
+           <div style={{ display: 'flex', gap: '80px', fontWeight: 600 }}>
+             <div>
+               <h4 style={{ marginBottom: '16px' }}>About</h4>
+               <Link to="/about" style={{ display: 'block', color: 'inherit', textDecoration: 'none', marginBottom: '8px' }}>Our Story</Link>
+               <Link to="/about" style={{ display: 'block', color: 'inherit', textDecoration: 'none', marginBottom: '8px' }}>Careers</Link>
+             </div>
+             <div>
+               <h4 style={{ marginBottom: '16px' }}>Support</h4>
+               <Link to="/support" style={{ display: 'block', color: 'inherit', textDecoration: 'none', marginBottom: '8px' }}>Help Center</Link>
+               <Link to="/support" style={{ display: 'block', color: 'inherit', textDecoration: 'none', marginBottom: '8px' }}>Safety Tools</Link>
+             </div>
+             <div>
+               <h4 style={{ marginBottom: '16px' }}>Legal</h4>
+               <Link to="/" style={{ display: 'block', color: 'inherit', textDecoration: 'none', marginBottom: '8px' }}>Privacy Policy</Link>
+               <Link to="/" style={{ display: 'block', color: 'inherit', textDecoration: 'none', marginBottom: '8px' }}>Terms of Service</Link>
+             </div>
+           </div>
+        </div>
+      </footer>
     </PageTransition>
   );
 };
